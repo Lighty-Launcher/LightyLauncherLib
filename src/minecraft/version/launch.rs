@@ -4,6 +4,7 @@ use crate::minecraft::version::version::Version;
 use tokio::sync::oneshot;
 use crate::minecraft::version::loaders::utils::librairies::Libraries;
 use crate::minecraft::version::loaders::utils::manifest::Manifest;
+use crate::utils::system::{OperatingSystem, OS};
 
 pub trait Launch<'a> {
     fn get_client_path(&self) -> PathBuf;
@@ -43,27 +44,33 @@ impl<'a> Launch<'a> for Version<'a> {
 
         //TODO: rewrite the arguments to use a generic method
 
+        let separator = match OS {
+            OperatingSystem::WINDOWS => ";",
+            _ => ":",
+        };
+
         let classpath = format!(
-            "{};{}",
-            //get all libraries dir with recursive search
+            "{}{separator}{}",
             self.get_all_libraries_dir().await.unwrap(),
             self.get_client_path().to_string_lossy()
         );
 
+
         println!("classpath: {:?}", classpath);
+        println!("Game directory: {:?}", self.get_client_path());
 
 
         let arguments = vec![
             "-Xms1024M".to_string(),
             "-Xmx2048M".to_string(),
             "-Djava.library.path=".to_owned() + &self.get_natives_dir().display().to_string(),
-            "-Dfabric.development=false".to_string(),
+            //"-Dfabric.development=false".to_string(),
             "-cp".to_string(),
             classpath,
             //TODO: make a generic method to get the main class from the manifest or from the version
             //self.get_main_class_from_manifest().await.unwrap(),
-            //"cpw.mods.modlauncher.Launcher".to_string(),
-            "net.minecraft.client.Main".to_string(),
+            "cpw.mods.modlauncher.Launcher".to_string(),
+            //"net.minecraft.client.Main".to_string(),
             //"optifine.InstallerFrame".to_string(),
             "--username".to_string(),
             "Hamadi".to_string(),

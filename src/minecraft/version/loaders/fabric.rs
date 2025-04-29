@@ -2,6 +2,7 @@ use std::error::Error;
 use std::fs;
 use serde::Deserialize;
 use tokio::io::AsyncWriteExt;
+use tokio::try_join;
 use crate::minecraft::version::loaders::utils::assets::Assets;
 use crate::minecraft::version::loaders::utils::client::Client;
 use crate::minecraft::version::loaders::utils::librairies::Libraries;
@@ -46,15 +47,24 @@ impl<'a> FabricLoader<'a> for Version<'a> {
         Ok(main_class.to_string())
     }
     async fn install_fabric(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        self.download_client().await?;
-        self.download_libraries().await?;
-        self.download_fabric_libraries().await?;
-        println!("Installing fabric library...{:#?}", self.download_fabric_libraries().await?);
-        self.download_natives().await?;
-        self.download_assets().await?;
-        println!("[LightyLauncher] Installation complete for {}\n{:#?}", self.name, self.get_game_dir());
+
+        try_join!(
+            self.download_client(),
+            self.download_libraries(),
+            self.download_fabric_libraries(),
+            self.download_natives(),
+            self.download_assets(),
+        )?;
+
+        println!(
+            "[LightyLauncher] Installation complete for {}\n{:#?}",
+            self.name,
+            self.get_game_dir()
+        );
         Ok(())
     }
+    
+    
 
     async fn download_fabric_libraries(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
 

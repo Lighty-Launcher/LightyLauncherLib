@@ -291,6 +291,8 @@ impl<'a> Version<'a> {
             .arg("--fat")
             .arg(" --fat-include-minecraft-lib")
             .status()?;
+        
+        println!("NeoForge installer success: {}", status);
 
 
         if !status.success() {

@@ -147,7 +147,7 @@ pub fn clean_directory(
     max_age_days: u64,
 ) -> Result<()> {
     let now = SystemTime::now();
-    let max_age = Duration::from_days(max_age_days);
+    let max_age = Duration::from_secs(max_age_days * 24 * 60 * 60);
 
     for entry in fs::read_dir(path)? {
         let entry = entry?;

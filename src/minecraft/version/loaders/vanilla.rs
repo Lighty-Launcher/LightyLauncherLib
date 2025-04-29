@@ -9,13 +9,22 @@ pub trait VanillaLoader<'a> {
     async fn install_vanilla(&self) -> Result<(), Box<dyn Error + Send + Sync>>;
 }
 
+use tokio::try_join;
+
 impl<'a> VanillaLoader<'a> for Version<'a> {
     async fn install_vanilla(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        self.download_client().await?;
-        self.download_libraries().await?;
-        self.download_natives().await?;
-        self.download_assets().await?;
-        println!("[LightyLauncher] Installation complete for {}\n{:#?}", self.name, self.get_game_dir());
+        try_join!(
+            self.download_client(),
+            self.download_libraries(),
+            self.download_natives(),
+            self.download_assets(),
+        )?;
+
+        println!(
+            "[LightyLauncher] Installation complete for {}\n{:#?}",
+            self.name,
+            self.get_game_dir()
+        );
         Ok(())
     }
 }

@@ -1,6 +1,6 @@
+
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
-
 use anyhow::{bail, Result};
 use path_absolutize::Absolutize;
 use tokio::fs;
@@ -16,15 +16,21 @@ pub async fn find_java_binary(
     runtimes_folder: &Path,
     jre_distribution: &JavaDistribution,
     jre_version: &u32,
-) -> Result<PathBuf> {
+) -> anyhow::Result<PathBuf> {
     let runtime_path =
         runtimes_folder.join(format!("{}_{}", jre_distribution.get_name(), jre_version));
+    println!("runtime path: {:?}", runtime_path);
+    
+    //TODO: REMOVE PRINTLN
 
     // Find JRE in runtime folder
     let mut files = fs::read_dir(&runtime_path).await?;
+    println!("Found {:?} in runtime", runtime_path);
 
     if let Some(jre_folder) = files.next_entry().await? {
         let folder_path = jre_folder.path();
+        
+        println!("Found {:?} in runtime", folder_path);
 
         let java_binary = match OS {
             OperatingSystem::WINDOWS => folder_path.join("bin").join("javaw.exe"),

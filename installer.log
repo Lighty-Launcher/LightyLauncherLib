@@ -1,12 +1,12 @@
-JVM info: Oracle Corporation - 1.8.0_431 - 25.431-b10
+JVM info: Ubuntu - 21.0.7 - 21.0.7+6-Ubuntu-0ubuntu124.04
 java.net.preferIPv4Stack=true
-Current Time: 27/04/2025 15:41:04
-Host: maven.neoforged.net [185.93.2.9, 79.127.178.167, 185.93.2.12, 79.127.178.161]
-Host: libraries.minecraft.net [13.107.246.76]
-Host: launchermeta.mojang.com [13.107.246.76]
-Host: piston-meta.mojang.com [13.107.246.76]
-Host: sessionserver.mojang.com [13.107.246.76]
-Found java version 1.8.0_431
+Current Time: 09/05/2025 16:34:29
+Host: maven.neoforged.net [79.127.178.162, 185.93.2.11, 79.127.178.168, 185.93.2.8]
+Host: libraries.minecraft.net [13.107.253.42]
+Host: launchermeta.mojang.com [13.107.253.42]
+Host: piston-meta.mojang.com [13.107.253.42]
+Host: sessionserver.mojang.com [13.107.253.42]
+Found java version 21.0.7
 Target Directory:  --fat-include-minecraft-lib
 Downloading metadata
 Fat installer generated succcesfully

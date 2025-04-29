@@ -1,15 +1,19 @@
-#![feature(duration_constructors)]
+
 extern crate core;
 mod utils;
 mod java;
 mod minecraft;
 #[cfg(test)]
 mod tests {
-    use once_cell::sync::Lazy;
+    use log::{error, info};
+use once_cell::sync::Lazy;
     use directories::ProjectDirs;
     use std::fmt::{Debug, Display};
+    use crate::java::{find_java_binary, jre_download};
     use crate::minecraft::version::launch::Launch;
     use super::minecraft::version::version;
+    use crate::java::distribution::JavaDistribution;
+    use crate::mkdir;
 
     #[tokio::test]
     async fn test_os() {
@@ -27,7 +31,9 @@ mod tests {
         let logs = LAUNCHER_DIRECTORY.data_dir().join("logs");
 
 
+        
 
+        
         let minozia = version::Version::new("minozia", "fabric", "0.15.10", "1.20.2",&LAUNCHER_DIRECTORY);
         let wynlers = version::Version::new("wynlers", "vanilla", "", "1.7.10",&LAUNCHER_DIRECTORY);
         let cobblemonfr = version::Version::new("cobblemonfr", "vanilla", "", "1.21.5",&LAUNCHER_DIRECTORY);
@@ -37,24 +43,49 @@ mod tests {
         let sodacraft = version::Version::new("sodacraft", "optifine", "", "1.18.2",&LAUNCHER_DIRECTORY);
         let gaïa = version::Version::new("gaïa", "neoforge", "47.1.99", "1.20.1",&LAUNCHER_DIRECTORY);
 
+        let jre_path = LAUNCHER_DIRECTORY.config_dir().join("jre");
+        println!("jre path: {:?}", jre_path);
+        mkdir!(jre_path);
+        
+        let java_distribution = JavaDistribution::Temurin;
+        
+        println!("je download le jar");
+        // let _install_jre = jre_download(
+        //         &jre_path,
+        //         &java_distribution,
+        //         &17u32,
+        //         |current, total| {
+        //             // called function to update the progress
+        //             println!("Téléchargement : {}/{}", current, total);
+        //         }
+        //     ).await;
+        // let _find_jre = find_java_binary(&jre_path,&java_distribution,&17u32).await;
+        // println!("find jre binary:{:?}",_find_jre);
+        
+            
+        
+            
+        
 
-        //minozia.install_version().await.unwrap();
-        //minozia.launch(&LAUNCHER_DIRECTORY.config_dir().to_path_buf()).await;
+
+        gaïa.install_version().await.unwrap();
+        gaïa.launch(&LAUNCHER_DIRECTORY.config_dir().to_path_buf()).await;
         //frozenearth.install_version().await.unwrap();
         //frozenearth.launch(&LAUNCHER_DIRECTORY.config_dir().to_path_buf()).await;
-        gaïa.install_version().await.unwrap();
+        //gaïa.install_version().await.unwrap();
 
         //TODO: déplacer le config_dir dans la méthode launch
         //gaïa.launch(&LAUNCHER_DIRECTORY.config_dir().to_path_buf()).await;
 
         // ephesia.install_version().await.unwrap();
         // ephesia.launch(&LAUNCHER_DIRECTORY.config_dir().to_path_buf()).await;
-        // cobblemonfr.install_version().await.unwrap();
+        //cobblemonfr.install_version().await.unwrap();
         // nemaria.install_version().await.unwrap();
-        // wynlers.install_version().await.unwrap();
+        //wynlers.install_version().await.unwrap();
         //wynlers.launch(&LAUNCHER_DIRECTORY.config_dir().to_path_buf()).await;
         //nemaria.launch(&LAUNCHER_DIRECTORY.config_dir().to_path_buf()).await;
         //cobblemonfr.launch(&LAUNCHER_DIRECTORY.config_dir().to_path_buf()).await;
+        //println!("cobblemonfr launch {:#?}",cobblemonfr.launch(&LAUNCHER_DIRECTORY.config_dir().to_path_buf()).await);
 
 
 
@@ -124,10 +155,7 @@ mod tests {
 //     }
 // ));
 //
-// let find_jre_8 = runtime.block_on(find_java_binary(
-//     &jre_path,
-//     &JavaDistribution::Temurin,
-//     &8u32));
+
 // println!("jre {:?}",&find_jre_8);
 // let find_jre_11 = runtime.block_on(find_java_binary(
 //     &jre_path,
