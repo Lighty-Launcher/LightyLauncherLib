@@ -5,16 +5,13 @@
 !src/
 !.github/**
 !crates/
-!img/
 !examples/
 !docs/
 
 # Allow root files
 !LICENCE
 !README.md
+!CONTRIBUTING.md
 !Cargo.toml
 !Cargo.lock
 !.gitignore
-
-
-

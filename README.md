@@ -11,38 +11,9 @@
 
 ## A launcher built with LightyLauncherLib
 
-
 [exemple_launcher_with_lightylauncherlib_small.webm](https://github.com/user-attachments/assets/36134ddf-935b-4f2d-9047-78c8d6504ade)
 
-
----
-
-## Table of Contents
-
-- [Why LightyLauncher](#why-lightylauncher)
-- [Quick Start](#quick-start)
-- [Architecture](#architecture)
-- [Documentation](#documentation)
-- [Cargo Features](#cargo-features)
-- [Contributing](#contributing)
-- [License](#license)
-- [Related Projects](#related-projects)
-
----
-
-## Why LightyLauncherLib
-
-First off, it's:
-
-- **Light.** Only ships what you use. A pure-Fabric build never pulls in the Forge pipeline.
-- **Fast.** Mods, libs, assets, resourcepacks, shaders — all downloaded in parallel, not one after another.
-- **Mods & modpacks just work.** Drop a Modrinth slug or a CurseForge id and the file lands in the right folder. `.mrpack` and `.zip` modpacks supported out of the box.
-- **Tokens stay yours.** Microsoft and Azuriom secrets can't leak through logs or JSON dumps. OS keychain storage is one method call away.
-- **You see everything.** Typed events stream every step on a broadcast bus — perfect for a real-time UI or telemetry.
-
----
-
-## Quick Start
+## Quick start
 
 ```toml
 [dependencies]
@@ -77,91 +48,77 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-➡️  Want Microsoft auth, modpacks, event streams ?
-Check the **[`examples/`](examples/)** folder — every loader, mod source and
-auth provider has a runnable sample.
+Microsoft auth, modpacks, event streams, every loader — runnable
+samples in [`examples/`](examples/).
 
----
+## What you get
+
+- **Light.** Only ships what you use. A pure-Fabric build never pulls in the Forge pipeline.
+- **Fast.** Mods, libs, assets, resourcepacks, shaders — downloaded in parallel.
+- **Mods & modpacks just work.** Drop a Modrinth slug or a CurseForge id and the file lands in the right folder. `.mrpack` and `.zip` modpacks supported out of the box.
+- **Tokens stay yours.** Microsoft and Azuriom secrets can't leak through logs or JSON dumps. OS keychain storage is one method call away.
+- **You see everything.** Typed events stream every step on a broadcast bus — perfect for a real-time UI.
 
 ## Architecture
 
 ```
-lighty-launcher/             # Root crate — prelude + feature gates
-├── src/lib.rs
-├── crates/
-│   ├── core/                # AppState, HTTP client, hashing, extract
-│   ├── auth/                # Offline / Microsoft / Azuriom (+ keyring opt-in)
-│   ├── event/               # Broadcast bus + typed events
-│   ├── java/                # JRE auto-download (Temurin/Zulu/Liberica/GraalVM)
-│   ├── launch/              # Install orchestration + game process lifecycle
-│   ├── loaders/             # Vanilla / Fabric / Quilt / Forge / NeoForge / ...
-│   ├── modsloader/          # Modrinth + CurseForge clients + modpack pipelines
-│   └── version/             # Fluent VersionBuilder
-├── examples/                # Runnable samples (per-loader, mods/, modpacks/, auth/)
-├── docs/                    # Cross-crate docs + assets
-├── ASSETS_ROUTING.md        # Design: per-type asset routing
-└── AUTH_SECRETS.md          # Design: token security model
+lighty-launcher/             # Root crate (prelude + feature gates)
+└── crates/
+    ├── core/                # AppState, HTTP, hashing, extract
+    ├── auth/                # Offline / Microsoft / Azuriom
+    ├── event/               # Broadcast bus + typed events
+    ├── java/                # JRE auto-download
+    ├── launch/              # Install + game lifecycle
+    ├── loaders/             # Vanilla / Fabric / Quilt / Forge / NeoForge
+    ├── modsloader/          # Modrinth + CurseForge + modpack pipelines
+    └── version/             # VersionBuilder
 ```
 
----
+## Cargo features
+
+| Feature | Effect |
+|---|---|
+| `vanilla` / `fabric` / `quilt` / `neoforge` / `forge` | Enable that loader (`forge` covers modern + legacy 1.7.10–1.12.2) |
+| `lighty_updater` | Custom updater backend (auto-pulls vanilla/fabric/quilt/neoforge/forge) |
+| `all-loaders` | Every loader above |
+| `modrinth` | Modrinth API + `.mrpack` modpack support |
+| `curseforge` | CurseForge API + `.zip` modpack support (requires API key) |
+| `all-mods` | Both `modrinth` and `curseforge` |
+| `events` | Typed broadcast events (`LaunchEvent`, `ModloaderEvent`, …) |
+| `keyring` | OS-keychain storage for auth tokens (opt-in) |
+| `tracing` | Structured logging via `tracing` |
+
+Mix and match:
+
+```toml
+lighty-launcher = { version = "26.5.1", features = ["fabric", "modrinth", "events"] }
+```
 
 ## Documentation
 
-📚 **Full documentation lives on GitBook**:
-<https://hamadi.gitbook.io/lightylauncher>
+📚 **Full docs on GitBook**: <https://hamadi.gitbook.io/lightylauncher>
 
-The GitBook covers guides, walkthroughs, sequence diagrams and the
-re-exports reference. The per-crate `README.md` linked below stays in the
-repo as a quick API reference next to the code.
+Per-crate API reference next to the code:
 
-| Crate | Description |
+| Crate | What it does |
 |---|---|
 | [`lighty-core`](crates/core/README.md) | App state, HTTP, hashing, archive extract |
 | [`lighty-auth`](crates/auth/README.md) | Offline / Microsoft / Azuriom auth |
-| [`lighty-event`](crates/event/README.md) | Broadcast event bus + typed events |
+| [`lighty-event`](crates/event/README.md) | Broadcast event bus |
 | [`lighty-java`](crates/java/README.md) | JRE download and discovery |
 | [`lighty-launch`](crates/launch/README.md) | Install orchestrator + game runner |
 | [`lighty-loaders`](crates/loaders/README.md) | Minecraft loader implementations |
 | [`lighty-modsloader`](crates/modsloader/docs/overview.md) | Mod sources + modpack parsers |
-| [`lighty-version`](crates/version/README.md) | Fluent VersionBuilder |
-
----
-
-## Cargo Features
-
-```toml
-# Minimal — vanilla offline
-lighty-launcher = { version = "26.5.1", features = ["vanilla"] }
-
-# Fabric + Modrinth mods + live progress events
-lighty-launcher = { version = "26.5.1", features = ["fabric", "modrinth", "events"] }
-
-# Everything
-lighty-launcher = { version = "26.5.1", features = ["all-loaders", "all-mods", "events", "tracing"] }
-```
-
-| Feature | Effect |
-|---|---|
-| `vanilla` / `fabric` / `quilt` / `neoforge` / `forge` | Enable that Minecraft loader (`forge` covers modern + legacy 1.7.10–1.12.2) |
-| `lighty_updater` | Custom updater backend (auto-pulls vanilla/fabric/quilt/neoforge/forge) |
-| `all-loaders` | Every loader above |
-| `modrinth` | Modrinth API client + `.mrpack` modpack support |
-| `curseforge` | CurseForge API client + `.zip` modpack support (requires API key) |
-| `all-mods` | Both `modrinth` and `curseforge` |
-| `events` | Typed broadcast events (`LaunchEvent`, `ModloaderEvent`, …) |
-| `keyring` | Opt-in OS-keychain storage for auth tokens (see [`AUTH_SECRETS.md`](AUTH_SECRETS.md)) |
-| `tracing` | Structured logging via the `tracing` crate |
-
----
+| [`lighty-version`](crates/version/README.md) | Fluent `VersionBuilder` |
 
 ## Contributing
 
-PRs welcome. See the [Contributing Guide](CONTRIBUTING.md).
+PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
 [MIT](LICENSE).
 
-## Related Projects
+## Related
 
 - **[LightyUpdater](https://github.com/Lighty-Launcher/LightyUpdater)** — companion server for custom modpack distribution.
