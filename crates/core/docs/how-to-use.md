@@ -7,28 +7,18 @@
 ```rust
 use lighty_core::AppState;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    AppState::init("MyLauncher")?;
 
-    let launcher_dir = AppState::get_project_dirs();
-
-    // launcher_dir contains:
+    // AppState exposes static accessors:
     // - data_dir()  -> game files, instances, versions
     // - cache_dir() -> java runtimes, temporary files
     // - config_dir() -> configuration files
 
-    println!("Data: {}", launcher_dir.data_dir().display());
-    println!("Cache: {}", launcher_dir.cache_dir().display());
-    println!("Config: {}", launcher_dir.config_dir().display());
+    println!("Data: {}", AppState::data_dir().display());
+    println!("Cache: {}", AppState::cache_dir().display());
+    println!("Config: {}", AppState::config_dir().display());
 
     Ok(())
 }
@@ -326,17 +316,9 @@ use lighty_event::{EventBus, Event, CoreEvent};
 use tokio::fs::File;
 use tokio::io::BufReader;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    AppState::init("MyLauncher")?;
 
     // Create event bus
     let event_bus = EventBus::new(1000);
@@ -378,13 +360,13 @@ use lighty_core::errors::{DownloadError, ExtractError, HashError, AppStateError}
 #[tokio::main]
 async fn main() {
     // AppState errors
-    match AppState::new("".into(), "".into(), "".into()) {
-        Ok(_) => println!("Initialized"),
-        Err(AppStateError::ProjectDirsCreation) => {
-            eprintln!("Failed to create project directories");
-        }
-        Err(AppStateError::NotInitialized) => {
+    match AppState::init("MyLauncher") {
+        Ok(()) => println!("Initialized"),
+        Err(AppStateError::AlreadyInitialized) => {
             eprintln!("Already initialized");
+        }
+        Err(e) => {
+            eprintln!("Failed to initialize: {:?}", e);
         }
     }
 
@@ -413,7 +395,7 @@ async fn main() {
 
 ```toml
 [dependencies]
-lighty-core = { version = "0.8.6", features = ["events", "tracing"] }
+lighty-core = { version = "26.5.1", features = ["events", "tracing"] }
 ```
 
 Available features:

@@ -36,26 +36,15 @@ use lighty_version::VersionBuilder;
 use lighty_loaders::types::Loader;
 use lighty_core::AppState;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     let instance = VersionBuilder::new(
         "test",
         Loader::Vanilla,
         "",
         "1.21.1",
-        launcher_dir
     );
 
     Ok(())
@@ -69,26 +58,15 @@ use lighty_launcher::version::VersionBuilder;
 use lighty_launcher::loaders::Loader;
 use lighty_core::AppState;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     let instance = VersionBuilder::new(
         "test",
         Loader::Vanilla,
         "",
         "1.21.1",
-        launcher_dir
     );
 
     Ok(())
@@ -99,21 +77,10 @@ async fn main() -> anyhow::Result<()> {
 
 ```rust
 use lighty_launcher::prelude::*;
-use lighty_core::AppState;
-
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // VersionBuilder is included in prelude
     let instance = VersionBuilder::new(
@@ -121,7 +88,6 @@ async fn main() -> anyhow::Result<()> {
         Loader::Vanilla,
         "",
         "1.21.1",
-        launcher_dir
     );
 
     Ok(())
@@ -133,27 +99,28 @@ async fn main() -> anyhow::Result<()> {
 ### VersionBuilder
 
 ```rust
-pub struct VersionBuilder<'a, L = ()> {
+pub struct VersionBuilder<L = ()> {
     pub name: String,
     pub loader: L,
     pub loader_version: String,
     pub minecraft_version: String,
-    pub project_dirs: &'a Lazy<ProjectDirs>,
     pub game_dirs: PathBuf,
     pub java_dirs: PathBuf,
+    pub runtime_dir: PathBuf,
+    pub mod_requests: Vec<ModRequest>,
 }
 
-impl<'a, L> VersionBuilder<'a, L> {
+impl<L> VersionBuilder<L> {
     pub fn new(
         name: &str,
         loader: L,
         loader_version: &str,
         minecraft_version: &str,
-        project_dirs: &'a Lazy<ProjectDirs>,
     ) -> Self;
 
-    pub fn with_custom_game_dir(self, game_dir: PathBuf) -> Self;
     pub fn with_custom_java_dir(self, java_dir: PathBuf) -> Self;
+    // Runtime dir is relocated via the launch-side override:
+    //   .launch(...).with_arguments().set(KEY_GAME_DIRECTORY, path).done()
 }
 ```
 
@@ -164,21 +131,20 @@ impl<'a, L> VersionBuilder<'a, L> {
 ### LightyVersionBuilder
 
 ```rust
-pub struct LightyVersionBuilder<'a> {
+pub struct LightyVersionBuilder {
     pub name: String,
     pub server_url: String,
     pub minecraft_version: Option<String>,
     pub loader: Option<Loader>,
-    pub project_dirs: &'a Lazy<ProjectDirs>,
     pub game_dirs: PathBuf,
     pub java_dirs: PathBuf,
+    pub runtime_dir: PathBuf,
 }
 
-impl<'a> LightyVersionBuilder<'a> {
+impl LightyVersionBuilder {
     pub fn new(
         name: &str,
         server_url: &str,
-        project_dirs: &'a Lazy<ProjectDirs>,
     ) -> Self;
 }
 ```
@@ -256,19 +222,9 @@ use lighty_version::{VersionBuilder, LightyVersionBuilder};
 use lighty_loaders::types::{Loader, VersionInfo, LoaderExtensions};
 use lighty_launch::InstanceControl;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // VersionBuilder
     let mut fabric = VersionBuilder::new(
@@ -276,7 +232,6 @@ async fn main() -> anyhow::Result<()> {
         Loader::Fabric,
         "0.16.9",
         "1.21.1",
-        launcher_dir
     );
 
     // VersionInfo methods
@@ -296,7 +251,6 @@ async fn main() -> anyhow::Result<()> {
     let mut modpack = LightyVersionBuilder::new(
         "modpack",
         "https://server.com/api",
-        launcher_dir
     );
 
     // Same methods available

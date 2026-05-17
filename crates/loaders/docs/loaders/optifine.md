@@ -38,19 +38,9 @@ Use OptiFabric mod to run OptiFine on Fabric:
 ```rust
 use lighty_launcher::prelude::*;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // Create Fabric instance
     let instance = VersionBuilder::new(
@@ -58,7 +48,6 @@ async fn main() -> anyhow::Result<()> {
         Loader::Fabric,
         "0.16.9",
         "1.21.1",
-        launcher_dir
     );
 
     // Manually install OptiFine JAR to mods/ directory
@@ -148,19 +137,9 @@ Instead of using OptiFine as a "loader", use it as a mod:
 ```rust
 use lighty_launcher::prelude::*;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // 1. Create base instance (Vanilla or Fabric)
     let instance = VersionBuilder::new(
@@ -168,11 +147,10 @@ async fn main() -> anyhow::Result<()> {
         Loader::Fabric,  // or Loader::Vanilla
         "0.16.9",        // or ""
         "1.21.1",
-        launcher_dir
     );
 
     // 2. Manually download OptiFine JAR
-    let mods_dir = launcher_dir.data_dir()
+    let mods_dir = AppState::data_dir()
         .join("instances")
         .join("my-instance")
         .join("mods");

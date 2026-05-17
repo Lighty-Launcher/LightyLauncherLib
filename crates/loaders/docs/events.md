@@ -159,16 +159,7 @@ use lighty_launcher::prelude::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
-let _app = AppState::new(
-    QUALIFIER.to_string(),
-    ORGANIZATION.to_string(),
-    APPLICATION.to_string(),
-)?;
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // Create event bus
     let event_bus = EventBus::new(1000);
@@ -204,7 +195,7 @@ let _app = AppState::new(
     });
 
     // Create instance (will emit events)
-    let instance = VersionBuilder::new("fabric-1.21", Loader::Fabric, "0.16.9", "1.21.1", launcher_dir);
+    let instance = VersionBuilder::new("fabric-1.21", Loader::Fabric, "0.16.9", "1.21.1");
 
     // This will trigger LoaderEvent emissions
     let _metadata = instance.get_metadata().await?;

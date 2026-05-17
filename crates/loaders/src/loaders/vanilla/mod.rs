@@ -1,2 +1,2 @@
 pub mod vanilla;
-mod vanilla_metadata;
+pub(crate) mod vanilla_metadata;

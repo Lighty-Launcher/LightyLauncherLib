@@ -1,0 +1,53 @@
+[package]
+name = "lighty-modsloader"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+rust-version.workspace = true
+description = "Mods + modpacks resolver (Modrinth / CurseForge) for Lighty Launcher"
+
+[dependencies]
+# Workspace crates
+lighty-core = { workspace = true }
+lighty-loaders = { workspace = true }
+lighty-event = { workspace = true, optional = true }
+
+# Async Runtime
+tokio.workspace = true
+
+# HTTP Client
+reqwest.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Async Utilities
+async-trait.workspace = true
+futures.workspace = true
+
+# Error Handling
+thiserror.workspace = true
+
+# Logging
+tracing = { workspace = true, optional = true }
+
+# Utilities
+once_cell.workspace = true
+
+[features]
+default = []
+# Each mod-source feature pulls in its own modpack format parser
+# (`.mrpack` for Modrinth, `.zip` for CurseForge) — there is no separate
+# `modpack` feature: enabling either provider implies its modpack support.
+modrinth = []
+curseforge = []
+all-mods = ["modrinth", "curseforge"]
+tracing = ["dep:tracing"]
+# Native event emission from `resolver::resolve` — emits the
+# `LaunchEvent::ModResolve*` variants directly on the supplied EventBus.
+events = ["dep:lighty-event"]

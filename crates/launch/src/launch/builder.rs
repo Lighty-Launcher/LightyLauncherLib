@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Hamadi
 // Licensed under the MIT License
 
-//! Launch builder for configuring game arguments and JVM options
+//! Launch builder for game arguments and JVM options.
 
 use std::collections::{HashMap, HashSet};
 use lighty_auth::UserProfile;
@@ -14,9 +14,7 @@ use crate::installer::Installer;
 #[cfg(feature = "events")]
 use lighty_event::EventBus;
 
-/// Launch builder for configuring launch parameters
-///
-/// Created by calling `version.launch(&profile, java_distribution)`
+/// Launch builder. Created by `version.launch(&profile, java_distribution)`.
 pub struct LaunchBuilder<'a, T> {
     pub(crate) version: &'a mut T,
     pub(crate) profile: &'a UserProfile,
@@ -32,7 +30,11 @@ pub struct LaunchBuilder<'a, T> {
 
 impl<'a, T> LaunchBuilder<'a, T>
 where
-    T: VersionInfo<LoaderType = Loader> + LoaderExtensions + Arguments + Installer,
+    T: VersionInfo<LoaderType = Loader>
+        + LoaderExtensions
+        + Arguments
+        + Installer
+        + lighty_modsloader::WithMods,
 {
     /// Create a new launch builder
     pub(crate) fn new(
@@ -57,12 +59,25 @@ where
     /// Set an event bus to receive download progress events
     ///
     /// # Example
-    /// ```no_run
+    /// ```rust,no_run
+    /// # use lighty_auth::UserProfile;
+    /// # use lighty_core::AppState;
+    /// # use lighty_launch::errors::InstallerResult;
+    /// # use lighty_event::EventBus;
+    /// # use lighty_java::JavaDistribution;
+    /// # use lighty_launch::launch::Launch;
+    /// # use lighty_loaders::types::Loader;
+    /// # use lighty_version::VersionBuilder;
+    /// # async fn run() -> InstallerResult<()> {
+    /// # AppState::init("MyLauncher").ok();
+    /// # let profile = UserProfile::offline("Player", "");
+    /// # let mut version = VersionBuilder::new("inst", Loader::Vanilla, "", "1.21.1");
     /// let event_bus = EventBus::new(100);
     /// version.launch(&profile, JavaDistribution::Zulu)
     ///     .with_event_bus(&event_bus)
     ///     .run()
     ///     .await?;
+    /// # Ok(()) }
     /// ```
     #[cfg(feature = "events")]
     pub fn with_event_bus(mut self, event_bus: &'a EventBus) -> Self {
@@ -73,7 +88,18 @@ where
     /// Configure JVM options
     ///
     /// # Example
-    /// ```no_run
+    /// ```rust,no_run
+    /// # use lighty_auth::UserProfile;
+    /// # use lighty_core::AppState;
+    /// # use lighty_launch::errors::InstallerResult;
+    /// # use lighty_java::JavaDistribution;
+    /// # use lighty_launch::launch::Launch;
+    /// # use lighty_loaders::types::Loader;
+    /// # use lighty_version::VersionBuilder;
+    /// # async fn run() -> InstallerResult<()> {
+    /// # AppState::init("MyLauncher").ok();
+    /// # let profile = UserProfile::offline("Player", "");
+    /// # let mut version = VersionBuilder::new("inst", Loader::Vanilla, "", "1.21.1");
     /// version.launch(&profile, JavaDistribution::Zulu)
     ///     .with_jvm_options()
     ///         .set("Xmx", "4G")
@@ -81,7 +107,8 @@ where
     ///         .set("XX:+UseG1GC", "")
     ///         .done()
     ///     .run()
-    ///     .await
+    ///     .await?;
+    /// # Ok(()) }
     /// ```
     pub fn with_jvm_options(self) -> JvmOptionsBuilder<'a, T> {
         JvmOptionsBuilder {
@@ -94,14 +121,26 @@ where
     /// Configure game arguments
     ///
     /// # Example
-    /// ```no_run
+    /// ```rust,no_run
+    /// # use lighty_auth::UserProfile;
+    /// # use lighty_core::AppState;
+    /// # use lighty_launch::errors::InstallerResult;
+    /// # use lighty_java::JavaDistribution;
+    /// # use lighty_launch::launch::Launch;
+    /// # use lighty_loaders::types::Loader;
+    /// # use lighty_version::VersionBuilder;
+    /// # async fn run() -> InstallerResult<()> {
+    /// # AppState::init("MyLauncher").ok();
+    /// # let profile = UserProfile::offline("Player", "");
+    /// # let mut version = VersionBuilder::new("inst", Loader::Vanilla, "", "1.21.1");
     /// version.launch(&profile, JavaDistribution::Zulu)
     ///     .with_arguments()
-    ///         .set(KEY_WIDTH, "1920")
-    ///         .set(KEY_HEIGHT, "1080")
+    ///         .set("width", "1920")
+    ///         .set("height", "1080")
     ///         .done()
     ///     .run()
-    ///     .await
+    ///     .await?;
+    /// # Ok(()) }
     /// ```
     pub fn with_arguments(self) -> ArgumentsBuilder<'a, T> {
         ArgumentsBuilder {
@@ -115,8 +154,20 @@ where
     /// Execute the launch
     ///
     /// # Example
-    /// ```no_run
+    /// ```rust,no_run
+    /// # use lighty_auth::UserProfile;
+    /// # use lighty_core::AppState;
+    /// # use lighty_launch::errors::InstallerResult;
+    /// # use lighty_java::JavaDistribution;
+    /// # use lighty_launch::launch::Launch;
+    /// # use lighty_loaders::types::Loader;
+    /// # use lighty_version::VersionBuilder;
+    /// # async fn run() -> InstallerResult<()> {
+    /// # AppState::init("MyLauncher").ok();
+    /// # let profile = UserProfile::offline("Player", "");
+    /// # let mut version = VersionBuilder::new("inst", Loader::Vanilla, "", "1.21.1");
     /// version.launch(&profile, JavaDistribution::Zulu).run().await?;
+    /// # Ok(()) }
     /// ```
     pub async fn run(self) -> InstallerResult<()> {
         crate::launch::execute_launch(
@@ -160,11 +211,27 @@ where
     /// - `value`: Option value (empty string for flags)
     ///
     /// # Example
-    /// ```no_run
-    /// .set("Xmx", "4G")                        // → -Xmx4G
-    /// .set("Xms", "2G")                        // → -Xms2G
-    /// .set("XX:+UseG1GC", "")                  // → -XX:+UseG1GC
-    /// .set("Djava.library.path", "/path")      // → -Djava.library.path=/path
+    /// ```rust,no_run
+    /// # use lighty_auth::UserProfile;
+    /// # use lighty_core::AppState;
+    /// # use lighty_launch::errors::InstallerResult;
+    /// # use lighty_java::JavaDistribution;
+    /// # use lighty_launch::launch::Launch;
+    /// # use lighty_loaders::types::Loader;
+    /// # use lighty_version::VersionBuilder;
+    /// # async fn run() -> InstallerResult<()> {
+    /// # AppState::init("MyLauncher").ok();
+    /// # let profile = UserProfile::offline("Player", "");
+    /// # let mut version = VersionBuilder::new("inst", Loader::Vanilla, "", "1.21.1");
+    /// version.launch(&profile, JavaDistribution::Zulu)
+    ///     .with_jvm_options()
+    ///         .set("Xmx", "4G")                       // → -Xmx4G
+    ///         .set("XX:+UseG1GC", "")                 // → -XX:+UseG1GC
+    ///         .set("Djava.library.path", "/path")     // → -Djava.library.path=/path
+    ///         .done()
+    ///     .run()
+    ///     .await?;
+    /// # Ok(()) }
     /// ```
     pub fn set(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.overrides.insert(key.into(), value.into());
@@ -175,6 +242,28 @@ where
     ///
     /// # Arguments
     /// - `key`: JVM option key to remove
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use lighty_auth::UserProfile;
+    /// # use lighty_core::AppState;
+    /// # use lighty_launch::errors::InstallerResult;
+    /// # use lighty_java::JavaDistribution;
+    /// # use lighty_launch::launch::Launch;
+    /// # use lighty_loaders::types::Loader;
+    /// # use lighty_version::VersionBuilder;
+    /// # async fn run() -> InstallerResult<()> {
+    /// # AppState::init("MyLauncher").ok();
+    /// # let profile = UserProfile::offline("Player", "");
+    /// # let mut version = VersionBuilder::new("inst", Loader::Vanilla, "", "1.21.1");
+    /// version.launch(&profile, JavaDistribution::Zulu)
+    ///     .with_jvm_options()
+    ///         .remove("Xmx")
+    ///         .done()
+    ///     .run()
+    ///     .await?;
+    /// # Ok(()) }
+    /// ```
     pub fn remove(mut self, key: impl Into<String>) -> Self {
         self.removals.insert(key.into());
         self
@@ -214,19 +303,34 @@ where
     /// - `value`: The value for the argument
     ///
     /// # Example
-    /// ```no_run
+    /// ```rust,no_run
+    /// # use lighty_auth::UserProfile;
+    /// # use lighty_core::AppState;
+    /// # use lighty_launch::errors::InstallerResult;
+    /// # use lighty_java::JavaDistribution;
+    /// # use lighty_launch::launch::Launch;
+    /// # use lighty_loaders::types::Loader;
+    /// # use lighty_version::VersionBuilder;
     /// use lighty_launch::arguments::KEY_LAUNCHER_NAME;
-    ///
-    /// .set(KEY_LAUNCHER_NAME, "MyLauncher")   // Override ${launcher_name}
-    /// .set("width", "1920")                   // Adds --width 1920
-    /// .set("height", "1080")                  // Adds --height 1080
-    /// .set("fullscreen", "")                  // Adds --fullscreen (no value)
+    /// # async fn run() -> InstallerResult<()> {
+    /// # AppState::init("MyLauncher").ok();
+    /// # let profile = UserProfile::offline("Player", "");
+    /// # let mut version = VersionBuilder::new("inst", Loader::Vanilla, "", "1.21.1");
+    /// version.launch(&profile, JavaDistribution::Zulu)
+    ///     .with_arguments()
+    ///         .set(KEY_LAUNCHER_NAME, "MyLauncher")  // override ${launcher_name}
+    ///         .set("width", "1920")                  // adds --width 1920
+    ///         .set("fullscreen", "")                 // adds --fullscreen
+    ///         .done()
+    ///     .run()
+    ///     .await?;
+    /// # Ok(()) }
     /// ```
     pub fn set(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         let key_str = key.into();
         let value_str = value.into();
 
-        // Liste des clés de placeholders connues
+        // Known launch placeholder keys (overrides target the variable map)
         const KNOWN_PLACEHOLDERS: &[&str] = &[
             "auth_player_name", "auth_uuid", "auth_access_token", "auth_xuid",
             "clientid", "user_type", "user_properties",
@@ -236,11 +340,11 @@ where
             "classpath", "classpath_separator",
         ];
 
-        // Si c'est un placeholder connu, override
+        // Known placeholders are recorded as substitutions
         if KNOWN_PLACEHOLDERS.contains(&key_str.as_str()) {
             self.overrides.insert(key_str, value_str);
         } else {
-            // Sinon, ajouter comme argument brut avec préfixe --
+            // Anything else is appended as a raw `--key [value]` argument
             let formatted_arg = if key_str.starts_with("--") {
                 key_str
             } else if key_str.starts_with('-') {
@@ -263,6 +367,28 @@ where
     ///
     /// # Arguments
     /// - `key`: Argument key to remove
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use lighty_auth::UserProfile;
+    /// # use lighty_core::AppState;
+    /// # use lighty_launch::errors::InstallerResult;
+    /// # use lighty_java::JavaDistribution;
+    /// # use lighty_launch::launch::Launch;
+    /// # use lighty_loaders::types::Loader;
+    /// # use lighty_version::VersionBuilder;
+    /// # async fn run() -> InstallerResult<()> {
+    /// # AppState::init("MyLauncher").ok();
+    /// # let profile = UserProfile::offline("Player", "");
+    /// # let mut version = VersionBuilder::new("inst", Loader::Vanilla, "", "1.21.1");
+    /// version.launch(&profile, JavaDistribution::Zulu)
+    ///     .with_arguments()
+    ///         .remove("width")
+    ///         .done()
+    ///     .run()
+    ///     .await?;
+    /// # Ok(()) }
+    /// ```
     pub fn remove(mut self, key: impl Into<String>) -> Self {
         self.removals.insert(key.into());
         self

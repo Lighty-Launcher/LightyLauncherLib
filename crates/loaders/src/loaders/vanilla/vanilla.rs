@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use once_cell::sync::Lazy;
 use lighty_core::{mkdir, verify_file_sha1};
 use lighty_core::system::{ARCHITECTURE, OS};
-use crate::utils::error::QueryError;
+use lighty_core::QueryError;
 use crate::utils::manifest::ManifestRepository;
 use crate::utils::query::Query;
 use super::vanilla_metadata::{PistonMetaManifest, VanillaAssetFile,VanillaMetaData,Rule};
@@ -17,8 +17,16 @@ pub type Result<T> = std::result::Result<T, QueryError>;
 
 const CLIENT_NAME: &str = "client";
 
+/// Mojang's top-level version manifest (lists every released MC version).
+const PISTON_META_MANIFEST_URL: &str =
+    "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
+/// Base URL for the asset CDN — assets live at `{prefix2}/{hash}`.
+const MINECRAFT_RESOURCES: &str = "https://resources.download.minecraft.net";
+
+/// Shared cached repository for Mojang's vanilla manifests.
 pub static VANILLA: Lazy<ManifestRepository<VanillaQuery>> = Lazy::new(|| ManifestRepository::new());
 
+/// Sub-queries supported by the Vanilla loader.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum VanillaQuery {
     JavaVersion,
@@ -41,25 +49,12 @@ impl Query for VanillaQuery {
     fn name() -> &'static str {
         "vanilla"
     }
-    //OPTIONNEL FAIT UNE IMPLEMENTATION POUR LE TTL SUR LE CACHE
-    // fn cache_ttl() -> Duration {
-    //     Duration::from_secs(10 * 60)
-    // }
-    //
-    // fn cache_ttl_for_query(query: &Self::Query) -> Duration {
-    //     match query {
-    //         VanillaQuery::Libraries => Duration::from_secs(10 * 60),
-    //         VanillaQuery::Assets => Duration::from_secs(5 * 60),
-    //         VanillaQuery::Client => Duration::from_secs(3600),
-    //         _ => Duration::from_secs(1800),
-    //     }
-    // }
 
     async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<VanillaMetaData> {
-        let manifest_url = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
-        lighty_core::trace_info!("Fetching manifest from {}", manifest_url);
+        lighty_core::trace_info!("Fetching manifest from {}", PISTON_META_MANIFEST_URL);
 
-        let manifest: PistonMetaManifest = CLIENT.get(manifest_url).send().await?.json().await?;
+        let manifest: PistonMetaManifest =
+            CLIENT.get(PISTON_META_MANIFEST_URL).send().await?.json().await?;
 
         let version_info = manifest
             .versions
@@ -105,7 +100,6 @@ impl Query for VanillaQuery {
     }
 }
 
-/// --------- Libraries ----------
 fn extract_libraries(full_data: &VanillaMetaData) -> Vec<Library> {
     full_data.libraries
         .iter()
@@ -122,7 +116,6 @@ fn extract_libraries(full_data: &VanillaMetaData) -> Vec<Library> {
         .collect()
 }
 
-/// --------- Natives ----------
 fn extract_natives(full_data: &VanillaMetaData) -> Result<Vec<Native>> {
     let os_name = OS.get_vanilla_os()
         .map_err(|_| QueryError::Conversion {
@@ -139,18 +132,21 @@ fn extract_natives(full_data: &VanillaMetaData) -> Result<Vec<Native>> {
             message: format!("Unable to determine architecture bits (32 or 64). Detected architecture: {:?}", std::env::consts::ARCH)
         })?;
 
-    // macOS naming changed in Minecraft 1.19+: "osx" -> "macos" for LWJGL 3.3+
-    // We need to check both patterns for compatibility
+    // Natives selection strategy:
+    //
+    // - In MC 1.19+ Mojang renamed the macOS classifier from "osx" to "macos"
+    //   (LWJGL 3.3+), so we try both spellings when running on macOS.
+    // - Pre-1.19 Minecraft only ships x64 macOS natives; on Apple Silicon
+    //   we try the native arm64 classifier first and silently fall back to
+    //   the x64 set, which the JVM can run under Rosetta 2.
     let os_names: Vec<&str> = if os_name == "osx" {
-        vec!["osx", "macos"]  // Check both for macOS
+        vec!["osx", "macos"]
     } else {
         vec![os_name]
     };
 
-    // Architecture suffixes to try: native arch first, then x64 fallback for ARM64 (Rosetta 2)
-    // Older Minecraft versions (pre-1.19) don't have ARM64 natives
     let arch_suffixes: Vec<&str> = if arch_suffix == "-arm64" && os_name == "osx" {
-        vec!["-arm64", ""]  // Try ARM64 first, fall back to x64 (runs via Rosetta 2)
+        vec!["-arm64", ""]
     } else {
         vec![arch_suffix]
     };
@@ -158,7 +154,7 @@ fn extract_natives(full_data: &VanillaMetaData) -> Result<Vec<Native>> {
     let natives = full_data.libraries
         .iter()
         .filter_map(|lib| {
-            // Cas 1: Nouveau format (natives-{os}{arch})
+            // New format: `:natives-{os}{arch}` classifier.
             if lib.name.contains(":natives-") {
                 for os in &os_names {
                     for arch in &arch_suffixes {
@@ -183,7 +179,7 @@ fn extract_natives(full_data: &VanillaMetaData) -> Result<Vec<Native>> {
                 }
             }
 
-            // Cas 2: Ancien format (classifiers)
+            // Legacy format: classifiers map.
             if let Some(natives_map) = &lib.natives {
                 if let Some(classifiers) = &lib.downloads.classifiers {
                     if let Some(rules) = &lib.rules {
@@ -192,7 +188,6 @@ fn extract_natives(full_data: &VanillaMetaData) -> Result<Vec<Native>> {
                         }
                     }
 
-                    // Try all OS name variants
                     for os in &os_names {
                         if let Some(classifier_pattern) = natives_map.get(*os) {
                             let classifier_name = classifier_pattern.replace("${arch}", arch_bits);
@@ -218,8 +213,8 @@ fn extract_natives(full_data: &VanillaMetaData) -> Result<Vec<Native>> {
     Ok(natives)
 }
 
-/// Vérifie si les rules permettent d'utiliser cette bibliothèque sur l'OS actuel
-fn should_apply_rules(rules: &[Rule], os_name: &str) -> bool {
+/// Returns whether the library's `rules` allow using it on the current OS.
+pub(crate) fn should_apply_rules(rules: &[Rule], os_name: &str) -> bool {
     let mut allowed = false;
 
     for rule in rules {
@@ -235,26 +230,22 @@ fn should_apply_rules(rules: &[Rule], os_name: &str) -> bool {
     allowed
 }
 
-/// --------- Java Version ----------
 fn extract_java_version(full_data: &VanillaMetaData) -> JavaVersion {
     full_data.java_version
         .as_ref()
         .map(|v| JavaVersion { major_version: v.major_version as u8 })
         .unwrap_or_else(|| {
-            // For very old Minecraft versions (<1.17), java_version is not specified
-            // Default to Java 8 which is compatible with legacy versions
+            // MC < 1.17 doesn't carry java_version; default to 8.
             JavaVersion { major_version: 8 }
         })
 }
 
-/// --------- Main Class ----------
 fn extract_main_class(full_data: &VanillaMetaData) -> MainClass {
     MainClass {
         main_class: full_data.main_class.clone(),
     }
 }
 
-/// --------- Assets ----------
 fn extract_assets_index(full_data: &VanillaMetaData) -> AssetIndex {
     AssetIndex {
         id: full_data.asset_index.id.clone(),
@@ -268,14 +259,11 @@ fn extract_assets_index(full_data: &VanillaMetaData) -> AssetIndex {
 async fn extract_assets<V: VersionInfo>(version: &V, full_data: &VanillaMetaData) -> Result<AssetsFile> {
     let asset_index = &full_data.asset_index;
 
-    // Créer le dossier assets/indexes
     let indexes_dir = version.game_dirs().join("assets").join("indexes");
     mkdir!(indexes_dir);
 
-    // Chemin du fichier index (ex: assets/indexes/1.7.10.json ou 26.json)
     let index_file_path = indexes_dir.join(format!("{}.json", asset_index.id));
 
-    // Vérifier si le fichier existe et est valide
     let needs_download = if index_file_path.exists() {
         match verify_file_sha1(&index_file_path, &asset_index.sha1).await {
             Ok(true) => {
@@ -292,7 +280,6 @@ async fn extract_assets<V: VersionInfo>(version: &V, full_data: &VanillaMetaData
         true
     };
 
-    // Télécharger si nécessaire
     if needs_download {
         lighty_core::trace_info!("[Assets] Downloading index {} from {}", asset_index.id, asset_index.url);
 
@@ -327,12 +314,12 @@ async fn extract_assets<V: VersionInfo>(version: &V, full_data: &VanillaMetaData
     let index_content = tokio::fs::read_to_string(&index_file_path).await?;
     let vanilla_assets: VanillaAssetFile = serde_json::from_str(&index_content)?;
 
-    // Construire l'AssetsFile avec les URLs
     let objects = vanilla_assets.objects
         .into_iter()
         .map(|(k, v)| {
             let url = Some(format!(
-                "https://resources.download.minecraft.net/{}/{}",
+                "{}/{}/{}",
+                MINECRAFT_RESOURCES,
                 &v.hash[0..2],
                 v.hash
             ));
@@ -362,7 +349,6 @@ fn extract_client<V: VersionInfo>(version: &V, full_data: &VanillaMetaData) -> R
         })
 }
 
-/// --------- Arguments ----------
 fn extract_arguments(full_data: &VanillaMetaData) -> Arguments {
     if let Some(args) = &full_data.arguments {
         Arguments {

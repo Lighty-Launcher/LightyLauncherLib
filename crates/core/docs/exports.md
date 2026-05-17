@@ -94,6 +94,11 @@ use lighty_core::errors::{
     AppStateError,
     AppStateResult,
 };
+
+// AppStateError variants:
+// - NotInitialized
+// - AlreadyInitialized
+// - MissingDir(&'static str)
 ```
 
 **Or use direct paths**:
@@ -180,17 +185,9 @@ use lighty_core::{
     hash::verify_file_sha1,
 };
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    AppState::init("MyLauncher")?;
 
     println!("OS: {:?}, Arch: {:?}", OS, ARCHITECTURE);
 
@@ -206,17 +203,9 @@ use lighty_launcher::core::{
     system::{OS, ARCHITECTURE},
 };
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    AppState::init("MyLauncher")?;
 
     Ok(())
 }
@@ -228,17 +217,9 @@ async fn main() -> anyhow::Result<()> {
 // Note: lighty-core doesn't have a prelude, but lighty-launcher might
 use lighty_launcher::prelude::*;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    AppState::init("MyLauncher")?;
 
     Ok(())
 }
@@ -337,13 +318,13 @@ match verify_file_sha1(Path::new("file.jar"), "expected-sha1").await {
 use lighty_core::AppState;
 use lighty_core::errors::AppStateError;
 
-match AppState::new("com".into(), "MyOrg".into(), "".into()) {
-    Ok(state) => println!("Initialized"),
-    Err(AppStateError::ProjectDirsCreation) => {
-        eprintln!("Failed to create project directories");
-    }
-    Err(AppStateError::NotInitialized) => {
+match AppState::init("MyOrg") {
+    Ok(()) => println!("Initialized"),
+    Err(AppStateError::AlreadyInitialized) => {
         eprintln!("AppState already initialized");
+    }
+    Err(e) => {
+        eprintln!("Failed to initialize: {:?}", e);
     }
 }
 ```
@@ -354,7 +335,7 @@ match AppState::new("com".into(), "MyOrg".into(), "".into()) {
 
 ```toml
 [dependencies]
-lighty-core = { version = "0.8.6", features = ["events"] }
+lighty-core = { version = "26.5.1", features = ["events"] }
 ```
 
 When `events` feature is enabled:
@@ -380,7 +361,7 @@ zip_extract(reader, output).await?;
 
 ```toml
 [dependencies]
-lighty-core = { version = "0.8.6", features = ["tracing"] }
+lighty-core = { version = "26.5.1", features = ["tracing"] }
 ```
 
 When `tracing` feature is enabled:

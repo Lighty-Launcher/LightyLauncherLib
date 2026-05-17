@@ -1,18 +1,14 @@
 // Copyright (c) 2025 Hamadi
 // Licensed under the MIT License
 
-//! BellSoft Liberica distribution provider
-//!
-//! Uses Foojay API: https://api.foojay.io/
+//! BellSoft Liberica distribution provider (Foojay API).
 
 use crate::errors::{DistributionError, DistributionResult};
 use crate::distribution::api_models::FoojayResponse;
 use lighty_core::system::{ARCHITECTURE, OS};
 use lighty_core::hosts::HTTP_CLIENT;
 
-/// Builds BellSoft Liberica download URL using Foojay API
-///
-/// Queries the Foojay API to get the latest Liberica JRE package
+/// Builds BellSoft Liberica download URL via the Foojay API.
 pub async fn build_liberica_url(version: &u8) -> DistributionResult<String> {
     let os_name = OS.get_zulu_name()?;
     let arch = ARCHITECTURE.get_simple_name()?;
@@ -41,7 +37,6 @@ pub async fn build_liberica_url(version: &u8) -> DistributionResult<String> {
             error: e.to_string(),
         })?;
 
-    // Take the first package without cloning
     foojay_response.result
         .into_iter()
         .next()

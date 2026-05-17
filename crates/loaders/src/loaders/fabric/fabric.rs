@@ -1,6 +1,8 @@
 use crate::types::version_metadata::{ Library, MainClass, Arguments, Version, VersionMetaData};
 use crate::types::VersionInfo;
-use crate::utils::{error::QueryError, query::Query, manifest::ManifestRepository};
+use lighty_core::QueryError;
+use crate::utils::{query::Query, manifest::ManifestRepository};
+use crate::utils::maven::{fetch_file_size, fetch_maven_sha1};
 use crate::loaders::vanilla::{vanilla::VanillaQuery};
 use once_cell::sync::Lazy;
 use super::fabric_metadata::FabricMetaData;
@@ -9,10 +11,17 @@ use lighty_core::hosts::HTTP_CLIENT as CLIENT;
 use futures::future::join_all;
 use std::collections::HashMap;
 
+/// FabricMC metadata server (returns the `profile/json` manifest).
+const FABRIC_META: &str = "https://meta.fabricmc.net/v2/versions/loader";
+/// Default Maven repository when a library entry omits `url`.
+const FABRIC_MAVEN: &str = "https://maven.fabricmc.net/";
+
 pub type Result<T> = std::result::Result<T, QueryError>;
 
+/// Shared cached repository for Fabric manifests.
 pub static FABRIC: Lazy<ManifestRepository<FabricQuery>> = Lazy::new(|| ManifestRepository::new());
 
+/// Sub-queries supported by the Fabric loader.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FabricQuery {
     Libraries,
@@ -33,8 +42,10 @@ impl Query for FabricQuery {
 
     async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<FabricMetaData> {
         let manifest_url = format!(
-            "https://meta.fabricmc.net/v2/versions/loader/{}/{}/profile/json",
-            version.minecraft_version(), version.loader_version()
+            "{}/{}/{}/profile/json",
+            FABRIC_META,
+            version.minecraft_version(),
+            version.loader_version()
         );
         lighty_core::trace_debug!(url = %manifest_url, loader = "fabric", "Fetching manifest");
         let manifest: FabricMetaData = CLIENT.get(manifest_url).send().await?.json().await?;
@@ -61,7 +72,6 @@ impl Query for FabricQuery {
         extract_libraries(full_data)
     )?;
 
-        // Merger directement avec Vanilla en priorité
         Ok(Version {
             main_class: merge_main_class(vanilla_builder.main_class, extract_main_class(full_data)),
             java_version: vanilla_builder.java_version,
@@ -105,18 +115,16 @@ fn merge_arguments(vanilla: Arguments, fabric: Arguments) -> Arguments {
     }
 }
 
-/// Évite les doublons en comparant group:artifact (sans version)
+/// Merges library lists, de-duplicating by `group:artifact`. Fabric wins.
 fn merge_libraries(vanilla_libs: Vec<Library>, fabric_libs: Vec<Library>) -> Vec<Library> {
     let capacity = vanilla_libs.len() + fabric_libs.len();
     let mut lib_map: HashMap<String, Library> = HashMap::with_capacity(capacity);
 
-    // Ajouter Vanilla d'abord
     for lib in vanilla_libs {
         let key = extract_artifact_key(&lib.name);
         lib_map.insert(key, lib);
     }
 
-    // Fabric écrase Vanilla si même artifact (version plus récente)
     for lib in fabric_libs {
         let key = extract_artifact_key(&lib.name);
         lib_map.insert(key, lib);
@@ -125,9 +133,6 @@ fn merge_libraries(vanilla_libs: Vec<Library>, fabric_libs: Vec<Library>) -> Vec
     lib_map.into_values().collect()
 }
 
-
-
-/// Extrait "group:artifact" (sans version) pour identifier les doublons
 fn extract_artifact_key(maven_name: &str) -> String {
     let mut parts = maven_name.split(':');
     match (parts.next(), parts.next()) {
@@ -136,8 +141,7 @@ fn extract_artifact_key(maven_name: &str) -> String {
     }
 }
 
-///-----------------------------
-/// Version optimisée avec requêtes parallèles - retourne Result pour try_join!
+/// Parallel-fetch implementation; returns `Result` for `tokio::try_join!`.
 async fn extract_libraries(full_data: &FabricMetaData) -> Result<Vec<Library>> {
     let futures = full_data.libraries.iter().map(|lib| {
         let lib_name = lib.name.clone();
@@ -146,10 +150,10 @@ async fn extract_libraries(full_data: &FabricMetaData) -> Result<Vec<Library>> {
         let lib_size = lib.size;
 
         async move {
-            let base_url = lib_url.as_deref().unwrap_or("https://maven.fabricmc.net/");
+            let base_url = lib_url.as_deref().unwrap_or(FABRIC_MAVEN);
             let (path, full_url) = maven_artifact_to_path_and_url(&lib_name, base_url);
 
-            // Si SHA1 ou size sont manquants, on les récupère
+            // Only hit Maven for SHA1/size when the manifest didn't supply them.
             let (sha1, size) = if lib_sha1.is_none() || lib_size.is_none() {
                 tokio::join!(
                     async {
@@ -181,7 +185,6 @@ async fn extract_libraries(full_data: &FabricMetaData) -> Result<Vec<Library>> {
         }
     });
 
-    // Attendre toutes les requêtes en parallèle
     Ok(join_all(futures).await)
 }
 
@@ -193,49 +196,13 @@ fn maven_artifact_to_path_and_url(maven_name: &str, base_url: &str) -> (String, 
         _ => return (String::new(), String::new()),
     };
 
-    // Convertir group.id en chemin (ex: "org.ow2.asm" -> "org/ow2/asm")
     let group_path = group_id.replace('.', "/");
-
-    // Construire le nom du fichier JAR
     let jar_name = format!("{}-{}.jar", artifact_id, version);
-
-    // Construire le path relatif
     let path = format!("{}/{}/{}/{}", group_path, artifact_id, version, jar_name);
-
-    // Construire l'URL complète
     let base = base_url.trim_end_matches('/');
     let full_url = format!("{}/{}", base, path);
 
     (path, full_url)
-}
-
-/// Récupère le SHA1 d'un artifact Maven depuis le fichier .sha1
-async fn fetch_maven_sha1(jar_url: &str) -> Option<String> {
-    let sha1_url = format!("{}.sha1", jar_url);
-
-    match CLIENT.get(&sha1_url).send().await {
-        Ok(response) if response.status().is_success() => {
-            response.text().await.ok().and_then(|text| {
-                let sha1 = text.trim().split_whitespace().next()?.to_string();
-                (sha1.len() == 40).then_some(sha1)
-            })
-        }
-        _ => None,
-    }
-}
-
-/// Récupère la taille d'un fichier sans le télécharger (HEAD request)
-async fn fetch_file_size(url: &str) -> Option<u64> {
-    CLIENT.head(url)
-        .send()
-        .await
-        .ok()?
-        .headers()
-        .get("content-length")?
-        .to_str()
-        .ok()?
-        .parse()
-        .ok()
 }
 
 fn extract_arguments(full_data: &FabricMetaData) -> Arguments {

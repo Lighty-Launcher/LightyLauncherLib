@@ -137,8 +137,7 @@ Detailed walkthroughs of all examples:
 #### Build a Custom Launcher UI
 
 1. Read: [Architecture - System Overview](./architecture.md#system-overview)
-2. Check Tauri integration: [Re-exports - Tauri Module](./reexports.md#tauri-module-lighty_launchertauri)
-3. Use events: [Examples - with_events.rs](./examples.md#with_eventsrs)
+2. Use events: [Examples - with_events.rs](./examples.md#with_eventsrs)
 
 ## Crate-Specific Documentation
 
@@ -174,15 +173,31 @@ Each crate has its own detailed documentation:
 
 All examples are located in `examples/`:
 
-- **vanilla.rs** - Basic Vanilla launcher
-- **fabric.rs** - Fabric mod loader
-- **quilt.rs** - Quilt mod loader
-- **neoforge.rs** - NeoForge mod loader
-- **forge.rs** - Forge mod loader
-- **forge_legacy.rs** - Legacy Forge (1.7.10-1.12.2)
-- **optifine.rs** - OptiFine
-- **lighty_updater.rs** - Custom modpack server
-- **with_events.rs** - Complete event system demo
+### Loaders (flat under `examples/`)
+
+- **vanilla.rs** — Basic Vanilla launcher
+- **fabric.rs** — Fabric mod loader
+- **quilt.rs** — Quilt mod loader
+- **neoforge.rs** — NeoForge (MS auth + console streaming)
+- **forge.rs** — Forge — modern (≥ 1.13) and legacy (1.5.2 → 1.12.2)
+  in the same `forge` feature flag (MS auth + console streaming)
+- **optifine.rs** — OptiFine
+- **lighty_updater.rs** — Custom modpack server
+
+### Auth + persistent "remember me" (`examples/auth/`)
+
+- **auth/microsoft.rs** — Silent refresh-token re-auth + OS keyring
+- **auth/azuriom.rs** — `verify()` of saved session + OS keyring
+- **auth/custom.rs** — Skeleton for your own backend + OS keyring
+
+### Mods (`examples/mods/`)
+
+- **mods/modrinth.rs** — Modrinth public API
+- **mods/curseforge.rs** — CurseForge keyed API (needs `CURSEFORGE_API_KEY`)
+
+### Full showcase
+
+- **with_events/events.rs** — Complete event-bus tour + instance control
 
 See [Examples Guide](./examples.md) for detailed walkthroughs.
 

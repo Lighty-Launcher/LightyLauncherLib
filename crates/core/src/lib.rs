@@ -1,3 +1,5 @@
+//! Foundation utilities (AppState, HTTP client, hashing, download, extract, OS probe).
+
 pub mod system;
 pub mod macros;
 pub mod hosts;
@@ -7,15 +9,14 @@ pub mod hash;
 pub mod errors;
 pub mod app_state;
 
-// Re-export error types for easy access
 pub use errors::{
     SystemError, SystemResult,
     ExtractError, ExtractResult,
     DownloadError, DownloadResult,
     AppStateError, AppStateResult,
+    QueryError, QueryResult,
 };
 
-// Re-export hash types for easy access
 pub use hash::{
     HashError, HashResult,
     verify_file_sha1, verify_file_sha1_streaming,
@@ -23,5 +24,4 @@ pub use hash::{
     calculate_sha1_bytes, calculate_sha1_bytes_raw,
 };
 
-// Re-export app state
 pub use app_state::AppState;

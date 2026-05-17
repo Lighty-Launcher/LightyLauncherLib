@@ -1,9 +1,13 @@
-use lighty_launcher::prelude::*;
-use lighty_java::JreError;
+//! LightyUpdater launch example.
+//!
+//! `LightyVersionBuilder::new(name, server_url)` — the MC version
+//! and loader are resolved from the remote server's metadata at install
+//! time, not specified locally.
+//!
+//! The server must expose the LightyUpdater protocol (a JSON manifest
+//! describing the loader + libraries + assets to fetch).
 
-const QUALIFIER: &str = "fr";
-const ORGANIZATION: &str = ".LightyLauncher";
-const APPLICATION: &str = "";
+use lighty_launcher::prelude::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -12,13 +16,7 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
-    let _app_state = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("LightyLauncher")?;
 
     // Authenticate
     let mut auth = OfflineAuth::new("Hamadi");
@@ -31,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
     let url = "http://dev.polargames";
 
     // Build LightyUpdater instance
-    let mut version = LightyVersionBuilder::new("wynlers-dev", url, launcher_dir);
+    let mut version = LightyVersionBuilder::new("wynlers-dev", url);
 
     // Fetch metadata to verify connection
     let _metadata = version.get_metadata().await?;

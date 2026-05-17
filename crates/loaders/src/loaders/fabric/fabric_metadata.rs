@@ -1,3 +1,8 @@
+//! Serde mirrors of the JSON returned by `meta.fabricmc.net`.
+//!
+//! These are wire-format types; see `fabric.rs` for the `extract_*`
+//! functions that translate them into the launcher's pivot types.
+
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]

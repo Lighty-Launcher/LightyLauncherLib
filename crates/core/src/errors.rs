@@ -57,11 +57,14 @@ pub type ExtractResult<T> = Result<T, ExtractError>;
 /// Errors related to application state initialization
 #[derive(Debug, Error)]
 pub enum AppStateError {
-    #[error("Failed to create project directories")]
-    ProjectDirsCreation,
+    #[error("AppState::init() has already been called")]
+    AlreadyInitialized,
 
-    #[error("AppState not initialized")]
+    #[error("AppState::init() has not been called yet — call it once at startup")]
     NotInitialized,
+
+    #[error("Platform doesn't expose a standard {0} directory")]
+    MissingPlatformDir(&'static str),
 }
 
 /// Type alias for download operations results
@@ -69,3 +72,61 @@ pub type DownloadResult<T> = Result<T, DownloadError>;
 
 /// Type alias for app state operations results
 pub type AppStateResult<T> = Result<T, AppStateError>;
+
+/// Errors returned by every loader / mods query operation.
+#[derive(Error, Debug)]
+pub enum QueryError {
+    #[error("Network error: {0}")]
+    Network(#[from] reqwest::Error),
+
+    #[error("JSON parsing error: {0}")]
+    JsonParsing(#[from] serde_json::Error),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Version '{version}' not found in manifest")]
+    VersionNotFound { version: String },
+
+    #[error("Missing field '{field}' in manifest data")]
+    MissingField { field: String },
+
+    #[error("Assets fetch error: failed to fetch assets from URL '{url}'")]
+    AssetsFetch { url: String },
+
+    #[error("Conversion error: {message}")]
+    Conversion { message: String },
+
+    #[error("Archive corrupted ({context}): {reason}")]
+    ArchiveCorrupted { context: String, reason: String },
+
+    #[error("Unsupported {what}: expected {expected}, found {found}")]
+    UnsupportedFormat {
+        what: String,
+        expected: String,
+        found: String,
+    },
+
+    #[error("Unsupported loader: {0}")]
+    UnsupportedLoader(String),
+
+    #[error("Invalid metadata format")]
+    InvalidMetadata,
+
+    #[error("Mod not found on {provider}: {id}")]
+    ModNotFound { provider: &'static str, id: String },
+
+    #[error("Mod {id} on {provider} has no version compatible with Minecraft {mc} + loader {loader}")]
+    ModIncompatible {
+        provider: &'static str,
+        id: String,
+        mc: String,
+        loader: String,
+    },
+
+    #[error("Mod {id} on CurseForge disallows third-party distribution; download manually from the project page")]
+    ModDistributionForbidden { id: String },
+}
+
+/// Type alias for query operations results.
+pub type QueryResult<T> = Result<T, QueryError>;

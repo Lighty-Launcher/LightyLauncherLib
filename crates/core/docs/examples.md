@@ -14,18 +14,13 @@ async fn main()  {
         .init();
 
     // Initialize AppState FIRST
-    let _app = AppState::new(
-        "com".into(),
-        ".MyLauncher".into(),
-        "".into()
-    )?;
+    AppState::init("MyLauncher")?;
 
     trace_info!("Application initialized");
     trace_info!("Running on: {:?}", get_os());
 
     // Get launcher directory
-    let launcher_dir = AppState::get_project_dirs();
-    trace_info!("Data dir: {:?}", launcher_dir.data_dir());
+    trace_info!("Data dir: {:?}", AppState::data_dir());
 
     Ok(())
 }
@@ -155,17 +150,13 @@ mod tests {
 
     #[test]
     fn test_app_state_init() {
-        let result = AppState::new(
-            "com".into(),
-            ".TestLauncher".into(),
-            "".into()
-        );
+        let result = AppState::init("TestLauncher");
         assert!(result.is_ok());
 
-        let name = AppState::get_app_name();
+        let name = AppState::name();
         assert_eq!(name, "TestLauncher");
 
-        let version = AppState::get_app_version();
+        let version = AppState::app_version();
         assert!(!version.is_empty());
     }
 }
@@ -180,11 +171,10 @@ use lighty_core::{AppState, get_os, trace_info};
 
 async fn initialize_launcher()  {
     // 1. Initialize AppState
-    let _app = AppState::new("com".into(), ".MyLauncher".into(), "".into())?;
+    AppState::init("MyLauncher")?;
 
     // 2. Get directories
-    let launcher_dir = AppState::get_project_dirs();
-    let data_dir = launcher_dir.data_dir();
+    let data_dir = AppState::data_dir();
 
     // 3. Create required directories
     tokio::fs::create_dir_all(data_dir.join("instances")).await?;

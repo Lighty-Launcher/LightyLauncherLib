@@ -46,7 +46,7 @@ use lighty_launcher::prelude::VersionInfo;
 Returns the instance name (unique identifier).
 
 ```rust
-let instance = VersionBuilder::new("my-instance", Loader::Vanilla, "", "1.21.1", launcher_dir);
+let instance = VersionBuilder::new("my-instance", Loader::Vanilla, "", "1.21.1");
 println!("Instance name: {}", instance.name()); // "my-instance"
 ```
 
@@ -55,7 +55,7 @@ println!("Instance name: {}", instance.name()); // "my-instance"
 Returns the loader version string.
 
 ```rust
-let instance = VersionBuilder::new("fabric-1.21", Loader::Fabric, "0.16.9", "1.21.1", launcher_dir);
+let instance = VersionBuilder::new("fabric-1.21", Loader::Fabric, "0.16.9", "1.21.1");
 println!("Loader version: {}", instance.loader_version()); // "0.16.9"
 ```
 
@@ -185,18 +185,9 @@ fn print_version_info<V: VersionInfo>(version: &V) {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
+    AppState::init("MyLauncher")?;
 
-let _app = AppState::new(
-    QUALIFIER.to_string(),
-    ORGANIZATION.to_string(),
-    APPLICATION.to_string(),
-)?;
-    let launcher_dir = AppState::get_project_dirs();
-
-    let instance = VersionBuilder::new("test", Loader::Fabric, "0.16.9", "1.21.1", launcher_dir);
+    let instance = VersionBuilder::new("test", Loader::Fabric, "0.16.9", "1.21.1");
 
     print_version_info(&instance);
 
@@ -351,18 +342,9 @@ use lighty_launcher::prelude::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
+    AppState::init("MyLauncher")?;
 
-let _app = AppState::new(
-    QUALIFIER.to_string(),
-    ORGANIZATION.to_string(),
-    APPLICATION.to_string(),
-)?;
-    let launcher_dir = AppState::get_project_dirs();
-
-    let instance = VersionBuilder::new("fabric-1.21", Loader::Fabric, "0.16.9", "1.21.1", launcher_dir);
+    let instance = VersionBuilder::new("fabric-1.21", Loader::Fabric, "0.16.9", "1.21.1");
 
     // Full metadata (recommended)
     let metadata = instance.get_metadata().await?;
@@ -387,7 +369,7 @@ let _app = AppState::new(
 ### Error Handling
 
 ```rust
-use lighty_loaders::utils::error::QueryError;
+use lighty_core::QueryError;
 
 match instance.get_metadata().await {
     Ok(metadata) => {

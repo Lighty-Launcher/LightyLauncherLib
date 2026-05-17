@@ -18,26 +18,14 @@ LightyUpdater allows you to define custom version metadata on your own server, p
 ```rust
 use lighty_launcher::prelude::*;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // LightyVersionBuilder for custom servers
     let instance = LightyVersionBuilder::new(
         "my-modpack",                    // Instance name
         "https://myserver.com/api",      // Server URL
-        "1.21.1",                        // Minecraft version
-        launcher_dir
     );
 
     let metadata = instance.get_metadata().await?;
@@ -56,7 +44,6 @@ let instance = VersionBuilder::new(
     Loader::LightyUpdater,
     "https://myserver.com/api",  // Server URL in loader_version field
     "1.21.1",
-    launcher_dir
 );
 ```
 
@@ -109,16 +96,31 @@ Return `VersionMetaData` compatible JSON:
 }
 ```
 
-## Merging with Vanilla
+## Merging with a base loader
 
-LightyUpdater can optionally merge with Vanilla:
+LightyUpdater merges its server-side metadata with a base loader's
+metadata. The base loader is selected by the `loader` string returned
+in the server's `ServerInfo` payload. Supported values:
 
-```rust
-// Server returns additional libraries/args
-// LightyUpdater merges them with Vanilla base
-```
+| `loader` value | Resolved to        |
+|----------------|--------------------|
+| `"vanilla"`    | `Loader::Vanilla`  |
+| `"fabric"`     | `Loader::Fabric`   |
+| `"quilt"`      | `Loader::Quilt`    |
+| `"neoforge"`   | `Loader::NeoForge` |
+| `"forge"`      | `Loader::Forge`    |
 
-This is configured server-side.
+`"forge"` was added on top of the original four: when the server
+returns `"forge"`, the merger fetches the Forge loader metadata
+(installer + processors honoured by `lighty-launch`) and folds the
+server's extra libraries / args on top. The `lighty_updater` feature
+already activates `forge` at the workspace level, so no extra feature
+flag is needed.
+
+Unknown values short-circuit with
+`QueryError::UnsupportedLoader("Unknown loader '...'")`.
+
+This is configured server-side; clients don't pick the base loader.
 
 ## Use Cases
 

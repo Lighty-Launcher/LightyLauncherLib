@@ -18,7 +18,7 @@ lighty-event = { workspace = true, optional = true }
 # Async Runtime
 tokio.workspace = true
 
-# Sérialisation
+# Serialization
 serde.workspace = true
 
 # Error Handling
@@ -27,7 +27,7 @@ thiserror.workspace = true
 # Logging
 tracing = { workspace = true, optional = true }
 
-# Chemins
+# Paths
 path-absolutize.workspace = true
 
 [features]

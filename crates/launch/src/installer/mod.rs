@@ -5,11 +5,11 @@ pub mod installer;
 pub mod config;
 mod downloader;
 mod verifier;
-mod libraries;
-mod mods;
-mod natives;
-mod client;
-mod assets;
 
-// Re-export the Installer trait
+pub(crate) mod ressources;
+// Forge/NeoForge install-processor pipeline (spawns Java; lives in `launch`
+// rather than `loaders` to share the resolved JRE path).
+#[cfg(any(feature = "forge", feature = "neoforge"))]
+pub(crate) mod processors;
+
 pub use installer::Installer;

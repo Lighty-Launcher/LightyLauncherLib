@@ -30,17 +30,9 @@ use lighty_core::extract::zip_extract;
 use tokio::fs::File;
 use tokio::io::BufReader;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = lighty_core::AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    lighty_core::AppState::init("MyLauncher")?;
 
     let event_bus = EventBus::new(1000);
     let mut receiver = event_bus.subscribe();
@@ -81,17 +73,9 @@ use lighty_core::extract::zip_extract;
 use tokio::fs::File;
 use tokio::io::BufReader;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = lighty_core::AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    lighty_core::AppState::init("MyLauncher")?;
 
     let event_bus = EventBus::new(1000);
     let mut receiver = event_bus.subscribe();
@@ -129,17 +113,9 @@ use lighty_core::extract::tar_gz_extract;
 use tokio::fs::File;
 use tokio::io::BufReader;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = lighty_core::AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    lighty_core::AppState::init("MyLauncher")?;
 
     let event_bus = EventBus::new(1000);
     let mut receiver = event_bus.subscribe();
@@ -169,17 +145,9 @@ use lighty_core::extract::zip_extract;
 use tokio::fs::File;
 use tokio::io::BufReader;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = lighty_core::AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    lighty_core::AppState::init("MyLauncher")?;
 
     let event_bus = EventBus::new(1000);
     let mut receiver = event_bus.subscribe();

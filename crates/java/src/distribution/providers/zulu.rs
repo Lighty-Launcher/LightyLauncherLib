@@ -1,40 +1,33 @@
 // Copyright (c) 2025 Hamadi
 // Licensed under the MIT License
 
-//! Azul Zulu distribution provider
-//!
-//! API Documentation: https://api.azul.com/metadata/v1/docs/
+//! Azul Zulu distribution provider.
 
 use crate::errors::{DistributionError, DistributionResult};
 use crate::distribution::api_models::ZuluPackage;
 use lighty_core::system::{ARCHITECTURE, OS};
 use lighty_core::hosts::HTTP_CLIENT;
 
-/// Builds Zulu download URL using their API
-///
-/// Queries the Azul API to get the latest JRE package for the specified version
+/// Builds Zulu download URL via the Azul API.
 pub async fn build_zulu_url(version: &u8) -> DistributionResult<String> {
     use lighty_core::system::{Architecture, OperatingSystem};
 
     let os_name = OS.get_zulu_name()?;
     let ext = OS.get_zulu_ext()?;
 
-    // For Java 8 on macOS ARM64: use x64 architecture
-    // Old Minecraft versions (pre-1.19) only have x86_64 natives, so we need x64 Java
-    // to run everything under Rosetta 2
+    // Java 8 on macOS ARM64: pre-1.19 Minecraft only ships x86_64 natives, so use
+    // x64 Java to run everything under Rosetta 2.
     let arch_name = if *version == 8 && OS == OperatingSystem::OSX && ARCHITECTURE == Architecture::AARCH64 {
-        "x64"  // Use x64 Java which runs under Rosetta 2
+        "x64"
     } else {
         ARCHITECTURE.get_zulu_arch()?
     };
 
-    // Build API URL to get latest JRE package
     let api_url = format!(
         "https://api.azul.com/metadata/v1/zulu/packages?os={}&arch={}&archive_type={}&java_package_type=jre&release_status=ga&java_version={}&latest=true",
         os_name, arch_name, ext, version
     );
 
-    // Fetch from API
     let response = HTTP_CLIENT
         .get(&api_url)
         .header("User-Agent", "Lighty-Launcher-Rust")
@@ -53,7 +46,7 @@ pub async fn build_zulu_url(version: &u8) -> DistributionResult<String> {
             error: e.to_string(),
         })?;
 
-    // Find the first package without JavaFX (-fx-)
+    // Skip JavaFX-bundled packages (-fx-).
     packages
         .into_iter()
         .find(|pkg| !pkg.name.contains("-fx-"))

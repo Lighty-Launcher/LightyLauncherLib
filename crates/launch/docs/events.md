@@ -2,203 +2,148 @@
 
 ## Overview
 
-`lighty-launch` emits `LaunchEvent` types through the event bus system provided by `lighty-event`. These events track the launch process and instance lifecycle.
+`lighty-launch` emits two event families through the bus exposed by
+`lighty-event`:
 
-**Feature**: Requires `events` feature flag
+- **`LaunchEvent`** — install lifecycle + global byte progress +
+  process spawning / exit. Owned by the launch crate.
+- **`ModloaderEvent`** — dependency resolution, modpack pipeline and
+  the per-bucket install summaries for resource packs, shader packs
+  and datapacks. **The `ModResolve*` and `Modpack*` variants used to
+  live under `LaunchEvent` — they have moved to `ModloaderEvent`.**
 
-**Export**:
-- Event types: `lighty_event::LaunchEvent`
-- Re-export: `lighty_launcher::event::LaunchEvent`
+**Feature**: Requires the `events` feature flag.
 
-## LaunchEvent Types
+**Exports**:
+- `lighty_event::LaunchEvent`
+- `lighty_event::ModloaderEvent`
+- Re-exported under `lighty_launcher::event::{LaunchEvent, ModloaderEvent}`.
 
-### DownloadingAssets
+## LaunchEvent Variants
 
-Emitted during asset download progress.
+After the refacto, `LaunchEvent` only carries install/launch lifecycle
+and process I/O. Every variant currently defined in
+`crates/event/src/module/launch.rs`:
 
-**Fields**:
-- `current: usize` - Number of assets downloaded
-- `total: usize` - Total number of assets to download
-
-**When emitted**: During asset installation
-
-**Example**:
 ```rust
-Event::Launch(LaunchEvent::DownloadingAssets { current, total }) => {
-    let progress = (current as f64 / total as f64) * 100.0;
-    println!("Assets: {}/{} ({:.1}%)", current, total, progress);
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "event")]
+pub enum LaunchEvent {
+    IsInstalled       { version: String },
+    InstallStarted    { version: String, total_bytes: u64 },
+    InstallProgress   { bytes: u64 },
+    InstallCompleted  { version: String, total_bytes: u64 },
+    Launching         { version: String },
+    Launched          { version: String, pid: u32 },
+    NotLaunched       { version: String, error: String },
+    ProcessOutput     { pid: u32, stream: String, line: String },
+    ProcessExited     { pid: u32, exit_code: i32 },
 }
 ```
 
-### DownloadingLibraries
+### IsInstalled
 
-Emitted during library download progress.
+Emitted when the verifier finds every file already valid on disk. The
+installer skips the download phase entirely (only natives are
+re-extracted, since they're cleaned on each run).
 
-**Fields**:
-- `current: usize` - Number of libraries downloaded
-- `total: usize` - Total number of libraries to download
+### InstallStarted / InstallProgress / InstallCompleted
 
-**When emitted**: During library installation
+Wrap the parallel download phase. `total_bytes` is the sum of every
+missing/outdated file across the 8 buckets (libraries, client, assets,
+mods, resourcepacks, shaderpacks, datapacks, natives). `InstallProgress`
+is emitted by the shared downloader for each byte chunk written to disk —
+sum the `bytes` field client-side to drive a progress bar.
 
-**Example**:
+### Launching / Launched / NotLaunched
+
+Lifecycle around the Java process spawn. `Launched` carries the OS
+`pid`; `NotLaunched` carries the error message when spawning failed
+before the process started.
+
+### ProcessOutput / ProcessExited
+
+Per-line stdout/stderr stream (`stream = "stdout" | "stderr"`) and the
+final exit code once the process terminates.
+
+## ModloaderEvent Variants
+
+Defined in `crates/event/src/module/modloader.rs`. Emitted by the
+resolver, the modpack pipeline and the three new mod-like buckets:
+
 ```rust
-Event::Launch(LaunchEvent::DownloadingLibraries { current, total }) => {
-    let progress = (current as f64 / total as f64) * 100.0;
-    println!("Libraries: {}/{} ({:.1}%)", current, total, progress);
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "event")]
+pub enum ModloaderEvent {
+    ResolveStarted          { request_count: usize },
+    ResolveFetching         { source: String, identifier: String },
+    ResolveDependency       { parent: String, dependency: String },
+    ResolveCompleted        { total_mods: usize },
+
+    ModpackResolveStart       { source: String },
+    ModpackArchiveDownloaded  { sha1: String, bytes: u64 },
+    ModpackOverridesExtracted { count: usize },
+    ModpackInstalled          { name: String, mods_count: usize },
+
+    ResourcePacksInstalled { count: usize, bytes: u64 },
+    ShaderPacksInstalled   { count: usize, bytes: u64 },
+    DatapacksInstalled     { count: usize, bytes: u64 },
 }
 ```
 
-### DownloadingNatives
+### Resolve* (dependency resolution)
 
-Emitted during native library download progress.
+Emitted by `lighty_modsloader::resolver::resolve` during the BFS over
+Modrinth/CurseForge mod requests. `ResolveStarted` fires once with the
+number of user-supplied requests; `ResolveFetching` fires per HTTP
+fetch; `ResolveDependency` fires whenever a parent mod pulls a new
+required dependency; `ResolveCompleted` fires once with the final mod
+count after dedup.
 
-**Fields**:
-- `current: usize` - Number of natives downloaded
-- `total: usize` - Total number of natives to download
+### Modpack* (archive pipeline)
 
-**When emitted**: During native library installation
+Emitted by the optional modpack stage (cf.
+[`installation.md`](./installation.md)). Fires in order: resolve start
+→ archive downloaded → overrides extracted → install complete.
 
-**Example**:
-```rust
-Event::Launch(LaunchEvent::DownloadingNatives { current, total }) => {
-    println!("Natives: {}/{}", current, total);
-}
-```
+### ResourcePacksInstalled / ShaderPacksInstalled / DatapacksInstalled
 
-### DownloadingMods
+Per-bucket install summaries fired by the respective wrappers in
+`crates/launch/src/installer/ressources/{resourcepacks,shaderpacks,datapacks}.rs`
+once their `asset_partition::download` step finishes. `count` is the
+number of files actually downloaded by this bucket (entries that
+already passed SHA1 verification are excluded), `bytes` is the matching
+byte total.
 
-Emitted during mod download progress.
+## Where the old variants went
 
-**Fields**:
-- `current: usize` - Number of mods downloaded
-- `total: usize` - Total number of mods to download
+| Removed from `LaunchEvent` | Now lives in |
+|----------------------------|--------------|
+| `ModResolveStarted`        | `ModloaderEvent::ResolveStarted` |
+| `ModResolveFetching`       | `ModloaderEvent::ResolveFetching` |
+| `ModResolveDependency`     | `ModloaderEvent::ResolveDependency` |
+| `ModResolveCompleted`      | `ModloaderEvent::ResolveCompleted` |
+| `ModpackResolveStart`      | `ModloaderEvent::ModpackResolveStart` |
+| `ModpackArchiveDownloaded` | `ModloaderEvent::ModpackArchiveDownloaded` |
+| `ModpackOverridesExtracted`| `ModloaderEvent::ModpackOverridesExtracted` |
+| `ModpackInstalled`         | `ModloaderEvent::ModpackInstalled` |
 
-**When emitted**: During mod installation (for loaders with mod metadata)
-
-**Example**:
-```rust
-Event::Launch(LaunchEvent::DownloadingMods { current, total }) => {
-    println!("Mods: {}/{}", current, total);
-}
-```
-
-### InstanceLaunched
-
-Emitted when Minecraft process starts successfully.
-
-**Fields**:
-- `instance_name: String` - Name of the launched instance
-- `pid: u32` - Process ID
-
-**When emitted**: After game process spawns
-
-**Example**:
-```rust
-Event::Launch(LaunchEvent::InstanceLaunched { instance_name, pid }) => {
-    println!("✓ {} launched with PID {}", instance_name, pid);
-}
-```
-
-### ConsoleOutput
-
-Emitted for each line of console output (stdout/stderr).
-
-**Fields**:
-- `pid: u32` - Process ID
-- `line: String` - Console output line
-
-**When emitted**: Real-time as game outputs to console
-
-**Example**:
-```rust
-Event::Launch(LaunchEvent::ConsoleOutput { pid, line }) => {
-    print!("[PID {}] {}", pid, line);
-}
-```
-
-### InstanceExited
-
-Emitted when game process exits.
-
-**Fields**:
-- `pid: u32` - Process ID
-- `exit_code: Option<i32>` - Exit code (None if killed)
-
-**When emitted**: After game process terminates
-
-**Example**:
-```rust
-Event::Launch(LaunchEvent::InstanceExited { pid, exit_code }) => {
-    match exit_code {
-        Some(0) => println!("Game exited normally"),
-        Some(code) => println!("Game crashed with code: {}", code),
-        None => println!("Game was killed"),
-    }
-}
-```
-
-### InstanceDeleted
-
-Emitted when instance is deleted from disk.
-
-**Fields**:
-- `instance_name: String` - Name of deleted instance
-
-**When emitted**: After `delete_instance()` completes
-
-**Example**:
-```rust
-Event::Launch(LaunchEvent::InstanceDeleted { instance_name }) => {
-    println!("Instance {} deleted", instance_name);
-}
-```
-
-## Complete Event Flow
-
-### Launch Process
-
-```
-DownloadingLibraries (repeated)
-    ↓
-DownloadingNatives (repeated)
-    ↓
-DownloadingAssets (repeated)
-    ↓
-DownloadingMods (if applicable, repeated)
-    ↓
-InstanceLaunched
-    ↓
-ConsoleOutput (continuous)
-    ↓
-InstanceExited
-```
-
-### Instance Deletion
-
-```
-InstanceDeleted
-```
+Update callers that matched on `Event::Launch(LaunchEvent::ModResolve*)`
+or `Event::Launch(LaunchEvent::Modpack*)` to match on
+`Event::Modloader(ModloaderEvent::…)` instead.
 
 ## Complete Example
 
 ```rust
-use lighty_event::{EventBus, Event, LaunchEvent};
+use lighty_event::{EventBus, Event, LaunchEvent, ModloaderEvent};
 use lighty_launch::InstanceControl;
 use lighty_core::AppState;
 use lighty_launcher::prelude::*;
 use lighty_java::JavaDistribution;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    AppState::init("MyLauncher")?;
 
     let event_bus = EventBus::new(1000);
     let mut receiver = event_bus.subscribe();
@@ -206,57 +151,56 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move {
         while let Ok(event) = receiver.next().await {
             match event {
-                Event::Launch(LaunchEvent::DownloadingLibraries { current, total }) => {
-                    println!("📦 Libraries: {}/{}", current, total);
+                Event::Launch(LaunchEvent::InstallStarted { version, total_bytes }) => {
+                    println!("Installing {} ({} bytes)", version, total_bytes);
                 }
-                Event::Launch(LaunchEvent::DownloadingNatives { current, total }) => {
-                    println!("🔧 Natives: {}/{}", current, total);
+                Event::Launch(LaunchEvent::InstallProgress { bytes }) => {
+                    println!("+{} bytes", bytes);
                 }
-                Event::Launch(LaunchEvent::DownloadingAssets { current, total }) => {
-                    println!("🎨 Assets: {}/{}", current, total);
+                Event::Launch(LaunchEvent::InstallCompleted { version, .. }) => {
+                    println!("Installed {}", version);
                 }
-                Event::Launch(LaunchEvent::DownloadingMods { current, total }) => {
-                    println!("🧩 Mods: {}/{}", current, total);
+                Event::Launch(LaunchEvent::Launched { version, pid }) => {
+                    println!("Launched {} (PID: {})", version, pid);
                 }
-                Event::Launch(LaunchEvent::InstanceLaunched { instance_name, pid }) => {
-                    println!("✓ Launched {} (PID: {})", instance_name, pid);
+                Event::Launch(LaunchEvent::ProcessOutput { pid, stream, line }) => {
+                    println!("[{} {}] {}", pid, stream, line);
                 }
-                Event::Launch(LaunchEvent::ConsoleOutput { pid, line }) => {
-                    print!("[{}] {}", pid, line);
+                Event::Launch(LaunchEvent::ProcessExited { pid, exit_code }) => {
+                    println!("PID {} exited with code {}", pid, exit_code);
                 }
-                Event::Launch(LaunchEvent::InstanceExited { pid, exit_code }) => {
-                    match exit_code {
-                        Some(0) => println!("✓ Instance {} exited normally", pid),
-                        Some(code) => println!("✗ Instance {} crashed (code: {})", pid, code),
-                        None => println!("⚠ Instance {} was killed", pid),
-                    }
+
+                Event::Modloader(ModloaderEvent::ResolveCompleted { total_mods }) => {
+                    println!("Resolved {} mods", total_mods);
                 }
-                Event::Launch(LaunchEvent::InstanceDeleted { instance_name }) => {
-                    println!("🗑 Deleted {}", instance_name);
+                Event::Modloader(ModloaderEvent::ResourcePacksInstalled { count, bytes }) => {
+                    println!("ResourcePacks: {} files / {} bytes", count, bytes);
+                }
+                Event::Modloader(ModloaderEvent::ShaderPacksInstalled { count, bytes }) => {
+                    println!("ShaderPacks: {} files / {} bytes", count, bytes);
+                }
+                Event::Modloader(ModloaderEvent::DatapacksInstalled { count, bytes }) => {
+                    println!("Datapacks: {} files / {} bytes", count, bytes);
                 }
                 _ => {}
             }
         }
     });
 
-    let launcher_dir = AppState::get_project_dirs();
     let mut instance = VersionBuilder::new(
         "fabric-1.21",
         Loader::Fabric,
         "0.16.9",
         "1.21.1",
-        launcher_dir
     );
 
     let mut auth = OfflineAuth::new("Player");
-    let profile = auth.authenticate(None).await?;
+    let profile = auth.authenticate().await?;
 
     instance.launch(&profile, JavaDistribution::Temurin)
+        .with_event_bus(&event_bus)
         .run()
         .await?;
-
-    // Keep alive to see console output
-    tokio::time::sleep(tokio::time::Duration::from_secs(120)).await;
 
     Ok(())
 }

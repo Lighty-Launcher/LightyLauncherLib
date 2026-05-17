@@ -1,8 +1,12 @@
-use lighty_launcher::prelude::*;
+//! Quilt launch example.
+//!
+//! `VersionBuilder::new(name, Loader::Quilt, loader_version, mc_version)`.
+//! Quilt only ships beta loaders — `0.20.0-beta.9` is the current head.
+//!
+//! - Supported MC versions: <https://meta.quiltmc.org/v3/versions/game>
+//! - Loader for an MC:      <https://meta.quiltmc.org/v3/versions/loader/{mc}>
 
-const QUALIFIER: &str = "fr";
-const ORGANIZATION: &str = ".LightyLauncher";
-const APPLICATION: &str = "";
+use lighty_launcher::prelude::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -11,13 +15,7 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
-    let _app_state = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("LightyLauncher")?;
 
     // Authenticate
     let mut auth = OfflineAuth::new("Hamadi");
@@ -27,9 +25,10 @@ async fn main() -> anyhow::Result<()> {
     let profile = auth.authenticate().await?;
 
     // Build and launch Quilt instance
-    let mut quilt = VersionBuilder::new("quilt", Loader::Quilt, "0.17.10", "1.18.2", launcher_dir);
+    let mut quilt = VersionBuilder::new("quilt-26.1.2", Loader::Quilt, "0.30.0", "26.1.2");
 
-    quilt.launch(&profile, JavaDistribution::Temurin)
+    quilt
+        .launch(&profile, JavaDistribution::Temurin)
         .run()
         .await?;
 

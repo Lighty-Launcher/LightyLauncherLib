@@ -49,7 +49,7 @@ trace_info!(
 ### With `tracing` Feature
 ```toml
 [dependencies]
-lighty-core = { version = "0.8.6", features = ["tracing"] }
+lighty-core = { version = "26.5.1", features = ["tracing"] }
 ```
 
 Macros expand to `tracing::*!` calls with full structured logging support.
@@ -57,7 +57,7 @@ Macros expand to `tracing::*!` calls with full structured logging support.
 ### Without `tracing` Feature
 ```toml
 [dependencies]
-lighty-core = "0.8.6"
+lighty-core = "26.5.1"
 ```
 
 Macros expand to no-ops (zero runtime cost).

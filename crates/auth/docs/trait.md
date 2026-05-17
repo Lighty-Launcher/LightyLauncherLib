@@ -10,151 +10,153 @@ The `Authenticator` trait is the core interface for all authentication providers
 
 ```rust
 pub trait Authenticator {
-    #[cfg(feature = "events")]
-    async fn authenticate(
+    /// Run the authentication flow and return a fresh profile.
+    /// The `event_bus` parameter only exists when the `events`
+    /// feature is enabled.
+    fn authenticate(
         &mut self,
-        event_bus: Option<&EventBus>,
-    ) -> AuthResult<UserProfile>;
+        #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+    ) -> impl Future<Output = AuthResult<UserProfile>> + Send;
 
-    #[cfg(not(feature = "events"))]
-    async fn authenticate(&mut self) -> AuthResult<UserProfile>;
+    /// Check whether an existing access token is still valid.
+    /// Default impl returns `AuthError::Custom("Verification not supported")`.
+    fn verify(&self, token: &str)
+        -> impl Future<Output = AuthResult<UserProfile>> + Send { /* default */ }
+
+    /// Invalidate an access token server-side. Default impl is a no-op.
+    fn logout(&self, token: &str)
+        -> impl Future<Output = AuthResult<()>> + Send { /* default */ }
 }
 ```
 
+`AuthEvent` variants carry the provider name as a plain `String`
+(`"Microsoft"`, `"Azuriom"`, `"Offline"`, or your own label) — **not**
+the `AuthProvider` enum. The enum is reserved for the `UserProfile`
+return value, where it captures provider-specific data (e.g. the MS
+refresh token).
+
+`UserProfile.access_token` is a [`SecretString`](https://docs.rs/secrecy/)
+(re-exported as `lighty_auth::SecretString`). Custom authenticators
+must wrap their token in `SecretString::from(token)` before constructing
+the profile — see the example below. `Debug` redacts it automatically
+and the profile cannot be serialised in plain JSON.
+
 ## Implementing Custom Authenticator
 
-### Basic Implementation
+A minimal implementation against a hypothetical HTTP backend — closely
+mirroring [`examples/auth/custom.rs`](../../../examples/auth/custom.rs):
 
 ```rust
-use lighty_auth::{Authenticator, UserProfile, AuthResult, AuthError};
-use lighty_core::hosts::HTTP_CLIENT;
+use lighty_launcher::prelude::*;
 
 pub struct CustomAuth {
     api_url: String,
-    api_key: String,
     username: String,
+    password: String,
 }
 
 impl CustomAuth {
-    pub fn new(api_url: &str, api_key: &str, username: &str) -> Self {
+    pub fn new(
+        api_url: impl Into<String>,
+        username: impl Into<String>,
+        password: impl Into<String>,
+    ) -> Self {
         Self {
-            api_url: api_url.to_string(),
-            api_key: api_key.to_string(),
-            username: username.to_string(),
+            api_url: api_url.into().trim_end_matches('/').to_string(),
+            username: username.into(),
+            password: password.into(),
         }
     }
 }
 
+#[derive(serde::Deserialize)]
+struct CustomAuthResponse {
+    uuid: String,
+    username: String,
+    access_token: String,
+}
+
 impl Authenticator for CustomAuth {
-    #[cfg(not(feature = "events"))]
-    async fn authenticate(&mut self) -> AuthResult<UserProfile> {
-        // Make API request
-        let response = HTTP_CLIENT
-            .get(format!("{}/auth", self.api_url))
-            .header("Authorization", format!("Bearer {}", self.api_key))
+    async fn authenticate(
+        &mut self,
+        event_bus: Option<&EventBus>,
+    ) -> AuthResult<UserProfile> {
+        if let Some(bus) = event_bus {
+            bus.emit(Event::Auth(AuthEvent::AuthenticationStarted {
+                provider: "Custom".to_string(),
+            }));
+        }
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("{}/api/login", self.api_url))
+            .json(&serde_json::json!({
+                "username": self.username,
+                "password": self.password,
+            }))
             .send()
             .await
-            .map_err(|e| AuthError::NetworkError(e.to_string()))?;
+            .map_err(|e| AuthError::Custom(e.to_string()))?;
 
-        if !response.status().is_success() {
+        if !resp.status().is_success() {
+            if let Some(bus) = event_bus {
+                bus.emit(Event::Auth(AuthEvent::AuthenticationFailed {
+                    provider: "Custom".to_string(),
+                    error: "Invalid credentials".to_string(),
+                }));
+            }
             return Err(AuthError::InvalidCredentials);
         }
 
-        let data: serde_json::Value = response.json().await
-            .map_err(|e| AuthError::ParseError(e.to_string()))?;
+        let body: CustomAuthResponse = resp
+            .json()
+            .await
+            .map_err(|e| AuthError::InvalidResponse(e.to_string()))?;
+
+        if let Some(bus) = event_bus {
+            bus.emit(Event::Auth(AuthEvent::AuthenticationSuccess {
+                provider: "Custom".to_string(),
+                username: body.username.clone(),
+                uuid: body.uuid.clone(),
+            }));
+        }
 
         Ok(UserProfile {
-            id: data["id"].as_u64(),
-            username: self.username.clone(),
-            uuid: data["uuid"].as_str().unwrap_or("").to_string(),
-            access_token: data["token"].as_str().map(String::from),
+            id: None,
+            username: body.username,
+            uuid: body.uuid,
+            access_token: Some(SecretString::from(body.access_token)),
+            #[cfg(feature = "keyring")]
+            token_handle: None,
+            xuid: None,
             email: None,
             email_verified: false,
             money: None,
             role: None,
             banned: false,
+            provider: AuthProvider::Custom { base_url: self.api_url.clone() },
         })
     }
-
-    #[cfg(feature = "events")]
-    async fn authenticate(
-        &mut self,
-        event_bus: Option<&lighty_event::EventBus>,
-    ) -> AuthResult<UserProfile> {
-        use lighty_event::{Event, AuthEvent};
-        use lighty_auth::AuthProvider;
-
-        // Emit start event
-        if let Some(bus) = event_bus {
-            bus.emit(Event::Auth(AuthEvent::AuthenticationStarted {
-                provider: AuthProvider::Custom {
-                    base_url: self.api_url.clone(),
-                },
-            }));
-        }
-
-        // Perform authentication (same logic as non-events version)
-        let profile = self.do_authenticate().await;
-
-        // Emit result event
-        if let Some(bus) = event_bus {
-            match &profile {
-                Ok(p) => {
-                    bus.emit(Event::Auth(AuthEvent::AuthenticationSuccess {
-                        username: p.username.clone(),
-                        provider: AuthProvider::Custom {
-                            base_url: self.api_url.clone(),
-                        },
-                    }));
-                }
-                Err(e) => {
-                    bus.emit(Event::Auth(AuthEvent::AuthenticationFailed {
-                        error: e.to_string(),
-                        provider: AuthProvider::Custom {
-                            base_url: self.api_url.clone(),
-                        },
-                    }));
-                }
-            }
-        }
-
-        profile
-    }
 }
 
-impl CustomAuth {
-    async fn do_authenticate(&self) -> AuthResult<UserProfile> {
-        // Shared authentication logic
-        todo!()
-    }
-}
 ```
 
 ## Usage
 
 ```rust
-use lighty_auth::Authenticator;
+use lighty_launcher::prelude::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut auth = CustomAuth::new(
         "https://api.example.com",
-        "your-api-key",
-        "username"
+        "alice",
+        "hunter2",
     );
 
-    #[cfg(not(feature = "events"))]
-    let profile = auth.authenticate().await?;
-
-    #[cfg(feature = "events")]
-    {
-        use lighty_event::EventBus;
-        let event_bus = EventBus::new(1000);
-        let profile = auth.authenticate(Some(&event_bus)).await?;
-    }
-
+    // With events: pass Some(&event_bus); without, pass None.
+    let profile = auth.authenticate(None).await?;
     println!("Authenticated: {}", profile.username);
-
     Ok(())
 }
 ```

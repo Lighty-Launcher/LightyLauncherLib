@@ -21,7 +21,7 @@ tokio-util.workspace = true
 # HTTP Client
 reqwest.workspace = true
 
-# Sérialisation
+# Serialization
 serde.workspace = true
 serde_json.workspace = true
 
@@ -40,16 +40,17 @@ async_zip.workspace = true
 # Async Utilities
 futures-util.workspace = true
 
-# Chemins & Noms de fichiers
-directories.workspace = true
+# Paths & Filenames
+dirs.workspace = true
 sanitize-filename.workspace = true
 path-absolutize.workspace = true
 
-# Système & OS
+# System & OS
 os_info.workspace = true
 
 # Utilities
 once_cell.workspace = true
+fastrand.workspace = true
 
 # Hashing
 sha1.workspace = true

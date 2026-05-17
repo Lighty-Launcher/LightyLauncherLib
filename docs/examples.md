@@ -4,17 +4,73 @@ Complete guide to all examples in the `examples/` directory.
 
 ## Overview
 
-| Example | Loader | Features | Complexity |
-|---------|--------|----------|------------|
-| [vanilla.rs](#vanillars) | Vanilla | Basic launch | ⭐ Beginner |
-| [fabric.rs](#fabricrs) | Fabric | Basic launch | ⭐ Beginner |
-| [quilt.rs](#quiltrs) | Quilt | Basic launch | ⭐ Beginner |
-| [neoforge.rs](#neoforgrs) | NeoForge | Basic launch | ⭐ Beginner |
-| [forge.rs](#forgrs) | Forge | Basic launch | ⭐⭐ Intermediate |
-| [forge_legacy.rs](#forge_legacyrs) | Forge Legacy | Basic launch | ⭐⭐ Intermediate |
-| [optifine.rs](#optifinrs) | OptiFine | Basic launch | ⭐⭐ Intermediate |
-| [lighty_updater.rs](#lighty_updaterrs) | LightyUpdater | Custom server | ⭐⭐ Intermediate |
-| [with_events.rs](#with_eventsrs) | Vanilla | Events + Instance Control | ⭐⭐⭐ Advanced |
+### Loaders (one per loader, flat under `examples/`)
+
+| Example | Loader | Features |
+|---------|--------|----------|
+| [vanilla.rs](#vanillars) | Vanilla | Basic launch |
+| [fabric.rs](#fabricrs) | Fabric | Basic launch |
+| [quilt.rs](#quiltrs) | Quilt | Basic launch |
+| [neoforge.rs](#neoforgrs) | NeoForge | MS auth + events + console output |
+| [forge.rs](#forgrs) | Forge (modern + legacy via same flag) | MS auth + events + console output |
+| [optifine.rs](#optifinrs) | OptiFine | Basic launch |
+| [lighty_updater.rs](#lighty_updaterrs) | LightyUpdater | Custom server |
+
+### Auth + persistent "remember me" (under `examples/auth/`)
+
+| Example | Provider | Purpose |
+|---------|----------|---------|
+| `auth/microsoft.rs` | Microsoft | Silent refresh-token re-auth → fallback device-code, keyring persistence |
+| `auth/azuriom.rs` | Azuriom | `verify()` of saved session → fallback credentials, keyring persistence |
+| `auth/custom.rs` | Custom backend | Skeleton `Authenticator` impl + the same keyring pattern |
+
+All three use the OS keyring (Linux Secret Service / macOS Keychain /
+Windows Credential Manager) via the [`keyring`](https://crates.io/crates/keyring)
+crate. The library itself does not depend on `keyring` — persistence
+is intentionally left to the consumer.
+
+### Mods (under `examples/mods/`)
+
+Pin individual mods from Modrinth or CurseForge. Both examples now
+include a `(slug, Some(version_id))` / `(mod_id, Some(file_id))` pinned
+entry alongside the latest-compatible one, with header-docs explaining
+where to find the IDs on the Modrinth/CurseForge web UIs.
+
+| Example | Source | Auth required |
+|---------|--------|---------------|
+| `mods/modrinth.rs` | Modrinth (public API) | No |
+| `mods/curseforge.rs` | CurseForge (keyed API) | `CURSEFORGE_API_KEY` env var |
+
+The builder API was renamed in this release:
+
+- `with_modrinth(...)` → `with_modrinth_mods(...)`
+- `with_curseforge(...)` → `with_curseforge_mods(...)`
+
+See [`crates/modsloader/docs/mods.md`](../crates/modsloader/docs/mods.md)
+for the procedure to find `version_id` / `file_id`.
+
+### Modpacks (under `examples/modpacks/`)
+
+Install a community modpack (mods + config overrides) from one source
+in a single call. All three ride on the matching provider feature
+(`modrinth` for `.mrpack`, `curseforge` for `.zip`) — there is no
+separate `modpack` feature.
+
+| Example | Source | Auth required |
+|---------|--------|---------------|
+| `modpacks/modrinth_url.rs` | Modrinth `.mrpack` via direct CDN URL | No |
+| `modpacks/modrinth_pinned.rs` | Modrinth `.mrpack` via `(project, version_id)` | No |
+| `modpacks/curseforge.rs` | CurseForge `.zip` via `(project_id, file_id)` | `CURSEFORGE_API_KEY` env var |
+
+See [`crates/modsloader/docs/modpacks.md`](../crates/modsloader/docs/modpacks.md)
+for the manifest formats, Modrinth whitelist, conflict policy on
+overrides, and idempotence model.
+
+### Full showcase (under `examples/with_events/`)
+
+| Example | Loader | Features |
+|---------|--------|----------|
+| [with_events.rs](#with_eventsrs) | Vanilla | Full event-bus tour + instance control |
 
 ## Running Examples
 
@@ -67,20 +123,10 @@ cargo run --example with_events --features vanilla,events,tracing
 ```rust
 use lighty_launcher::prelude::*;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = ".LightyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // 1. Initialize AppState
-    let _app_state = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("LightyLauncher")?;
 
     // 2. Configure downloader (optional)
     init_downloader_config(DownloaderConfig {
@@ -99,7 +145,6 @@ async fn main() -> anyhow::Result<()> {
         Loader::Vanilla,
         "",
         "1.7.10",
-        launcher_dir
     );
 
     // 5. Launch with custom options
@@ -157,7 +202,6 @@ let mut fabric = VersionBuilder::new(
     Loader::Fabric,
     "0.17.2",      // Fabric loader version
     "1.21.1",      // Minecraft version
-    launcher_dir
 );
 
 fabric.launch(&profile, JavaDistribution::Temurin)
@@ -200,7 +244,6 @@ let mut quilt = VersionBuilder::new(
     Loader::Quilt,
     "0.27.1",      // Quilt loader version
     "1.21.1",      // Minecraft version
-    launcher_dir
 );
 ```
 
@@ -214,97 +257,85 @@ cargo run --example quilt --features quilt
 
 ## neoforge.rs
 
-**Purpose**: NeoForge mod loader launcher
+**Purpose**: NeoForge mod loader launcher with Microsoft auth and live
+console streaming. Covers both eras (`net.neoforged:forge` for MC 1.20.1
+and `net.neoforged:neoforge` for MC ≥ 1.20.2).
 
 **Loader**: NeoForge
-**Features Required**: `neoforge`
+**Features Required**: `neoforge`, `events`, `tracing`
 
 ### What It Demonstrates
 
-- ✅ NeoForge loader (modern Forge fork)
-- ✅ Latest Minecraft versions
+- ✅ Microsoft device-code authentication
+- ✅ NeoForge processor pipeline
+- ✅ Live `[GAME]` / `[GAME ERR]` console output via the event bus
 
 ### Code Highlights
 
 ```rust
 let mut neoforge = VersionBuilder::new(
-    "neoforge",
+    "neoforge-1.21.8",
     Loader::NeoForge,
-    "21.1.80",     // NeoForge version
-    "1.21.1",      // Minecraft version
-    launcher_dir
+    "21.8.53",   // NeoForge version
+    "1.21.8",    // Minecraft version
 );
 ```
 
 ### Run It
 
 ```bash
-cargo run --example neoforge --features neoforge
+cargo run --example neoforge --features neoforge,events,tracing
 ```
 
 ---
 
 ## forge.rs
 
-**Purpose**: Forge mod loader launcher
+**Purpose**: Forge mod loader launcher with Microsoft auth and live
+console streaming. The `forge` feature covers both modern (≥ 1.13) and
+legacy (1.5.2 → 1.12.2) — the loader dispatches based on the installer
+schema, so the same example works for any version.
 
 **Loader**: Forge
-**Features Required**: `forge`
+**Features Required**: `forge`, `events`, `tracing`
 
 ### What It Demonstrates
 
-- ✅ Forge loader (modern versions)
-- ✅ Complex metadata merging
+- ✅ Microsoft device-code authentication
+- ✅ Modern Forge install pipeline (`install_profile.json` + processors)
+- ✅ Library merge with classifier-safe dedup (`:universal` + `:client`)
+- ✅ Live `[GAME]` / `[GAME ERR]` console output via the event bus
+- ✅ Blocking on `Event::InstanceExited` so the runtime survives the JVM
 
-### Code Highlights
+### Modern (≥ 1.13)
 
 ```rust
 let mut forge = VersionBuilder::new(
-    "forge",
+    "forge-1.21.8",
     Loader::Forge,
-    "47.3.0",      // Forge version
-    "1.20.1",      // Minecraft version
-    launcher_dir
+    "58.1.0",   // Forge loader version
+    "1.21.8",   // Minecraft version
 );
 ```
 
-### Run It
+### Legacy (1.5.2 → 1.12.2)
 
-```bash
-cargo run --example forge --features forge
-```
-
----
-
-## forge_legacy.rs
-
-**Purpose**: Legacy Forge launcher (1.7.10 - 1.12.2)
-
-**Loader**: Forge Legacy
-**Features Required**: `forge_legacy`
-
-### What It Demonstrates
-
-- ✅ Legacy Forge versions
-- ✅ Older Minecraft versions
-- ✅ Different metadata format
-
-### Code Highlights
+Same example, just swap the loader/MC versions — no separate feature
+flag and no separate example file:
 
 ```rust
-let mut forge_legacy = VersionBuilder::new(
-    "forge-legacy",
-    Loader::ForgeLegacy,
-    "10.13.4.1614",  // Forge 1.7.10 version
-    "1.7.10",        // Minecraft version
-    launcher_dir
+let mut forge = VersionBuilder::new(
+    "forge-1.12.2",
+    Loader::Forge,
+    "14.23.5.2860",
+    "1.12.2",
 );
 ```
 
 ### Run It
 
 ```bash
-cargo run --example forge_legacy --features forge_legacy
+cargo run --example forge --features forge,events,tracing
 ```
 
 ---
@@ -329,7 +360,6 @@ let mut optifine = VersionBuilder::new(
     Loader::Optifine,
     "HD_U_I6",     // OptiFine version
     "1.20.1",      // Minecraft version
-    launcher_dir
 );
 ```
 
@@ -364,7 +394,6 @@ use lighty_launcher::version::LightyVersionBuilder;
 let mut modpack = LightyVersionBuilder::new(
     "my-modpack",
     "https://myserver.com/api",  // Server URL
-    launcher_dir
 );
 
 modpack.launch(&profile, JavaDistribution::Temurin)
@@ -435,8 +464,7 @@ use std::time::Duration;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // 1. Initialize AppState
-    let _app_state = AppState::new(/*...*/)?;
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // 2. Create event bus
     let event_bus = EventBus::new(1000);
@@ -488,7 +516,6 @@ async fn main() -> anyhow::Result<()> {
         Loader::Vanilla,
         "",
         "1.21.1",
-        launcher_dir
     );
 
     // 6. Calculate instance size
@@ -574,12 +601,12 @@ Event::Java(JavaEvent::JavaExtractionCompleted { distribution, version, binary_p
 Event::Launch(LaunchEvent::IsInstalled { version })
 Event::Launch(LaunchEvent::InstallStarted { version, total_bytes })
 Event::Launch(LaunchEvent::InstallProgress { bytes })
-Event::Launch(LaunchEvent::DownloadingLibraries { current, total })
-Event::Launch(LaunchEvent::DownloadingNatives { current, total })
-Event::Launch(LaunchEvent::DownloadingClient { version })
-Event::Launch(LaunchEvent::DownloadingAssets { current, total })
-Event::Launch(LaunchEvent::DownloadingMods { current, total })
 Event::Launch(LaunchEvent::InstallCompleted { version, total_bytes })
+Event::Launch(LaunchEvent::Launching { version })
+Event::Launch(LaunchEvent::Launched { version, pid })
+Event::Launch(LaunchEvent::NotLaunched { version, error })
+Event::Launch(LaunchEvent::ProcessOutput { pid, stream, line })
+Event::Launch(LaunchEvent::ProcessExited { pid, exit_code })
 ```
 
 #### 4. Loader Events
@@ -590,6 +617,25 @@ Event::Loader(LoaderEvent::DataFetched { loader, minecraft_version, loader_versi
 Event::Loader(LoaderEvent::ManifestCached { loader })
 Event::Loader(LoaderEvent::MergingLoaderData { base_loader, overlay_loader })
 Event::Loader(LoaderEvent::DataMerged { base_loader, overlay_loader })
+```
+
+#### 4b. Modloader Events
+
+Dependency resolution, modpack pipeline, and per-bucket install
+summaries — split out of `LaunchEvent` into its own enum.
+
+```rust
+Event::Modloader(ModloaderEvent::ResolveStarted { request_count })
+Event::Modloader(ModloaderEvent::ResolveFetching { source, identifier })
+Event::Modloader(ModloaderEvent::ResolveDependency { parent, dependency })
+Event::Modloader(ModloaderEvent::ResolveCompleted { total_mods })
+Event::Modloader(ModloaderEvent::ModpackResolveStart { source })
+Event::Modloader(ModloaderEvent::ModpackArchiveDownloaded { sha1, bytes })
+Event::Modloader(ModloaderEvent::ModpackOverridesExtracted { count })
+Event::Modloader(ModloaderEvent::ModpackInstalled { name, mods_count })
+Event::Modloader(ModloaderEvent::ResourcePacksInstalled { count, bytes })
+Event::Modloader(ModloaderEvent::ShaderPacksInstalled { count, bytes })
+Event::Modloader(ModloaderEvent::DatapacksInstalled { count, bytes })
 ```
 
 #### 5. Core Events
@@ -714,8 +760,7 @@ Example completed successfully
 ```rust
 use lighty_launcher::prelude::*;
 
-let _app = AppState::new(/*...*/)?;
-let launcher_dir = AppState::get_project_dirs();
+AppState::init("MyLauncher")?;
 
 let mut auth = OfflineAuth::new("Player");
 let profile = auth.authenticate().await?;
@@ -725,7 +770,6 @@ let mut instance = VersionBuilder::new(
     Loader::Vanilla,
     "",
     "1.21.1",
-    launcher_dir
 );
 
 instance.launch(&profile, JavaDistribution::Temurin)

@@ -10,18 +10,21 @@
 - Event types: `lighty_event::AuthEvent`
 - Re-export: `lighty_launcher::event::AuthEvent`
 
+The `provider` field on every variant is a plain `String`
+(`"Microsoft"`, `"Azuriom"`, `"Offline"`, or whatever label a custom
+authenticator emits) — **not** the `AuthProvider` enum. The enum is
+reserved for the `UserProfile` return value where it carries
+provider-specific data (e.g. the secret-wrapped MS refresh token).
+
 ## AuthEvent Types
 
 ### AuthenticationStarted
 
-Emitted when authentication process begins.
+Emitted at the very start of an `authenticate()` call.
 
 **Fields**:
-- `provider: AuthProvider` - The authentication provider being used
+- `provider: String` — provider label
 
-**When emitted**: At the start of any `authenticate()` call
-
-**Example**:
 ```rust
 use lighty_event::{EventBus, Event, AuthEvent};
 use lighty_auth::{offline::OfflineAuth, Authenticator};
@@ -34,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move {
         while let Ok(event) = receiver.next().await {
             if let Event::Auth(AuthEvent::AuthenticationStarted { provider }) = event {
-                println!("Starting authentication with: {:?}", provider);
+                println!("Starting authentication with: {}", provider);
             }
         }
     });
@@ -46,114 +49,73 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-### DeviceCodeReceived
+### AuthenticationInProgress
 
-Emitted when Microsoft device code is received (Microsoft only).
+Emitted between stages of a multi-step flow (Microsoft device-code /
+Xbox / XSTS / Minecraft / Profile, Azuriom request, etc.).
 
 **Fields**:
-- `code: String` - The device code to display to user
-- `url: String` - The URL user should visit
-- `expires_in: u64` - Seconds until code expires
+- `provider: String`
+- `step: String` — short human-readable label of the current stage
 
-**When emitted**: During Microsoft authentication after device code request
-
-**Example**:
 ```rust
-use lighty_event::{EventBus, Event, AuthEvent};
-use lighty_auth::{microsoft::MicrosoftAuth, Authenticator};
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let event_bus = EventBus::new(1000);
-    let mut receiver = event_bus.subscribe();
-
-    tokio::spawn(async move {
-        while let Ok(event) = receiver.next().await {
-            if let Event::Auth(AuthEvent::DeviceCodeReceived { code, url, expires_in }) = event {
-                println!("Visit: {}", url);
-                println!("Enter code: {}", code);
-                println!("Expires in: {}s", expires_in);
-            }
-        }
-    });
-
-    let mut auth = MicrosoftAuth::new("client-id");
-    auth.authenticate(Some(&event_bus)).await?;
-
-    Ok(())
+if let Event::Auth(AuthEvent::AuthenticationInProgress { provider, step }) = event {
+    println!("[{provider}] {step}");
 }
 ```
 
-### WaitingForUser
-
-Emitted while polling for user to complete authentication.
-
-**Fields**: None
-
-**When emitted**: During Microsoft authentication polling loop
-
-**Example**:
-```rust
-use lighty_event::{EventBus, Event, AuthEvent};
-
-tokio::spawn(async move {
-    while let Ok(event) = receiver.next().await {
-        if let Event::Auth(AuthEvent::WaitingForUser) = event {
-            println!("⏳ Waiting for user...");
-        }
-    }
-});
-```
+For Microsoft, the device code itself is delivered through the
+`MicrosoftAuth::set_device_code_callback(|code, url| { … })` callback —
+not through an event — because the consumer needs the raw values
+(callback signature `Fn(&str, &str) + Send + Sync`).
 
 ### AuthenticationSuccess
 
-Emitted when authentication completes successfully.
+Emitted right after the provider has produced a valid `UserProfile`,
+just before `authenticate()` returns.
 
 **Fields**:
-- `username: String` - Authenticated username
-- `provider: AuthProvider` - Provider used
+- `provider: String`
+- `username: String`
+- `uuid: String`
 
-**When emitted**: After successful authentication, before returning profile
-
-**Example**:
 ```rust
-use lighty_event::{EventBus, Event, AuthEvent};
-
-tokio::spawn(async move {
-    while let Ok(event) = receiver.next().await {
-        if let Event::Auth(AuthEvent::AuthenticationSuccess { username, provider }) = event {
-            println!("✓ Logged in as {} via {:?}", username, provider);
-        }
-    }
-});
+if let Event::Auth(AuthEvent::AuthenticationSuccess { provider, username, uuid }) = event {
+    println!("Logged in as {username} ({uuid}) via {provider}");
+}
 ```
+
+Note the event carries the user's `username` / `uuid` but **never** the
+access token — secret material stays in the returned `UserProfile`
+(secret-wrapped via [`SecretString`](https://docs.rs/secrecy/)) or in
+the OS keychain when `with_keyring(...)` is active.
 
 ### AuthenticationFailed
 
-Emitted when authentication fails.
+Emitted when the flow errors out.
 
 **Fields**:
-- `error: String` - Error message
-- `provider: AuthProvider` - Provider that failed
+- `provider: String`
+- `error: String`
 
-**When emitted**: When authentication fails with error
-
-**Example**:
 ```rust
-use lighty_event::{EventBus, Event, AuthEvent};
-
-tokio::spawn(async move {
-    while let Ok(event) = receiver.next().await {
-        if let Event::Auth(AuthEvent::AuthenticationFailed { error, provider }) = event {
-            eprintln!("✗ Auth failed for {:?}: {}", provider, error);
-        }
-    }
-});
+if let Event::Auth(AuthEvent::AuthenticationFailed { provider, error }) = event {
+    eprintln!("Auth failed for {provider}: {error}");
+}
 ```
+
+### AlreadyAuthenticated
+
+Emitted by higher-level callers (e.g. silent-refresh helpers) that
+short-circuit when a still-valid session is reused.
+
+**Fields**:
+- `provider: String`
+- `username: String`
 
 ## Complete Event Flow
 
-### Offline Authentication
+### Offline
 
 ```
 AuthenticationStarted
@@ -161,38 +123,45 @@ AuthenticationStarted
 AuthenticationSuccess
 ```
 
-### Microsoft Authentication (Success)
+### Microsoft (device-code, success)
+
+```
+AuthenticationStarted              { provider: "Microsoft" }
+AuthenticationInProgress           { step: "Requesting device code" }
+AuthenticationInProgress           { step: "Waiting for user authorization" }
+AuthenticationInProgress           { step: "Exchanging for Xbox Live token" }
+AuthenticationInProgress           { step: "Exchanging for XSTS token" }
+AuthenticationInProgress           { step: "Exchanging for Minecraft token" }
+AuthenticationInProgress           { step: "Fetching Minecraft profile" }
+AuthenticationSuccess              { username, uuid }
+```
+
+### Microsoft (silent refresh)
+
+```
+AuthenticationStarted              { provider: "Microsoft" }
+AuthenticationInProgress           { step: "Refreshing Microsoft token" }
+AuthenticationInProgress           { step: "Exchanging for Xbox Live token" }
+…
+AuthenticationSuccess              { username, uuid }
+```
+
+### Microsoft (failure)
 
 ```
 AuthenticationStarted
     ↓
-DeviceCodeReceived
-    ↓
-WaitingForUser
-    ↓
-WaitingForUser (repeated)
-    ↓
-AuthenticationSuccess
-```
-
-### Microsoft Authentication (Failure)
-
-```
-AuthenticationStarted
-    ↓
-DeviceCodeReceived
-    ↓
-WaitingForUser
+AuthenticationInProgress (any step)
     ↓
 AuthenticationFailed
 ```
 
-### Azuriom Authentication
+### Azuriom
 
 ```
 AuthenticationStarted
     ↓
-AuthenticationSuccess or AuthenticationFailed
+AuthenticationSuccess  or  AuthenticationFailed
 ```
 
 ## Related Documentation

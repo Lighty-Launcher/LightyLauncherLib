@@ -309,26 +309,15 @@ pub mod my_loader;
 ```rust
 use lighty_launcher::prelude::*;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     let instance = VersionBuilder::new(
         "my-instance",
         Loader::MyLoader,
         "1.0.0",        // MyLoader version
         "1.21.1",       // Minecraft version
-        launcher_dir
     );
 
     let metadata = instance.get_metadata().await?;
@@ -464,11 +453,11 @@ impl VersionInfo for MyCustomVersion {
     }
 
     fn game_dirs(&self) -> &Path {
-        AppState::get_project_dirs().data_dir()
+        AppState::data_dir()
     }
 
     fn java_dirs(&self) -> &Path {
-        AppState::get_project_dirs().cache_dir()
+        AppState::cache_dir()
     }
 
     fn loader(&self) -> &Loader {
@@ -536,7 +525,6 @@ mod tests {
             Loader::MyLoader,
             "1.0.0",
             "1.21.1",
-            AppState::get_project_dirs()
         );
 
         let metadata = MY_LOADER

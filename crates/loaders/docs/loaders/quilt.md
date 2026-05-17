@@ -16,26 +16,15 @@ Quilt is a Fabric fork that aims to provide better mod compatibility and additio
 ```rust
 use lighty_launcher::prelude::*;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     let instance = VersionBuilder::new(
         "quilt-1.21",
         Loader::Quilt,
         "0.27.1",      // Quilt loader version
         "1.21.1",      // Minecraft version
-        launcher_dir
     );
 
     let metadata = instance.get_metadata().await?;

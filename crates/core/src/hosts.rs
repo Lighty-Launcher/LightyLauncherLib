@@ -5,31 +5,23 @@ use reqwest::Client;
 use tokio::fs;
 use thiserror::Error;
 
-/// User-Agent global pour ton launcher
-///static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
-
-/// HTTP client unique et optimisé
+/// Shared HTTP client tuned for parallel asset/library downloads.
 pub static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
     Client::builder()
-        // Connection pooling - balance between performance and OS limits
         .pool_max_idle_per_host(100)
         .pool_idle_timeout(Some(Duration::from_secs(90)))
 
-        // HTTP/2 optimisations
         .http2_initial_stream_window_size(Some(2 * 1024 * 1024))
         .http2_initial_connection_window_size(Some(4 * 1024 * 1024))
         .http2_adaptive_window(true)
         .http2_max_frame_size(Some(16 * 1024))
 
-        // TCP optimisations
         .tcp_keepalive(Some(Duration::from_secs(60)))
         .tcp_nodelay(true)
 
-        // Timeouts - prevent stuck connections
         .timeout(Duration::from_secs(60))
         .connect_timeout(Duration::from_secs(5))
 
-        // Compression
         .zstd(true)
         .gzip(true)
         .brotli(true)
@@ -39,21 +31,20 @@ pub static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
 });
 
 
-/// Chemin du fichier hosts (dépend de l'OS)
 #[cfg(target_os = "windows")]
 const HOSTS_PATH: &str = "System32\\drivers\\etc\\hosts";
 
 #[cfg(not(target_os = "windows"))]
 const HOSTS_PATH: &str = "etc/hosts";
 
-/// Domaines critiques à vérifier
+/// Auth-critical domains we refuse to see redirected by a hijacked hosts file.
 const HOSTS: [&str; 3] = [
     "mojang.com",
     "minecraft.net",
     "lightylauncher.fr",
 ];
 
-/// Erreurs possibles liées au fichier hosts
+/// Errors related to the hosts file check.
 #[derive(Debug, Error)]
 pub enum HostsError {
     #[error("Failed to read hosts file at {0}")]
@@ -68,7 +59,7 @@ pub enum HostsError {
 
 pub type HostsResult<T> = std::result::Result<T, HostsError>;
 
-/// Vérifie si le fichier hosts a été modifié pour bloquer l'auth Mojang
+/// Checks whether the system hosts file redirects any auth-critical domains.
 pub async fn check_hosts_file() -> HostsResult<()> {
     let hosts_path = if cfg!(target_os = "windows") {
         let system_drive = env::var("SystemDrive").unwrap_or("C:".to_string());

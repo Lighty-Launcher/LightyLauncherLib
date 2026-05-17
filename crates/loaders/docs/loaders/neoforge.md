@@ -1,53 +1,56 @@
 # NeoForge Loader
 
-Modern fork of Forge for newer Minecraft versions (1.20.2+).
+Modern fork of Forge focused on newer Minecraft versions.
 
 ## Overview
 
-**Status**: In Progress
-**MC Versions**: 1.20.2+
+**Status**: Stable
+**MC Versions**: 1.20.1 (old `forge` artifact path) and 1.20.2+ (modern `neoforge` artifact path)
 **Feature Flag**: `neoforge`
 **API**: NeoForged Maven
 
-NeoForge is a modern rewrite and fork of MinecraftForge, focusing on newer Minecraft versions with improved performance and cleaner codebase.
+NeoForge is a modern rewrite and fork of MinecraftForge, focused on
+newer Minecraft versions with cleaner internals and faster moving
+development.
 
 ## Current Status
 
-⚠️ **NeoForge support is currently in development**
+Both artifact path eras are supported:
 
-Basic functionality works, but some features may be incomplete or unstable.
+- **MC ≤ 1.20.1** → coordinates `net.neoforged:forge:{mc}-{loader}`
+- **MC ≥ 1.20.2** → coordinates `net.neoforged:neoforge:{loader}`
+
+The loader detects which path to use from the Minecraft version and
+runs the installer's processor pipeline (the modern pipeline writes
+`{LIBRARY_DIR}/net/neoforged/neoforge/.../neoforge-{v}-client.jar` from
+the embedded binary patches). Microsoft auth + the launch placeholders
+(`${auth_xuid}`, `${clientid}`, `${user_type} = "msa"`) are wired
+through `UserProfile` exactly like the Forge path.
 
 ## Usage
 
 ```rust
 use lighty_launcher::prelude::*;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    AppState::init("MyLauncher")?;
 
-    let launcher_dir = AppState::get_project_dirs();
+    let mut auth = OfflineAuth::new("Player");
+    let profile = auth.authenticate(None).await?;
 
-    let instance = VersionBuilder::new(
-        "neoforge-1.21",
+    // VersionBuilder::new(name, Loader::NeoForge, loader_version, mc_version)
+    let mut neoforge = VersionBuilder::new(
+        "neoforge-1.21.8",
         Loader::NeoForge,
-        "21.1.80",     // NeoForge version
-        "1.21.1",      // Minecraft version
-        launcher_dir
+        "21.8.53",   // NeoForge version
+        "1.21.8",    // Minecraft version
     );
 
-    let metadata = instance.get_metadata().await?;
-
-    println!("NeoForge {} loaded", metadata.id);
-
+    neoforge
+        .launch(&profile, JavaDistribution::Temurin)
+        .run()
+        .await?;
     Ok(())
 }
 ```
@@ -59,77 +62,69 @@ async fn main() -> anyhow::Result<()> {
 
 ## API Endpoints
 
-### Version Manifest
+### Version listing
 ```
 GET https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge
 ```
 
-### Installer
+### Installer (modern, ≥ 1.20.2)
 ```
-GET https://maven.neoforged.net/releases/net/neoforged/neoforge/{version}/neoforge-{version}-installer.jar
+GET https://maven.neoforged.net/releases/net/neoforged/neoforge/{loader}/neoforge-{loader}-installer.jar
+```
+
+### Installer (old, = 1.20.1)
+```
+GET https://maven.neoforged.net/releases/net/neoforged/forge/{mc}-{loader}/forge-{mc}-{loader}-installer.jar
 ```
 
 ## Version Format
 
-NeoForge uses semantic versioning:
-```
-{major}.{minor}.{patch}
-```
+NeoForge versions follow `{major}.{minor}.{patch}`, where the major
+maps to the Minecraft minor:
 
-Where `major` corresponds to Minecraft version:
-- `21.x.x` = Minecraft 1.21.x
-- `20.4.x` = Minecraft 1.20.4
-- `20.2.x` = Minecraft 1.20.2
+| Minecraft | NeoForge major |
+|-----------|---------------|
+| 1.21.x | 21.x.y |
+| 1.20.6 | 20.6.x |
+| 1.20.4 | 20.4.x |
+| 1.20.2 | 20.2.x |
+| 1.20.1 | (`net.neoforged:forge`, separate path) |
 
 Examples:
-- `21.1.80` for MC 1.21.1
+- `21.8.53` for MC 1.21.8
 - `20.4.109` for MC 1.20.4
-
-## Query Types
-
-- `NeoForgeBuilder` - Full metadata
 
 ## Installation Process
 
-1. Download NeoForge installer JAR
-2. Extract install profile
-3. Parse version JSON
-4. Process libraries
-5. Return metadata
+1. Download NeoForge installer JAR (cached under `<instance>/.forge/`,
+   shared with the Forge cache by design — same on-disk layout)
+2. Read `install_profile.json` + `version.json` from the JAR
+3. Merge vanilla + NeoForge libraries
+   (dedup by `group:artifact[:classifier]` for classifier safety, even
+   though NeoForge's `version.json` doesn't currently use the
+   `:universal`/`:client` split that Forge does)
+4. Download all libraries in parallel
+5. Run the client-side processors (binary patch, jar splits, etc.)
+6. Build launch args with the `UserProfile`-derived placeholders
 
 ## Mod Support
 
-NeoForge is designed for:
-- Recent Forge mods (1.20.2+)
+- Recent Forge mods (1.20.2+) — usually source-compatible
 - NeoForge-specific mods
-- Improved mod compatibility over Forge
+- CurseForge/Modrinth integration via the `mods` feature flags
 
 ## Comparison with Forge
 
 | Feature | Forge | NeoForge |
 |---------|-------|----------|
-| MC Versions | 1.5+ | 1.20.2+ |
+| MC versions | 1.5.2+ | 1.20.1+ |
 | Codebase | Legacy | Modern rewrite |
-| Performance | Good | Improved |
-| Mod compatibility | Extensive (old) | Modern mods |
-| Development | Slow | Active |
-
-## Known Limitations
-
-As the implementation is in progress:
-- Some metadata fields may be incomplete
-- Error handling needs improvement
-- Performance not fully optimized
-
-## Future Plans
-
-- Complete installer processing
-- Add Forge compatibility layer
-- Improve error messages
-- Optimize caching
+| Mod compat | Extensive (old) | Modern mods |
+| Development | Slower | Active |
 
 ## Related Documentation
 
-- [Forge](./forge.md) - Traditional Forge loader (also in progress)
-- [Vanilla](./vanilla.md) - Base Minecraft
-- [How to Use](../how-to-use.md) - General usage
+- [Forge](./forge.md) — Traditional Forge loader
+- [Vanilla](./vanilla.md) — Base Minecraft
+- [How to Use](../how-to-use.md) — General usage
+- [`examples/neoforge.rs`](../../../../examples/neoforge.rs) — Runnable example

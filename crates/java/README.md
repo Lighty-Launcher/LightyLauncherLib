@@ -15,7 +15,7 @@ Automatic Java Runtime Environment (JRE) management for Minecraft launchers with
 
 ```toml
 [dependencies]
-lighty-java = "0.8.6"
+lighty-java = "26.5.1"
 ```
 
 ### Basic Usage

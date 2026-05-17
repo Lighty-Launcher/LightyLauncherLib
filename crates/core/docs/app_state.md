@@ -9,18 +9,10 @@
 ```rust
 use lighty_core::AppState;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Initialize with your application details
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    // Initialize with your application name
+    AppState::init("MyLauncher")?;
 
     // Now you can use other LightyLauncher functions
     Ok(())
@@ -31,142 +23,101 @@ async fn main() -> anyhow::Result<()> {
 
 ```mermaid
 flowchart TD
-    A[AppState::new] --> B{OnceCell Initialized?}
-    B -->|No| C[Create ProjectDirs]
-    B -->|Yes| D[Return Error]
+    A[AppState::init] --> B{OnceCell Initialized?}
+    B -->|No| C[Resolve platform dirs via dirs crate]
+    B -->|Yes| D[Return AlreadyInitialized]
 
-    C --> E[Store in OnceCell]
-    E --> F[Store Organization]
-    F --> G[Store Qualifier]
-    G --> H[Store Application]
-    H --> I[Return AppState]
+    C --> E[Store name]
+    E --> F[Store data_dir]
+    F --> G[Store config_dir]
+    G --> H[Store cache_dir]
+    H --> I[Return Ok]
 
-    J[get_project_dirs] --> K[Lazy::force]
-    K --> L[Return ProjectDirs]
+    J[data_dir / config_dir / cache_dir] --> L[Return &Path]
 
-    M[get_app_name] --> N[Get Organization]
-    N --> O[Strip Leading '.']
-    O --> P[Return Name]
+    M[name] --> P[Return application name]
 ```
 
 ## API Reference
 
 ### Initialization
 
-#### `AppState::new(qualifier, organization, application)`
+#### `AppState::init(name)`
 
 Initializes the global application state.
 
 **Parameters:**
-- `qualifier`: Reverse domain notation (e.g., `"com"`, `"fr"`)
-- `organization`: Organization/launcher name (e.g., `".LightyLauncher"`)
-- `application`: Application name (optional, can be empty)
+- `name`: Application/launcher name (e.g., `"MyLauncher"`)
 
-**Returns:** `Result<AppState, AppStateError>`
+**Returns:** `AppStateResult<()>`
 
 **Errors:**
-- `AppStateError::ProjectDirsCreation` - Failed to create project directories
-- `AppStateError::NotInitialized` - AppState already initialized
+- `AppStateError::AlreadyInitialized` - AppState already initialized
+- `AppStateError::MissingDir(&'static str)` - Platform directory unavailable
 
 **Example:**
 ```rust
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
-let _app = AppState::new(
-    QUALIFIER.to_string(),
-    ORGANIZATION.to_string(),
-    APPLICATION.to_string(),
-)?;
+AppState::init("MyLauncher")?;
 ```
 
 ### Directory Access
 
-#### `AppState::get_project_dirs()`
+#### `AppState::data_dir() -> &Path`
 
-Returns the platform-specific project directories.
+Returns the platform-specific data directory.
 
-**Returns:** `&'static Lazy<ProjectDirs>`
+#### `AppState::config_dir() -> &Path`
 
-**Directories include:**
-- `data_dir()` - Application data directory
-- `config_dir()` - Configuration directory
-- `cache_dir()` - Cache directory
+Returns the platform-specific configuration directory.
+
+#### `AppState::cache_dir() -> &Path`
+
+Returns the platform-specific cache directory.
 
 **Example:**
 ```rust
-let dirs = AppState::get_project_dirs();
-println!("Data dir: {:?}", dirs.data_dir());
-println!("Config dir: {:?}", dirs.config_dir());
+println!("Data dir: {:?}", AppState::data_dir());
+println!("Config dir: {:?}", AppState::config_dir());
+println!("Cache dir: {:?}", AppState::cache_dir());
 ```
 
 ### Metadata Access
 
-#### `AppState::get_app_name()`
+#### `AppState::name() -> &str`
 
-Returns the application name derived from organization.
-
-**Returns:** `String`
-
-**Behavior:**
-- Strips leading `.` from organization name
-- Falls back to `"LightyLauncher"` if not initialized
+Returns the application name passed to `init()`.
 
 **Example:**
 ```rust
-let name = AppState::get_app_name();
-// Organization: ".MyLauncher" → Returns: "MyLauncher"
+let name = AppState::name();
+// AppState::init("MyLauncher") → Returns: "MyLauncher"
 ```
 
-#### `AppState::get_app_version()`
+#### `AppState::app_version() -> &str`
 
 Returns the crate version from `Cargo.toml`.
 
-**Returns:** `String`
-
 **Example:**
 ```rust
-let version = AppState::get_app_version();
-println!("Version: {}", version); // e.g., "0.8.6"
+let version = AppState::app_version();
+println!("Version: {}", version); // e.g., "26.5.1"
 ```
-
-#### `AppState::get_organization()`
-
-Returns the organization name if initialized.
-
-**Returns:** `Option<&'static String>`
-
-#### `AppState::get_qualifier()`
-
-Returns the qualifier if initialized.
-
-**Returns:** `Option<&'static String>`
-
-#### `AppState::get_application()`
-
-Returns the application name if initialized.
-
-**Returns:** `Option<&'static String>`
 
 ## Platform-Specific Paths
 
 ### Windows
 ```
-C:\Users\<User>\AppData\Roaming\<Organization>\<Application>
-C:\Users\<User>\AppData\Local\<Organization>\<Application>\cache
+%APPDATA%\<name>\
 ```
 
 ### macOS
 ```
-/Users/<User>/Library/Application Support/<Organization>.<Application>
-/Users/<User>/Library/Caches/<Organization>.<Application>
+~/Library/Application Support/<name>/
 ```
 
 ### Linux
 ```
-/home/<user>/.local/share/<organization>/<application>
-/home/<user>/.cache/<organization>/<application>
+~/.local/share/<name>/
 ```
 
 ## Thread Safety
@@ -177,24 +128,15 @@ C:\Users\<User>\AppData\Local\<Organization>\<Application>\cache
 use lighty_core::AppState;
 use std::thread;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize in main thread
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    AppState::init("MyLauncher")?;
 
     // Safe to access from multiple threads
     let handles: Vec<_> = (0..4).map(|_| {
         thread::spawn(|| {
-            let dirs = AppState::get_project_dirs();
-            println!("{:?}", dirs.data_dir());
+            println!("{:?}", AppState::data_dir());
         })
     }).collect();
 
@@ -212,18 +154,10 @@ async fn main() -> anyhow::Result<()> {
 ```rust
 use lighty_core::AppState;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize FIRST, before any other LightyLauncher calls
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    AppState::init("MyLauncher")?;
 
     // Now safe to use other functions
     let version = VersionBuilder::new(/*...*/);
@@ -235,17 +169,9 @@ async fn main() -> anyhow::Result<()> {
 ```rust
 use lighty_core::{AppState, errors::AppStateError};
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
-match AppState::new(
-    QUALIFIER.to_string(),
-    ORGANIZATION.to_string(),
-    APPLICATION.to_string(),
-) {
-    Ok(_) => println!("AppState initialized"),
-    Err(AppStateError::NotInitialized) => {
+match AppState::init("MyLauncher") {
+    Ok(()) => println!("AppState initialized"),
+    Err(AppStateError::AlreadyInitialized) => {
         eprintln!("AppState already initialized");
     }
     Err(e) => {
@@ -254,22 +180,14 @@ match AppState::new(
 }
 ```
 
-### 3. Organization Naming Convention
+### 3. Naming Convention
 ```rust
 use lighty_core::AppState;
 
-const QUALIFIER: &str = "fr";
-const ORGANIZATION: &str = "LightyLauncher";
-const APPLICATION: &str = "";
+// Name is used directly (no leading dot)
+AppState::init("LightyLauncher")?;
 
-// Organization name is used directly
-let _app = AppState::new(
-    QUALIFIER.to_string(),
-    ORGANIZATION.to_string(),
-    APPLICATION.to_string(),
-)?;
-
-let name = AppState::get_app_name();
+let name = AppState::name();
 assert_eq!(name, "LightyLauncher");
 ```
 
@@ -280,15 +198,13 @@ assert_eq!(name, "LightyLauncher");
 use lighty_core::AppState;
 use lighty_version::VersionBuilder;
 
-let _app = AppState::new(/*...*/)?;
-let launcher_dir = AppState::get_project_dirs();
+AppState::init("MyLauncher")?;
 
 let version = VersionBuilder::new(
     "my-instance",
     Loader::Fabric,
     "0.16.9",
     "1.21",
-    launcher_dir
 );
 ```
 
@@ -296,7 +212,7 @@ let version = VersionBuilder::new(
 ```rust
 use lighty_core::AppState;
 
-let _app = AppState::new(/*...*/)?;
+AppState::init("MyLauncher")?;
 
 // Launch arguments automatically use app name and version
 version.launch(&profile, JavaDistribution::Temurin)
@@ -308,11 +224,14 @@ version.launch(&profile, JavaDistribution::Temurin)
 
 ```rust
 pub enum AppStateError {
-    /// Project directories could not be created
-    ProjectDirsCreation,
-
-    /// AppState has not been initialized or initialization failed
+    /// AppState has not been initialized
     NotInitialized,
+
+    /// AppState was already initialized
+    AlreadyInitialized,
+
+    /// Platform directory could not be determined (e.g. no $HOME)
+    MissingDir(&'static str),
 }
 ```
 

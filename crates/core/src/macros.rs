@@ -19,6 +19,8 @@ macro_rules! join_and_mkdir_vec {
     }};
 }
 
+/// Fire-and-forget `create_dir_all` — logs errors via `trace_error!` and
+/// swallows them. Prefer [`try_mkdir!`] when callers need to short-circuit.
 #[macro_export]
 macro_rules! mkdir {
     ($path:expr) => {
@@ -30,7 +32,19 @@ macro_rules! mkdir {
     };
 }
 
-// Blocking version for sync contexts (if needed)
+/// Async `create_dir_all` that propagates the `io::Error` for fail-fast pipelines.
+#[macro_export]
+macro_rules! try_mkdir {
+    ($path:expr) => {{
+        let __path = &$path;
+        if __path.exists() {
+            Ok::<(), std::io::Error>(())
+        } else {
+            tokio::fs::create_dir_all(__path).await
+        }
+    }};
+}
+
 #[macro_export]
 macro_rules! mkdir_blocking {
     ($path:expr) => {
@@ -64,7 +78,6 @@ macro_rules! time_it {
     }};
 }
 
-// Conditional tracing macros
 #[cfg(feature = "tracing")]
 #[macro_export]
 macro_rules! trace_debug {

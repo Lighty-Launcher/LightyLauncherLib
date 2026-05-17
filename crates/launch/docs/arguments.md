@@ -39,7 +39,7 @@ The launch system uses placeholders that are replaced with actual values at laun
 | `${version_type}` | Version type | `"release"` or `"snapshot"` |
 | `${assets_index_name}` | Asset index ID | `"16"` |
 | `${launcher_name}` | Launcher name | `"MyLauncher"` |
-| `${launcher_version}` | Launcher version | `"0.8.6"` |
+| `${launcher_version}` | Launcher version | `"26.5.1"` |
 
 ## JVM Arguments
 
@@ -235,7 +235,7 @@ jvm_args.push("/path/lib1.jar:/path/lib2.jar:...");
 java \
   -Djava.library.path=/tmp/natives-xxxxx \
   -Dminecraft.launcher.brand=MyLauncher \
-  -Dminecraft.launcher.version=0.8.6 \
+  -Dminecraft.launcher.version=26.5.1 \
   -Xmx4G \
   -Xms2G \
   -XX:+UseG1GC \
@@ -365,25 +365,15 @@ use lighty_launcher::prelude::*;
 use lighty_java::JavaDistribution;
 use lighty_launch::InstanceControl;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    AppState::init("MyLauncher")?;
 
-    let launcher_dir = AppState::get_project_dirs();
     let mut instance = VersionBuilder::new(
         "optimized-1.21",
         Loader::Fabric,
         "0.16.9",
         "1.21.1",
-        launcher_dir
     );
 
     let mut auth = OfflineAuth::new("Player123");

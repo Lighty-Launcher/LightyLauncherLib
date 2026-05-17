@@ -6,20 +6,20 @@ members = [
     "crates/java",
     "crates/launch",
     "crates/loaders",
+    "crates/modsloader",
     "crates/version",
-    "crates/tauri",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.8.6"
-edition = "2021"
+version = "26.5.1"
+edition = "2024"
 authors = ["Hamadi <dev.hamadipro@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/Lighty-Launcher/LightyLauncherLib"
 homepage = "https://github.com/Lighty-Launcher/LightyLauncherLib"
 documentation = "https://docs.rs/lighty-launcher"
-rust-version = "1.75"
+rust-version = "1.95"
 
 [package]
 name = "lighty-launcher"
@@ -46,90 +46,100 @@ path = "src/lib.rs"
 
 [workspace.dependencies]
 # Internal crates
-lighty-core = { version = "0.8.6", path = "crates/core" }
-lighty-auth = { version = "0.8.6", path = "crates/auth" }
-lighty-event = { version = "0.8.6", path = "crates/event" }
-lighty-java = { version = "0.8.6", path = "crates/java" }
-lighty-launch = { version = "0.8.6", path = "crates/launch" }
-lighty-loaders = { version = "0.8.6", path = "crates/loaders" }
-lighty-version = { version = "0.8.6", path = "crates/version" }
-lighty-tauri = { version = "0.8.6", path = "crates/tauri" }
+lighty-core = { version = "26.5.1", path = "crates/core" }
+lighty-auth = { version = "26.5.1", path = "crates/auth" }
+lighty-event = { version = "26.5.1", path = "crates/event" }
+lighty-java = { version = "26.5.1", path = "crates/java" }
+lighty-launch = { version = "26.5.1", path = "crates/launch" }
+lighty-loaders = { version = "26.5.1", path = "crates/loaders" }
+lighty-modsloader = { version = "26.5.1", path = "crates/modsloader" }
+lighty-version = { version = "26.5.1", path = "crates/version" }
 
 # ---- Async Runtime ----
-tokio = { version = "1.48", features = [
+tokio = { version = "1.52", features = [
     "rt-multi-thread",  #for Runtime multi-thread
     "macros",           #for #[tokio::main], #[tokio::test]
     "fs",               #for Filesystem async
     "io-util",          #for AsyncRead/Write utilities
-    "process",          #for Lancer Java
+    "process",          #for spawning the Java process
     "sync",             #for oneshot, RwLock
     "time",             #for sleep, timeout
 ] }
-tokio-util = { version = "0.7", features = ["compat"] }
+tokio-util = { version = "0.7.18", features = ["compat"] }
 
 
 # ---- HTTP Client ----
-reqwest = { version = "0.12.24", default-features = false, features = [
+reqwest = { version = "0.13.3", default-features = false, features = [
     "http2",
-    "rustls-tls",  #for Rustls au lieu d'OpenSSL (plus léger)
+    "rustls",  #for Rustls instead of OpenSSL (lighter)
     "charset",
     "json",
     "stream",
+    "form",
     "gzip",
     "brotli",
     "zstd",
 ] }
 
-# ---- Sérialisation ----
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+# ---- Serialization ----
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
 
 # ---- Async Utilities ----
-futures = "0.3"
-futures-util = { version = "0.3.31", features = ["io", "async-await-macro"] }
-async-trait = "0.1"
+futures = "0.3.32"
+futures-util = { version = "0.3.32", features = ["io", "async-await-macro"] }
+async-trait = "0.1.89"
+
+# ---- Secrets ----
+# Wraps auth tokens to disable accidental Debug/Serialize leaks. See AUTH_SECRETS.md.
+secrecy = { version = "0.10" }
 
 # ---- Error Handling ----
-thiserror = "2.0"
-anyhow = "1.0"
+thiserror = "2.0.18"
+anyhow = "1.0.102"
 # ---- Logging ----
-tracing = { version = "0.1", features = ["log"] }
+tracing = { version = "0.1.44", features = ["log"] }
 
 # ---- Filesystem & Compression ----
-tokio-tar = "0.3"
-async-compression = { version = "0.4", features = ["tokio", "gzip"] }
+tokio-tar = "0.3.1"
+async-compression = { version = "0.4.42", features = ["tokio", "gzip"] }
 zip = "6.0.0"
 async_zip = { version = "0.0.18", features = ["deflate", "tokio", "tokio-fs"] }
-memmap2 = "0.9"
+memmap2 = "0.9.10"
 
-# ---- Cryptographie ----
-sha1 = "0.10"
-sha2 = "0.10"
-hex = "0.4"
+# ---- Cryptography ----
+sha1 = "0.11.0"
+sha2 = "0.11.0"
+hex = "0.4.3"
+base64 = "0.22"
 
-# ---- Chemins & Noms de fichiers ----
-directories = "6.0"
-sanitize-filename = "0.6"
-path-absolutize = "3.1"
+# ---- Paths & Filenames ----
+# `dirs` instead of `directories`: same author/std but the API only
+# exposes the platform-canonical bases (data/config/cache/home), no
+# qualifier+organization+application triplet. We join the launcher
+# name ourselves — see `crates/core/src/app_state.rs`.
+dirs = "6.0.0"
+sanitize-filename = "0.6.0"
+path-absolutize = "3.1.1"
 
-# ---- Système & OS ----
-os_info = "3"
+# ---- System & OS ----
+os_info = "3.14"
 
 # ---- Utilities ----
 once_cell = "1.21"
-version-compare = "0.2"
-fastrand = "2.3"
-rayon = "1.10"
-
-# ---- Tauri ----
-tauri = { version = "2" }
-tauri-plugin = { version = "2" }
+version-compare = "0.2.1"
+fastrand = "2.4"
 
 # ---- Dev dependencies ----
-tokio-test = "0.4"
-tempfile = "3.23"
-criterion = { version = "0.5", features = ["html_reports"] }
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tokio-test = "0.4.5"
+tempfile = "3.27"
+criterion = { version = "0.8", features = ["html_reports"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
+# Used by examples/auth/* to demonstrate persisting tokens in the OS
+# keychain (Linux Secret Service / macOS Keychain / Windows Credential Manager).
+# Examples-only — the lib itself does NOT depend on keyring (storage
+# policy is intentionally left to the consumer).
+keyring = { version = "3.6", features = ["apple-native", "windows-native", "linux-native-sync-persistent"] }
 
 # ============================================
 # MAIN PACKAGE DEPENDENCIES
@@ -143,17 +153,16 @@ lighty-event = { workspace = true, optional = true }
 lighty-java = { workspace = true }
 lighty-launch = { workspace = true }
 lighty-loaders = { workspace = true }
+lighty-modsloader = { workspace = true }
 lighty-version = { workspace = true }
-lighty-tauri = { workspace = true, optional = true }
 
 # Required for examples
 tokio = { workspace = true }
-directories = { workspace = true }
 once_cell = { workspace = true }
 tracing = { workspace = true, optional = true }
 
 # ============================================
-# DEV DEPENDENCIES - Uniquement pour tests
+# DEV DEPENDENCIES - Tests only
 # ============================================
 
 [dev-dependencies]
@@ -162,9 +171,13 @@ tempfile = { workspace = true }
 criterion = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
+keyring = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
 
 # ============================================
-# FEATURES - Activation optionnelle
+# FEATURES - Optional activation
 # ============================================
 
 [features]
@@ -172,18 +185,36 @@ anyhow = { workspace = true }
 vanilla = ["lighty-loaders/vanilla"]
 fabric = ["lighty-loaders/fabric"]
 quilt = ["lighty-loaders/quilt"]
-# Ajout de lighty-launch dans les features neoforge pour pouvoir run le patcher après l'installation dans la crate launch
+# lighty-launch is enabled so the installer can run NeoForge post-install processors
 neoforge = ["lighty-loaders/neoforge", "lighty-launch/neoforge"]
-forge = ["lighty-loaders/forge"]
-forge_legacy = ["lighty-loaders/forge_legacy"]
+# lighty-launch is enabled so the installer can run Forge post-install
+# processors. The same feature flag also covers legacy Forge (1.5.2 →
+# 1.12.2) since the legacy parser lives inside the same crate path.
+forge = ["lighty-loaders/forge", "lighty-launch/forge"]
 lighty_updater = ["lighty-loaders/lighty_updater"]
-all-loaders = ["lighty-loaders/all-loaders"]
-
-# Tauri integration
-tauri-commands = ["lighty-tauri", "lighty-tauri/tauri-commands"]
+# Mod sources (Modrinth public API, CurseForge keyed API).
+# Each provider feature also pulls in its modpack-format support
+# (`.mrpack` for Modrinth, `.zip` for CurseForge) — no separate `modpack`
+# feature, the parsers ride on whichever provider is active.
+# Each forwards into:
+#   - lighty-modsloader: API clients + resolver + modpack parsers
+#   - lighty-launch:     install-time modpack pipeline (download / extract / overrides)
+#   - lighty-version:    matching .with_*_mods() / .with_*_modpack() methods
+modrinth = ["lighty-modsloader/modrinth", "lighty-launch/modrinth", "lighty-version/modrinth"]
+curseforge = ["lighty-modsloader/curseforge", "lighty-launch/curseforge", "lighty-version/curseforge"]
+all-mods = ["modrinth", "curseforge"]
+all-loaders = [
+    "lighty-loaders/all-loaders",
+    "lighty-launch/modrinth", "lighty-launch/curseforge",
+    "lighty-version/modrinth", "lighty-version/curseforge",
+]
 
 # Event system
-events = ["lighty-event", "lighty-auth/events", "lighty-launch/events", "lighty-tauri/events"]
+events = ["lighty-event", "lighty-auth/events", "lighty-launch/events"]
+
+# OS keychain storage for Microsoft / Azuriom tokens (opt-in).
+# Pulls D-Bus on Linux — keep off in headless / CI environments.
+keyring = ["lighty-auth/keyring", "lighty-launch/keyring"]
 
 # Logging
 tracing = [
@@ -193,44 +224,44 @@ tracing = [
     "lighty-java/tracing",
     "lighty-launch/tracing",
     "lighty-loaders/tracing",
+    "lighty-modsloader/tracing",
+    "lighty-version/tracing",
 ]
 
 default = []
 
 # ============================================
-# PROFILS DE COMPILATION
+# COMPILATION PROFILES
 # ============================================
 
 [profile.dev]
-opt-level = 0          # Pas d'optimisation en dev
-debug = true           # Symboles de debug complets
-split-debuginfo = "unpacked"  # Debug info séparé (plus rapide)
-incremental = true     # Compilation incrémentale
+opt-level = 0          # No optimization in dev
+debug = true           # Full debug symbols
+split-debuginfo = "unpacked"  # Split debug info (faster)
+incremental = true     # Incremental compilation
 
 [profile.dev.package."*"]
-opt-level = 2          # Optimise les dépendances même en dev
-debug = false          # Réduit la taille
+opt-level = 2          # Optimize dependencies even in dev
+debug = false          # Reduces binary size
 
 [profile.release]
-opt-level = 3          # Optimisation maximale
-lto = "thin"           # Link Time Optimization (thin = bon compromis)
-codegen-units = 1      # Meilleure optimisation (mais compile plus lent)
-strip = "symbols"      # Supprime les symboles de debug
-panic = "abort"        # Panic = abort (plus petit, plus rapide)
+opt-level = 3          # Maximum optimization
+lto = "thin"           # Link Time Optimization (thin = good tradeoff)
+codegen-units = 1      # Better optimization (slower to compile)
+strip = "symbols"      # Strip debug symbols
+panic = "abort"        # Panic = abort (smaller, faster)
 
-# Profil optimisé pour la taille
+# Size-optimized profile
 [profile.release-small]
 inherits = "release"
-opt-level = "z"        # Optimise pour la taille
-lto = "fat"            # LTO agressif
+opt-level = "z"        # Optimize for size
+lto = "fat"            # Aggressive LTO
 
 # ============================================
 # EXAMPLES
 # ============================================
 
-[[example]]
-name = "with_events"
-required-features = ["vanilla", "events", "tracing"]
+# --- Loaders (one example per loader, flat under examples/) ---
 
 [[example]]
 name = "vanilla"
@@ -238,32 +269,77 @@ required-features = ["vanilla", "tracing"]
 
 [[example]]
 name = "fabric"
-required-features = ["fabric","events", "tracing"]
+required-features = ["fabric", "tracing"]
 
 [[example]]
 name = "quilt"
 required-features = ["quilt", "tracing"]
 
 [[example]]
-name = "neoforge_before_1-20"
-required-features = ["neoforge", "tracing"]
-
-[[example]]
-name = "neoforge_after_1-21"
-required-features = ["neoforge", "tracing"]
+name = "neoforge"
+required-features = ["neoforge", "events", "tracing"]
 
 [[example]]
 name = "forge"
-required-features = ["forge", "tracing"]
+required-features = ["forge", "events", "tracing"]
 
 [[example]]
-name = "forge_legacy"
-required-features = ["forge_legacy", "tracing"]
+name = "optifine"
+required-features = ["vanilla", "tracing"]
 
 [[example]]
 name = "lighty_updater"
 required-features = ["lighty_updater", "tracing"]
 
+# --- Mod fetching (Modrinth / CurseForge), under examples/mods/ ---
+
 [[example]]
-name = "optifine"
-required-features = ["vanilla", "tracing"]
+name = "modrinth"
+path = "examples/mods/modrinth.rs"
+required-features = ["modrinth", "fabric", "tracing"]
+
+[[example]]
+name = "curseforge"
+path = "examples/mods/curseforge.rs"
+required-features = ["curseforge", "fabric", "tracing"]
+
+# --- Modpacks (Modrinth .mrpack, CurseForge .zip), under examples/modpacks/ ---
+
+[[example]]
+name = "modpack_modrinth_url"
+path = "examples/modpacks/modrinth_url.rs"
+required-features = ["modrinth", "fabric", "events", "tracing"]
+
+[[example]]
+name = "modpack_modrinth_pinned"
+path = "examples/modpacks/modrinth_pinned.rs"
+required-features = ["modrinth", "fabric", "events", "tracing"]
+
+[[example]]
+name = "modpack_curseforge"
+path = "examples/modpacks/curseforge.rs"
+required-features = ["curseforge", "forge", "events", "tracing"]
+
+# --- Full event-bus showcase, under examples/with_events/ ---
+
+[[example]]
+name = "with_events"
+path = "examples/with_events/events.rs"
+required-features = ["vanilla", "events", "tracing"]
+
+# --- Auth + persistent "remember me" via OS keyring, under examples/auth/ ---
+
+[[example]]
+name = "auth_microsoft"
+path = "examples/auth/microsoft.rs"
+required-features = ["events", "tracing"]
+
+[[example]]
+name = "auth_azuriom"
+path = "examples/auth/azuriom.rs"
+required-features = ["events", "tracing"]
+
+[[example]]
+name = "auth_custom"
+path = "examples/auth/custom.rs"
+required-features = ["events", "tracing"]

@@ -5,14 +5,11 @@
 
 use once_cell::sync::OnceCell;
 
-/// Configuration pour le téléchargement de fichiers
+/// Tuning knobs for the parallel file downloader.
 #[derive(Debug, Clone, Copy)]
 pub struct DownloaderConfig {
-    /// Nombre maximum de téléchargements concurrents (défaut: 50)
     pub max_concurrent_downloads: usize,
-    /// Nombre maximum de tentatives en cas d'échec (défaut: 3)
     pub max_retries: u32,
-    /// Délai initial en millisecondes avant retry (défaut: 20ms, augmente exponentiellement)
     pub initial_delay_ms: u64,
 }
 
@@ -26,10 +23,10 @@ impl Default for DownloaderConfig {
     }
 }
 
-/// Configuration globale du downloader
+/// Global downloader configuration; populated once on startup.
 static DOWNLOADER_CONFIG: OnceCell<DownloaderConfig> = OnceCell::new();
 
-/// Initialise la configuration du downloader (à appeler une seule fois au démarrage)
+/// Installs the downloader configuration. Call this once at startup.
 ///
 /// # Example
 ///
@@ -46,7 +43,7 @@ pub fn init_downloader_config(config: DownloaderConfig) {
     DOWNLOADER_CONFIG.set(config).ok();
 }
 
-/// Récupère la configuration actuelle du downloader
+/// Returns the active downloader configuration (defaults if uninitialized).
 pub(crate) fn get_config() -> DownloaderConfig {
     *DOWNLOADER_CONFIG.get_or_init(DownloaderConfig::default)
 }

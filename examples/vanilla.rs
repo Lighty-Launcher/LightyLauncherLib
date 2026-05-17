@@ -1,8 +1,12 @@
-use lighty_launcher::prelude::*;
+//! Vanilla Minecraft launch example.
+//!
+//! `VersionBuilder::new(name, Loader::Vanilla, "", mc_version)`
+//! — only `mc_version` is meaningful for vanilla (loader version is `""`).
+//!
+//! Available MC versions:
+//! <https://piston-meta.mojang.com/mc/game/version_manifest_v2.json>
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = ".LightyLauncher";
-const APPLICATION: &str = "";
+use lighty_launcher::prelude::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -11,22 +15,14 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
-    let _app_state = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    AppState::init("LightyLauncher")?;
 
-    let launcher_dir = AppState::get_project_dirs();
-
-    // Configure le downloader (optionnel - valeurs par défaut si non appelé)
-    init_downloader_config(
-        DownloaderConfig {
-        max_concurrent_downloads: 100,   // Plus de downloads concurrents car de base 50
-        max_retries: 5,                  // Plus de tentatives car de base 3
-        initial_delay_ms: 50,            // Délai initial plus long car de base 20
-    }
-    );
+    // Configure the downloader (optional — defaults are used if this is not called)
+    init_downloader_config(DownloaderConfig {
+        max_concurrent_downloads: 100, // up from default of 50
+        max_retries: 5,                // up from default of 3
+        initial_delay_ms: 50,          // up from default of 20ms
+    });
 
     // Authenticate
     let mut auth = OfflineAuth::new("Hamadi");
@@ -35,17 +31,19 @@ async fn main() -> anyhow::Result<()> {
     #[cfg(not(feature = "events"))]
     let profile = auth.authenticate().await?;
 
-    let mut version = VersionBuilder::new("vanilla-1.7.10", Loader::Vanilla, "", "1.7.10", launcher_dir);
+    let mut version = VersionBuilder::new("vanilla-1.7.2", Loader::Vanilla, "", "1.7.2");
 
-    version.launch(&profile, JavaDistribution::Temurin)
+    version
+        .launch(&profile, JavaDistribution::Temurin)
         .with_jvm_options()
-            .set("Xmx", "4G")
-            .set("Xms", "2G")
-            .done()
+        .set("Xmx", "4G")
+        .set("Xms", "2G")
+        .done()
         .with_arguments()
-            .set("width", "1920")
-            .set("height", "1080")
-            .done()
+        .set("width", "1920")
+        .set("height", "1080")
+        .set(KEY_GAME_DIRECTORY, "runtime") //better folder organization
+        .done()
         .run()
         .await?;
 

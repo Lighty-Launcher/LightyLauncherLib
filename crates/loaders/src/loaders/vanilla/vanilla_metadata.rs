@@ -1,6 +1,9 @@
+//! Serde mirrors of the JSON documents returned by Mojang's `piston-meta`.
+
 use std::collections::HashMap;
 use serde::Deserialize;
 
+/// Top-level `version_manifest_v2.json` document.
 #[derive(Debug, Deserialize)]
 pub struct PistonMetaManifest {
     pub latest: Latest,
@@ -34,7 +37,7 @@ pub struct VanillaMetaData {
     pub id: String,
     pub main_class: String,
     #[serde(rename="type")]
-    pub type_field: String, // `type` est un mot réservé en Rust
+    pub type_field: String,
     pub release_time: String,
     pub time: String,
     pub minimum_launcher_version: Option<u32>,
@@ -47,11 +50,9 @@ pub struct VanillaMetaData {
     pub downloads: Downloads,
     pub libraries: Vec<Library>,
 
-    // Ancien format
     #[serde(default)]
     pub minecraft_arguments: Option<String>,
 
-    // Nouveau format
     #[serde(default)]
     pub arguments: Option<Arguments>,
 
@@ -120,7 +121,7 @@ pub struct Artifact {
     pub url: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Rule {
     pub action: String,
     #[serde(default)]
@@ -129,7 +130,7 @@ pub struct Rule {
     pub features: Option<std::collections::HashMap<String, bool>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct RuleOS {
     pub name: Option<String>,
     pub arch: Option<String>,
@@ -139,8 +140,9 @@ pub struct RuleOS {
 #[derive(Clone)]
 #[derive(Default)]
 pub struct Arguments {
+    // Each entry is either a String or an Object.
     #[serde(default)]
-    pub game: Vec<serde_json::Value>, // peut être String ou Object
+    pub game: Vec<serde_json::Value>,
     #[serde(default)]
     pub jvm: Vec<serde_json::Value>,
 }

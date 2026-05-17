@@ -300,7 +300,7 @@ java_dirs/
 All operations return `Result<T, QueryError>`:
 
 **Exports**:
-- `lighty_loaders::utils::error::QueryError`
+- `lighty_core::QueryError`
 
 ```rust
 pub enum QueryError {
@@ -325,7 +325,7 @@ All components are thread-safe:
 
 ```toml
 [dependencies]
-lighty-loaders = { version = "0.8.6", features = ["vanilla", "fabric"] }
+lighty-loaders = { version = "26.5.1", features = ["vanilla", "fabric"] }
 ```
 
 **Available**:

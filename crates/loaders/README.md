@@ -4,7 +4,7 @@ Mod loader support for Minecraft: Vanilla, Fabric, Quilt, Forge, NeoForge, OptiF
 
 ## Overview
 
-**Version**: 0.8.6
+**Version**: 26.5.1
 **Part of**: [LightyLauncher](https://crates.io/crates/lighty-launcher)
 
 Provides a unified trait-based API for managing different Minecraft mod loaders with smart caching and metadata resolution.
@@ -14,20 +14,10 @@ Provides a unified trait-based API for managing different Minecraft mod loaders 
 ```rust
 use lighty_launcher::prelude::*;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize AppState
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // Create instance with Fabric loader
     let mut instance = VersionBuilder::new(
@@ -35,7 +25,6 @@ async fn main() -> anyhow::Result<()> {
         Loader::Fabric,
         "0.16.9",      // Fabric loader version
         "1.21.1",      // Minecraft version
-        launcher_dir
     );
 
     // Get metadata (automatically fetched and cached)
@@ -73,10 +62,10 @@ async fn main() -> anyhow::Result<()> {
 ```toml
 [dependencies]
 # With all loaders
-lighty-loaders = { version = "0.8.6", features = ["all-loaders"] }
+lighty-loaders = { version = "26.5.1", features = ["all-loaders"] }
 
 # With specific loaders
-lighty-loaders = { version = "0.8.6", features = ["vanilla", "fabric", "quilt"] }
+lighty-loaders = { version = "26.5.1", features = ["vanilla", "fabric", "quilt"] }
 ```
 
 ## Core Traits
@@ -89,7 +78,7 @@ Defines version information for any instance:
 use lighty_launcher::loaders::VersionInfo;
 
 // Already implemented by VersionBuilder
-let instance = VersionBuilder::new("name", Loader::Vanilla, "", "1.21.1", launcher_dir);
+let instance = VersionBuilder::new("name", Loader::Vanilla, "", "1.21.1");
 
 println!("Name: {}", instance.name());
 println!("Minecraft: {}", instance.minecraft_version());

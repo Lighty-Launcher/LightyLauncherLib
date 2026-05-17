@@ -46,7 +46,7 @@ flowchart TD
 ### AppState
 - **Purpose**: Global application configuration
 - **Lifecycle**: Initialize once at app startup
-- **Dependencies**: `directories` crate for platform paths
+- **Dependencies**: `dirs` crate for platform paths
 - **Thread Safety**: Uses `OnceCell` for thread-safe initialization
 
 ### Download System
@@ -160,7 +160,7 @@ pub enum ExtractError {
 // AppState errors
 pub enum AppStateError {
     NotInitialized,
-    ProjectDirsCreation,
+    AlreadyInitialized,
 }
 ```
 

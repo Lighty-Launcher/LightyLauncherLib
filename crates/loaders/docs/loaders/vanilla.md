@@ -16,23 +16,13 @@ use lighty_launcher::prelude::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
-let _app = AppState::new(
-    QUALIFIER.to_string(),
-    ORGANIZATION.to_string(),
-    APPLICATION.to_string(),
-)?;
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     let instance = VersionBuilder::new(
         "vanilla-1.21",      // Instance name
         Loader::Vanilla,      // Loader type
         "",                   // No loader version for Vanilla
         "1.21.1",            // Minecraft version
-        launcher_dir
     );
 
     let metadata = instance.get_metadata().await?;
@@ -308,7 +298,7 @@ let metadata2 = instance.get_metadata().await?;  // ~1ms
 Stable versions (e.g., 1.21.1, 1.20.4).
 
 ```rust
-let instance = VersionBuilder::new("vanilla", Loader::Vanilla, "", "1.21.1", launcher_dir);
+let instance = VersionBuilder::new("vanilla", Loader::Vanilla, "", "1.21.1");
 ```
 
 ### Snapshot
@@ -316,7 +306,7 @@ let instance = VersionBuilder::new("vanilla", Loader::Vanilla, "", "1.21.1", lau
 Development versions (e.g., 24w33a).
 
 ```rust
-let instance = VersionBuilder::new("snapshot", Loader::Vanilla, "", "24w33a", launcher_dir);
+let instance = VersionBuilder::new("snapshot", Loader::Vanilla, "", "24w33a");
 ```
 
 ### Old Versions
@@ -324,7 +314,7 @@ let instance = VersionBuilder::new("snapshot", Loader::Vanilla, "", "24w33a", la
 Legacy versions still supported (e.g., 1.7.10, 1.12.2).
 
 ```rust
-let instance = VersionBuilder::new("legacy", Loader::Vanilla, "", "1.7.10", launcher_dir);
+let instance = VersionBuilder::new("legacy", Loader::Vanilla, "", "1.7.10");
 ```
 
 ## Complete Example
@@ -335,19 +325,10 @@ use lighty_launcher::prelude::*;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize
-    const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
-let _app = AppState::new(
-    QUALIFIER.to_string(),
-    ORGANIZATION.to_string(),
-    APPLICATION.to_string(),
-)?;
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // Create instance
-    let instance = VersionBuilder::new("vanilla-1.21", Loader::Vanilla, "", "1.21.1", launcher_dir);
+    let instance = VersionBuilder::new("vanilla-1.21", Loader::Vanilla, "", "1.21.1");
 
     // Fetch metadata
     trace_info!("Fetching Vanilla metadata...");

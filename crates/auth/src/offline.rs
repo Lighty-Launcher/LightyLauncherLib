@@ -1,52 +1,27 @@
 // Copyright (c) 2025 Hamadi
 // Licensed under the MIT License
 
-//! Offline authentication - no network required
-//!
-//! Generates a deterministic UUID v5 (SHA1-based) from the username.
-//! No token validation or verification.
+//! Offline authentication: deterministic UUID v5 derived from the username.
 
-use crate::{Authenticator, AuthError, AuthResult, UserProfile, generate_offline_uuid};
+use crate::{Authenticator, AuthError, AuthProvider, AuthResult, UserProfile, generate_offline_uuid};
 
 #[cfg(feature = "events")]
 use lighty_event::{EventBus, Event, AuthEvent};
 
-/// Offline authenticator
-///
-/// Generates a deterministic UUID from the username without any network calls.
-/// Suitable for offline play or testing.
-///
-/// # Example
-/// ```no_run
-/// use lighty_auth::offline::OfflineAuth;
-/// use lighty_auth::Authenticator;
-///
-/// #[tokio::main]
-/// async fn main() {
-///     let mut auth = OfflineAuth::new("Player123");
-///     let profile = auth.authenticate().await.unwrap();
-///     println!("UUID: {}", profile.uuid);
-/// }
-/// ```
+/// Offline authenticator — no network calls, suitable for offline play or testing.
 pub struct OfflineAuth {
     username: String,
 }
 
 impl OfflineAuth {
-    /// Create a new offline authenticator
-    ///
-    /// # Arguments
-    /// - `username`: The username to authenticate with
-    ///
-    /// # Returns
-    /// A new `OfflineAuth` instance
+    /// Create a new offline authenticator.
     pub fn new(username: impl Into<String>) -> Self {
         Self {
             username: username.into(),
         }
     }
 
-    /// Get the username
+    /// Get the username.
     pub fn username(&self) -> &str {
         &self.username
     }
@@ -57,7 +32,6 @@ impl Authenticator for OfflineAuth {
         &mut self,
         #[cfg(feature = "events")] event_bus: Option<&EventBus>,
     ) -> AuthResult<UserProfile> {
-        // Emit authentication started
         #[cfg(feature = "events")]
         if let Some(bus) = event_bus {
             bus.emit(Event::Auth(AuthEvent::AuthenticationStarted {
@@ -65,7 +39,6 @@ impl Authenticator for OfflineAuth {
             }));
         }
 
-        // Validate username
         if self.username.is_empty() {
             #[cfg(feature = "events")]
             if let Some(bus) = event_bus {
@@ -89,7 +62,6 @@ impl Authenticator for OfflineAuth {
             return Err(AuthError::Custom(error_msg));
         }
 
-        // Check for valid characters (alphanumeric + underscore)
         if !self.username.chars().all(|c| c.is_alphanumeric() || c == '_') {
             let error_msg = "Username can only contain letters, numbers, and underscores".to_string();
             #[cfg(feature = "events")]
@@ -102,10 +74,8 @@ impl Authenticator for OfflineAuth {
             return Err(AuthError::Custom(error_msg));
         }
 
-        // Generate deterministic UUID
         let uuid = generate_offline_uuid(&self.username);
 
-        // Emit authentication success
         #[cfg(feature = "events")]
         if let Some(bus) = event_bus {
             bus.emit(Event::Auth(AuthEvent::AuthenticationSuccess {
@@ -120,11 +90,15 @@ impl Authenticator for OfflineAuth {
             username: self.username.clone(),
             uuid,
             access_token: None,
+            #[cfg(feature = "keyring")]
+            token_handle: None,
+            xuid: None,
             email: None,
             email_verified: false,
             money: None,
             role: None,
             banned: false,
+            provider: AuthProvider::Offline,
         })
     }
 }

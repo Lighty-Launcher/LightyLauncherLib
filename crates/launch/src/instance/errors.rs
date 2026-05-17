@@ -6,17 +6,19 @@ pub type InstanceResult<T> = Result<T, InstanceError>;
 /// Errors that can occur during instance management
 #[derive(Debug)]
 pub enum InstanceError {
-    /// Instance not found by PID
     NotFound { pid: u32 },
 
-    /// Instance is still running and cannot be deleted
     StillRunning {
         instance_name: String,
         pids: Vec<u32>,
     },
 
-    /// I/O error during instance operations
     Io(std::io::Error),
+
+    DuplicatePid {
+        pid: u32,
+        existing_instance: String,
+    },
 }
 
 impl fmt::Display for InstanceError {
@@ -36,6 +38,11 @@ impl fmt::Display for InstanceError {
                 )
             }
             InstanceError::Io(err) => write!(f, "I/O error: {}", err),
+            InstanceError::DuplicatePid { pid, existing_instance } => write!(
+                f,
+                "Cannot register instance: PID {} already tracked by '{}'",
+                pid, existing_instance
+            ),
         }
     }
 }

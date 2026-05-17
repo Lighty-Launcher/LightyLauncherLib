@@ -168,80 +168,70 @@ async fn main()  {
 
 ### Token Caching and Verification
 
-Cache authentication tokens to avoid re-authentication:
+Cache an Azuriom session token in the OS keychain (never on disk in
+plain text — `UserProfile` is intentionally non-`Serialize`). The
+recommended pattern is to store just the token under a service/account
+pair, then `verify()` it on next launch:
 
 ```rust
-use lighty_auth::{azuriom::AzuriomAuth, Authenticator, AuthError, UserProfile};
-use std::fs;
+use lighty_auth::{azuriom::AzuriomAuth, Authenticator, AuthError, UserProfile, SecretString, ExposeSecret};
 use std::path::Path;
-use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Deserialize)]
-struct CachedAuth {
-    token: String,
-    username: String,
-    uuid: String,
+const SERVICE: &str = "MyLauncher";
+const ACCOUNT: &str = "azuriom-default";
+
+fn save_token(token: &SecretString) -> anyhow::Result<()> {
+    let entry = keyring::Entry::new(SERVICE, ACCOUNT)?;
+    entry.set_password(token.expose_secret())?;
+    Ok(())
+}
+
+fn load_token() -> Option<SecretString> {
+    let entry = keyring::Entry::new(SERVICE, ACCOUNT).ok()?;
+    Some(SecretString::from(entry.get_password().ok()?))
 }
 
 async fn authenticate_with_cache(
-    cache_path: &Path,
     url: &str,
     email: &str,
     password: &str,
 ) -> Result<UserProfile, Box<dyn std::error::Error>> {
-    let auth = AzuriomAuth::new(url, email, password);
+    let mut auth = AzuriomAuth::new(url, email, password);
 
-    // Try to load cached token
-    if cache_path.exists() {
-        if let Ok(cached) = fs::read_to_string(cache_path) {
-            if let Ok(cached_auth) = serde_json::from_str::<CachedAuth>(&cached) {
-                // Verify cached token
-                match auth.verify(&cached_auth.token).await {
-                    Ok(profile) => {
-                        println!("Using cached authentication");
-                        return Ok(profile);
-                    }
-                    Err(_) => {
-                        println!("Cached token expired, re-authenticating...");
-                    }
-                }
+    if let Some(cached) = load_token() {
+        match auth.verify(cached.expose_secret()).await {
+            Ok(profile) => {
+                println!("Using cached authentication");
+                return Ok(profile);
             }
+            Err(_) => println!("Cached token expired, re-authenticating..."),
         }
     }
 
-    // Authenticate and cache token
-    let mut auth = AzuriomAuth::new(url, email, password);
-    let profile = auth.authenticate().await?;
-
+    let profile = auth.authenticate(None).await?;
     if let Some(token) = &profile.access_token {
-        let cached = CachedAuth {
-            token: token.clone(),
-            username: profile.username.clone(),
-            uuid: profile.uuid.clone(),
-        };
-
-        fs::write(cache_path, serde_json::to_string(&cached)?)?;
+        save_token(token)?;
     }
-
     Ok(profile)
 }
 
 #[tokio::main]
-async fn main()  {
-    let cache_path = Path::new("auth_cache.json");
-
+async fn main() -> anyhow::Result<()> {
     let profile = authenticate_with_cache(
-        cache_path,
         "https://your-server.com",
         "user@example.com",
-        "password123"
+        "password123",
     ).await?;
 
     println!("Authenticated as: {}", profile.username);
-
     Ok(())
 }
 ```
+
+For a no-extra-keyring-code variant, use the built-in
+`AzuriomAuth::with_keyring("MyLauncher")` (feature `keyring`): the
+provider writes the token into the keychain automatically and the
+returned `UserProfile.token_handle` reads it on demand.
 
 ### Event-Driven Authentication UI
 
@@ -315,7 +305,7 @@ where
         match auth.authenticate(None).await {
             Ok(profile) => return Ok(profile),
 
-            Err(AuthError::NetworkError(e)) if attempts < max_retries => {
+            Err(AuthError::Network(e)) if attempts < max_retries => {
                 attempts += 1;
                 eprintln!(
                     "Network error (attempt {}/{}): {}. Retrying in {:?}...",
@@ -352,8 +342,10 @@ async fn main()  {
 Implement your own authentication backend:
 
 ```rust
-use lighty_auth::{Authenticator, AuthResult, UserProfile, UserRole, AuthError};
-use async_trait::async_trait;
+use lighty_auth::{
+    Authenticator, AuthResult, UserProfile, UserRole, AuthError,
+    AuthProvider, SecretString,
+};
 
 pub struct CustomAuth {
     api_url: String,
@@ -390,8 +382,7 @@ impl Authenticator for CustomAuth {
                 "password": self.password,
             }))
             .send()
-            .await
-            .map_err(|e| AuthError::NetworkError(e))?;
+            .await?;
 
         if !response.status().is_success() {
             return Err(AuthError::InvalidCredentials);
@@ -413,7 +404,12 @@ impl Authenticator for CustomAuth {
                 .as_str()
                 .ok_or_else(|| AuthError::InvalidResponse("Missing uuid".into()))?
                 .to_string(),
-            access_token: data["token"].as_str().map(|s| s.to_string()),
+            access_token: data["token"]
+                .as_str()
+                .map(|s| SecretString::from(s.to_owned())),
+            #[cfg(feature = "keyring")]
+            token_handle: None,
+            xuid: None,
             email: data["email"].as_str().map(|s| s.to_string()),
             email_verified: data["email_verified"].as_bool().unwrap_or(false),
             money: data["balance"].as_f64(),
@@ -422,6 +418,7 @@ impl Authenticator for CustomAuth {
                 color: Some("#FFFFFF".to_string()),
             }),
             banned: data["banned"].as_bool().unwrap_or(false),
+            provider: AuthProvider::Custom { base_url: self.api_url.clone() },
         };
 
         // Emit success event
@@ -500,17 +497,17 @@ async fn main()  {
 Complete session lifecycle management:
 
 ```rust
-use lighty_auth::{azuriom::AzuriomAuth, Authenticator, UserProfile};
+use lighty_auth::{azuriom::AzuriomAuth, Authenticator, UserProfile, SecretString, ExposeSecret};
 use std::time::{Duration, Instant};
 
 struct Session {
     profile: UserProfile,
-    token: String,
+    token: SecretString,
     expires_at: Instant,
 }
 
 impl Session {
-    fn new(profile: UserProfile, token: String, duration: Duration) -> Self {
+    fn new(profile: UserProfile, token: SecretString, duration: Duration) -> Self {
         Self {
             profile,
             token,
@@ -533,7 +530,7 @@ async fn create_session(
     password: &str,
 ) -> Result<Session, Box<dyn std::error::Error>> {
     let mut auth = AzuriomAuth::new(url, email, password);
-    let profile = auth.authenticate().await?;
+    let profile = auth.authenticate(None).await?;
 
     let token = profile.access_token.clone()
         .ok_or("No access token provided")?;
@@ -549,7 +546,7 @@ async fn refresh_session(
     session: &Session,
     auth: &AzuriomAuth,
 ) -> Result<Session, Box<dyn std::error::Error>> {
-    let profile = auth.verify(&session.token).await?;
+    let profile = auth.verify(session.token.expose_secret()).await?;
 
     Ok(Session::new(
         profile,
@@ -584,9 +581,83 @@ async fn main()  {
 }
 ```
 
+## Microsoft Silent Re-auth with OS Keyring
+
+Persist the MS refresh token in the OS keyring so the user never has
+to re-enter a device code unless the token expires (≈ 90 days of
+inactivity). This is the recommended production pattern for any
+Microsoft-based launcher.
+
+`UserProfile` is intentionally non-`Serialize`, so dumping the whole
+struct to disk is impossible. Persist **just the refresh token** (a
+`SecretString`) instead:
+
+```rust
+use lighty_launcher::prelude::*;
+use secrecy::{ExposeSecret, SecretString};
+
+const SERVICE: &str = "MyLauncher";
+const ACCOUNT: &str = "microsoft-refresh";
+
+fn save_refresh(rt: &SecretString) -> anyhow::Result<()> {
+    let entry = keyring::Entry::new(SERVICE, ACCOUNT)?;
+    entry.set_password(rt.expose_secret())?;
+    Ok(())
+}
+
+fn load_refresh() -> Option<SecretString> {
+    let entry = keyring::Entry::new(SERVICE, ACCOUNT).ok()?;
+    Some(SecretString::from(entry.get_password().ok()?))
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let mut auth = MicrosoftAuth::new("your-azure-client-id");
+    auth.set_device_code_callback(|code, url| {
+        println!("Visit {url} and enter: {code}");
+    });
+
+    // 1) Try silent re-auth from the persisted refresh token.
+    let profile = match load_refresh() {
+        Some(rt) => match auth.authenticate_with_refresh_token(&rt, None).await {
+            Ok(p) => p,
+            Err(_) => auth.authenticate(None).await?, // expired → device-code
+        },
+        None => auth.authenticate(None).await?,       // first launch → device-code
+    };
+
+    // 2) Persist the (rotated) refresh token from the fresh profile.
+    if let AuthProvider::Microsoft { refresh_token: Some(rt), .. } = &profile.provider {
+        save_refresh(rt)?;
+    }
+    println!("Welcome back, {}", profile.username);
+    Ok(())
+}
+```
+
+For the access token itself, the simplest setup is the built-in keyring
+routing — add `.with_keyring("MyLauncher")` to the `MicrosoftAuth` and
+the MC access token is written to the OS keychain automatically, with a
+[`TokenHandle`](../../auth/docs/exports.md#os-keychain-feature-keyring)
+on the returned profile for on-demand reads.
+
+Both paths rely on the [`keyring`](https://crates.io/crates/keyring)
+crate (Linux Secret Service / macOS Keychain / Windows Credential
+Manager — encrypted at rest by the OS). Enable the `keyring` feature on
+`lighty-launcher` (or `lighty-auth` directly) for the built-in routing;
+add `keyring = "3"` to your own crate for the manual refresh-token
+persistence above.
+
+The full runnable variant lives at
+[`examples/auth/microsoft.rs`](../../../examples/auth/microsoft.rs).
+Parallel examples for Azuriom (`verify`-based persistence) and a
+custom backend (skeleton `Authenticator` impl) are next to it under
+`examples/auth/`.
+
 ## See Also
 
 - [Overview](./overview.md) - Architecture overview
 - [Offline Mode](./offline.md) - Offline authentication
-- [Microsoft OAuth](./microsoft.md) - Microsoft authentication
+- [Microsoft OAuth](./microsoft.md) - Microsoft authentication, refresh
+  tokens, and the silent re-auth flow
 - [Azuriom CMS](./azuriom.md) - Azuriom authentication

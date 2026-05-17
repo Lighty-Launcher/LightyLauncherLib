@@ -64,7 +64,13 @@ async fn main() -> anyhow::Result<()> {
 
     println!("Logged in as: {}", profile.username);
     println!("UUID: {}", profile.uuid);
-    println!("Access token: {}", profile.access_token.unwrap_or_default());
+    // `access_token` is a `SecretString`. Expose it only at the exact
+    // moment you need the bytes — Debug-printing the secret prints
+    // `[REDACTED]` by design.
+    if let Some(secret) = &profile.access_token {
+        use secrecy::ExposeSecret;
+        println!("Access token: {}", secret.expose_secret());
+    }
 
     Ok(())
 }
@@ -73,7 +79,65 @@ async fn main() -> anyhow::Result<()> {
 **Key features**:
 - Device code flow (no embedded browser needed)
 - Full Xbox Live and Minecraft Services integration
-- Returns Minecraft access token for session validation
+- Returns Minecraft access token for session validation (as a
+  `SecretString`)
+- Captures the MS refresh token in `profile.provider` for silent
+  re-auth on subsequent launches (see below)
+- Opt-in OS-keychain routing via `MicrosoftAuth::with_keyring("…")`
+  (feature `keyring`) — the access token never stays in process
+  memory long-term; only a [`TokenHandle`](./exports.md#os-keychain-feature-keyring)
+  is returned on the profile
+
+### Silent Re-authentication (Microsoft "Remember Me")
+
+After the first device-code authentication, the resulting `UserProfile`
+carries the MS refresh token under
+`AuthProvider::Microsoft { refresh_token: Some(_), .. }`. Persist the
+whole profile, then on the next launch call
+`MicrosoftAuth::authenticate_with_refresh_token` instead of
+`authenticate` — no device-code prompt, no user interaction.
+
+```rust
+use lighty_launcher::prelude::*;
+
+let mut auth = MicrosoftAuth::new("your-azure-client-id");
+
+// 1) Try silent first using the refresh token from a previous run.
+let profile = match load_saved_profile() {
+    Some(saved) => match saved.provider {
+        AuthProvider::Microsoft { refresh_token: Some(rt), .. } => {
+            auth.authenticate_with_refresh_token(&rt, None).await.ok()
+        }
+        _ => None,
+    },
+    None => None,
+};
+
+// 2) Fall back to device-code if no token saved or refresh failed
+//    (token expired after ~90 days of inactivity, or was revoked).
+let profile = match profile {
+    Some(p) => p,
+    None => {
+        auth.set_device_code_callback(|code, url| {
+            println!("Visit {url} and enter: {code}");
+        });
+        auth.authenticate(None).await?
+    }
+};
+
+// 3) Persist again — Microsoft rotates the refresh token on every use
+//    (RFC 6749), and the new one is now inside `profile.provider`.
+save_profile(&profile)?;
+```
+
+**Recommended storage**: the OS-native secure store via the
+[`keyring`](https://crates.io/crates/keyring) crate — Linux Secret
+Service / macOS Keychain / Windows Credential Manager, encrypted at
+rest by the OS. The library does not depend on `keyring`; persistence
+is intentionally left to the consumer.
+
+A complete runnable example with keyring lives at
+[`examples/auth/microsoft.rs`](../../../examples/auth/microsoft.rs).
 
 ### Azuriom Authentication
 
@@ -147,34 +211,32 @@ async fn main() -> anyhow::Result<()> {
         while let Ok(event) = receiver.next().await {
             match event {
                 Event::Auth(AuthEvent::AuthenticationStarted { provider }) => {
-                    println!("🔐 Starting authentication with: {:?}", provider);
+                    println!("Starting authentication with: {provider}");
                 }
-                Event::Auth(AuthEvent::DeviceCodeReceived { code, url, .. }) => {
-                    println!("📱 Device code: {}", code);
-                    println!("🌐 URL: {}", url);
+                Event::Auth(AuthEvent::AuthenticationInProgress { provider, step }) => {
+                    println!("[{provider}] {step}");
                 }
-                Event::Auth(AuthEvent::WaitingForUser) => {
-                    println!("⏳ Waiting for user to complete authentication...");
+                Event::Auth(AuthEvent::AuthenticationSuccess { provider, username, uuid }) => {
+                    println!("Authenticated as {username} ({uuid}) via {provider}");
                 }
-                Event::Auth(AuthEvent::AuthenticationSuccess { username, provider }) => {
-                    println!("✓ Successfully authenticated as {} via {:?}", username, provider);
-                }
-                Event::Auth(AuthEvent::AuthenticationFailed { error, .. }) => {
-                    eprintln!("✗ Authentication failed: {}", error);
+                Event::Auth(AuthEvent::AuthenticationFailed { provider, error }) => {
+                    eprintln!("Auth failed for {provider}: {error}");
                 }
                 _ => {}
             }
         }
     });
 
-    // Authenticate with events
+    // The device code itself is delivered through the callback, not an
+    // event — the callback signature is `Fn(&str, &str) + Send + Sync`.
     let mut auth = MicrosoftAuth::new("your-client-id");
     auth.set_device_code_callback(|code, url| {
-        println!("Visit {} and enter {}", url, code);
+        println!("Visit {url} and enter {code}");
     });
 
     let profile = auth.authenticate(Some(&event_bus)).await?;
-    println!("Profile: {:?}", profile);
+    // `Debug` redacts the secret: `access_token: Some("[REDACTED]")`.
+    println!("Profile: {profile:?}");
 
     Ok(())
 }
@@ -182,14 +244,20 @@ async fn main() -> anyhow::Result<()> {
 
 ## Custom Authenticator
 
-Implement the `Authenticator` trait for your own authentication system:
+Implement the `Authenticator` trait for your own authentication system.
+Note that any provider-issued token must be wrapped in `SecretString`
+before being stored on the `UserProfile`, and `AuthEvent` carries
+`provider: String` (not the `AuthProvider` enum):
 
 ```rust
-use lighty_auth::{Authenticator, UserProfile, UserRole, AuthResult, AuthError, AuthProvider};
+use lighty_auth::{
+    Authenticator, AuthError, AuthProvider, AuthResult, ExposeSecret,
+    SecretString, UserProfile, UserRole,
+};
 use lighty_core::hosts::HTTP_CLIENT;
 
 #[cfg(feature = "events")]
-use lighty_event::EventBus;
+use lighty_event::{AuthEvent, Event, EventBus};
 
 pub struct CustomAuth {
     api_url: String,
@@ -200,7 +268,7 @@ pub struct CustomAuth {
 impl CustomAuth {
     pub fn new(api_url: &str, username: &str, password: &str) -> Self {
         Self {
-            api_url: api_url.to_string(),
+            api_url: api_url.trim_end_matches('/').to_string(),
             username: username.to_string(),
             password: password.to_string(),
         }
@@ -208,22 +276,17 @@ impl CustomAuth {
 }
 
 impl Authenticator for CustomAuth {
-    #[cfg(feature = "events")]
     async fn authenticate(
         &mut self,
-        event_bus: Option<&EventBus>,
+        #[cfg(feature = "events")] event_bus: Option<&EventBus>,
     ) -> AuthResult<UserProfile> {
-        // Emit start event
+        #[cfg(feature = "events")]
         if let Some(bus) = event_bus {
-            use lighty_event::{Event, AuthEvent};
             bus.emit(Event::Auth(AuthEvent::AuthenticationStarted {
-                provider: AuthProvider::Custom {
-                    base_url: self.api_url.clone(),
-                },
+                provider: "Custom".to_string(),
             }));
         }
 
-        // Make API request
         let response = HTTP_CLIENT
             .post(format!("{}/api/login", self.api_url))
             .json(&serde_json::json!({
@@ -231,32 +294,41 @@ impl Authenticator for CustomAuth {
                 "password": self.password,
             }))
             .send()
-            .await
-            .map_err(|e| AuthError::NetworkError(e.to_string()))?;
+            .await?;
 
         if !response.status().is_success() {
             return Err(AuthError::InvalidCredentials);
         }
 
-        let data: serde_json::Value = response.json().await
-            .map_err(|e| AuthError::ParseError(e.to_string()))?;
+        let data: serde_json::Value = response.json().await?;
 
-        // Emit success event
+        let uuid = data["uuid"].as_str().unwrap_or("").to_string();
+        let username = data["username"]
+            .as_str()
+            .unwrap_or(&self.username)
+            .to_string();
+
+        #[cfg(feature = "events")]
         if let Some(bus) = event_bus {
-            use lighty_event::{Event, AuthEvent};
             bus.emit(Event::Auth(AuthEvent::AuthenticationSuccess {
-                username: self.username.clone(),
-                provider: AuthProvider::Custom {
-                    base_url: self.api_url.clone(),
-                },
+                provider: "Custom".to_string(),
+                username: username.clone(),
+                uuid: uuid.clone(),
             }));
         }
 
         Ok(UserProfile {
             id: data["id"].as_u64(),
-            username: self.username.clone(),
-            uuid: data["uuid"].as_str().unwrap_or("").to_string(),
-            access_token: data["token"].as_str().map(String::from),
+            username,
+            uuid,
+            // The session token MUST be wrapped in `SecretString` so it
+            // is redacted from `Debug` and refused by serde.
+            access_token: data["token"]
+                .as_str()
+                .map(|s| SecretString::from(s.to_owned())),
+            #[cfg(feature = "keyring")]
+            token_handle: None,
+            xuid: None,
             email: data["email"].as_str().map(String::from),
             email_verified: data["email_verified"].as_bool().unwrap_or(false),
             money: data["money"].as_f64(),
@@ -265,17 +337,16 @@ impl Authenticator for CustomAuth {
                 color: r["color"].as_str().map(String::from),
             }),
             banned: data["banned"].as_bool().unwrap_or(false),
+            provider: AuthProvider::Custom { base_url: self.api_url.clone() },
         })
-    }
-
-    #[cfg(not(feature = "events"))]
-    async fn authenticate(&mut self) -> AuthResult<UserProfile> {
-        // Same implementation without events
-        // ...
-        todo!()
     }
 }
 ```
+
+Custom providers that want OS-keychain routing can mirror the
+`with_keyring(service: impl Into<String>)` builder used by `MicrosoftAuth`
+/ `AzuriomAuth` and route the token through
+`lighty_auth::TokenHandle` (gated behind `#[cfg(feature = "keyring")]`).
 
 ## Offline UUID Generation
 
@@ -316,12 +387,11 @@ async fn main() {
         println!("Code: {}, URL: {}", code, url);
     });
 
-    #[cfg(not(feature = "events"))]
-    match auth.authenticate().await {
+    match auth.authenticate(None).await {
         Ok(profile) => {
             println!("Success: {}", profile.username);
         }
-        Err(AuthError::NetworkError(e)) => {
+        Err(AuthError::Network(e)) => {
             eprintln!("Network error: {}", e);
         }
         Err(AuthError::InvalidCredentials) => {
@@ -330,20 +400,27 @@ async fn main() {
         Err(AuthError::TwoFactorRequired) => {
             eprintln!("2FA code required");
         }
-        Err(AuthError::AccountBanned) => {
-            eprintln!("Account is banned");
+        Err(AuthError::AccountBanned(who)) => {
+            eprintln!("Account is banned: {who}");
         }
-        Err(AuthError::MicrosoftAuthFailed(msg)) => {
-            eprintln!("Microsoft auth failed: {}", msg);
+        Err(AuthError::DeviceCodeExpired) => {
+            eprintln!("Device code expired before user authorised");
         }
-        Err(AuthError::XboxLiveAuthFailed(msg)) => {
-            eprintln!("Xbox Live auth failed: {}", msg);
+        Err(AuthError::Cancelled) => {
+            eprintln!("User declined authorisation");
         }
-        Err(AuthError::MinecraftAuthFailed(msg)) => {
-            eprintln!("Minecraft auth failed: {}", msg);
+        Err(AuthError::InvalidToken) => {
+            eprintln!("Stored refresh token is expired or revoked");
+        }
+        Err(AuthError::InvalidResponse(msg)) => {
+            eprintln!("Provider returned an unexpected payload: {msg}");
+        }
+        #[cfg(feature = "keyring")]
+        Err(AuthError::Keyring(e)) => {
+            eprintln!("OS keychain error: {e}");
         }
         Err(e) => {
-            eprintln!("Error: {}", e);
+            eprintln!("Error: {e}");
         }
     }
 }
@@ -353,12 +430,18 @@ async fn main() {
 
 ```toml
 [dependencies]
-lighty-auth = { version = "0.8.6", features = ["events", "tracing"] }
+lighty-auth = { version = "26.5.1", features = ["events", "tracing", "keyring"] }
 ```
 
 Available features:
 - `events` - Enables AuthEvent emission (requires lighty-event)
 - `tracing` - Enables logging macros
+- `keyring` - Enables `MicrosoftAuth::with_keyring(...)` /
+  `AzuriomAuth::with_keyring(...)`, the `TokenHandle` type, and the
+  `AuthError::Keyring` variant. Pulls D-Bus on Linux, so it stays
+  optional for headless / CI builds. From the umbrella crate, enable
+  via `lighty-launcher/keyring` (forwarded to both `lighty-auth/keyring`
+  and `lighty-launch/keyring`).
 
 ## Exports
 
@@ -373,6 +456,14 @@ use lighty_auth::{
     UserRole,
     AuthProvider,
     AuthResult,
+
+    // Secrets (re-exported from `secrecy`)
+    SecretString,
+    ExposeSecret,
+
+    // OS keychain (feature "keyring")
+    #[cfg(feature = "keyring")]
+    TokenHandle,
 
     // Helper
     generate_offline_uuid,

@@ -1,11 +1,14 @@
-pub mod version_info;
+//! Shared types used by every loader.
+
+pub mod version;
 pub mod loader;
-pub mod loader_extensions;
-pub mod version_metadata;
 pub mod instance_size;
 
-pub use version_info::*;
-pub use loader::*;
-pub use loader_extensions::*;
-pub use version_metadata::*;
+pub use version::version_info::*;
+pub use version::version_metadata::*;
+pub use loader::loader::*;
+pub use loader::loader_extensions::*;
 pub use instance_size::*;
+
+pub use version::version_metadata;
+pub use loader::loader_extensions;

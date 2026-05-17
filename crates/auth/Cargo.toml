@@ -21,9 +21,19 @@ tokio.workspace = true
 # HTTP Client
 reqwest.workspace = true
 
-# Sérialisation
+# Serialization
 serde.workspace = true
 serde_json.workspace = true
+
+# Secrets (token wrapping — disables accidental Debug/Serialize leaks)
+secrecy.workspace = true
+
+# OS keychain (opt-in via `keyring` feature). Pulls D-Bus on Linux, so
+# this stays optional for headless / CI environments.
+keyring = { workspace = true, optional = true }
+
+# JWT decoding (Microsoft access_token carries the Xbox xuid claim)
+base64.workspace = true
 
 # Error Handling
 thiserror.workspace = true
@@ -34,3 +44,4 @@ tracing = { workspace = true, optional = true }
 [features]
 events = ["lighty-event"]
 tracing = ["dep:tracing"]
+keyring = ["dep:keyring"]

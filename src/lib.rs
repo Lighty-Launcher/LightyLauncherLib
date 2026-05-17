@@ -1,62 +1,26 @@
 // Copyright (c) 2025 Hamadi
 // Licensed under the MIT License
 
-//! LightyLauncher - A modern Minecraft launcher library
-//!
-//! This library provides everything needed to build a custom Minecraft launcher:
-//! - Authentication (Offline, Microsoft, Azuriom) + trait-based extensibility
-//! - Java runtime management
-//! - Version metadata handling (Vanilla, Fabric, Quilt, Forge, NeoForge, LightyUpdater)
-//! - Game installation and launching
-//! - Event system for progress tracking
-//!
-//! ## Quick Start
+//! LightyLauncher - A modern Minecraft launcher library.
 //!
 //! ```no_run
 //! use lighty_launcher::prelude::*;
-//! use directories::ProjectDirs;
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
-//!     let launcher_dir = ProjectDirs::from("com", "MyCompany", "MyLauncher")
-//!         .expect("Failed to get project directories");
-//!
-//!     // Authenticate
+//!     AppState::init("MyLauncher")?;
 //!     let mut auth = auth::OfflineAuth::new("Player");
 //!     let profile = auth.authenticate().await?;
-//!
-//!     // Build and launch
 //!     let mut version = version::VersionBuilder::new(
-//!         "my-instance",
-//!         Loader::Vanilla,
-//!         "",
-//!         "1.21.1",
-//!         &launcher_dir
+//!         "my-instance", Loader::Vanilla, "", "1.21.1",
 //!     );
-//!
-//!     version.launch(&profile, JavaDistribution::Temurin)
-//!         .run()
-//!         .await?;
-//!
+//!     version.launch(&profile, JavaDistribution::Temurin).run().await?;
 //!     Ok(())
 //! }
 //! ```
 
-// ============================================================================
-// Authentication Module
-// ============================================================================
-
 pub mod auth {
-    //! Authentication providers and utilities
-    //!
-    //! ## Built-in Providers
-    //! - `OfflineAuth` - No network required
-    //! - `MicrosoftAuth` - OAuth 2.0 via Microsoft
-    //! - `AzuriomAuth` - Azuriom CMS integration
-    //!
-    //! ## Custom Authentication
-    //! Implement the `Authenticator` trait to create your own provider.
-    //! See the [`lighty_auth`](https://docs.rs/lighty-auth) documentation for examples.
+    //! Authentication providers and utilities.
 
     pub use lighty_auth::{
         Authenticator,
@@ -72,20 +36,9 @@ pub mod auth {
     };
 }
 
-// ============================================================================
-// Events Module
-// ============================================================================
-
 #[cfg(feature = "events")]
 pub mod event {
-    //! Event system for tracking launcher operations
-    //!
-    //! Provides real-time progress updates for:
-    //! - Authentication
-    //! - Java runtime downloads
-    //! - Game installation
-    //! - Loader metadata fetching
-    //! - Archive extraction
+    //! Event system for tracking launcher operations.
 
     pub use lighty_event::{
         EventBus,
@@ -108,18 +61,8 @@ pub mod event {
     };
 }
 
-// ============================================================================
-// Java Module
-// ============================================================================
-
 pub mod java {
-    //! Java runtime management
-    //!
-    //! Handles automatic download and installation of Java distributions:
-    //! - Temurin (Eclipse Adoptium)
-    //! - GraalVM
-    //! - Zulu (Azul)
-    //! - Liberica (BellSoft)
+    //! Java runtime management.
 
     pub use lighty_java::{
         JavaDistribution,
@@ -135,20 +78,8 @@ pub mod java {
     };
 }
 
-// ============================================================================
-// Launch Module
-// ============================================================================
-
 pub mod launch {
-    //! Game launching and installation
-    //!
-    //! Coordinates the complete launch process:
-    //! - File verification and downloading
-    //! - Library installation
-    //! - Native library extraction
-    //! - Asset management
-    //! - Argument building
-    //! - Process spawning
+    //! Game launching and installation.
 
     pub use lighty_launch::{
         launch::{Launch, LaunchBuilder, LaunchConfig},
@@ -188,21 +119,8 @@ pub mod launch {
     }
 }
 
-// ============================================================================
-// Loaders Module
-// ============================================================================
-
 pub mod loaders {
-    //! Minecraft mod loaders and version metadata
-    //!
-    //! Supports multiple loader types:
-    //! - Vanilla
-    //! - Fabric
-    //! - Quilt
-    //! - Forge
-    //! - NeoForge
-    //! - LightyUpdater
-    //! - OptiFine
+    //! Minecraft mod loaders and version metadata.
 
     pub use lighty_loaders::{
         types::{
@@ -222,28 +140,36 @@ pub mod loaders {
                 Native,
             },
         },
-        loaders::{
-            vanilla,
-            fabric,
-            quilt,
-            forge,
-            neoforge,
-            lighty_updater,
-            optifine,
-        },
-        utils::{cache, error, manifest, query},
+        utils::{cache, manifest, query},
     };
+
+    #[cfg(feature = "vanilla")]
+    pub use lighty_loaders::loaders::vanilla;
+    #[cfg(feature = "fabric")]
+    pub use lighty_loaders::loaders::fabric;
+    #[cfg(feature = "quilt")]
+    pub use lighty_loaders::loaders::quilt;
+    #[cfg(feature = "forge")]
+    pub use lighty_loaders::loaders::forge;
+    #[cfg(feature = "neoforge")]
+    pub use lighty_loaders::loaders::neoforge;
+    #[cfg(feature = "lighty_updater")]
+    pub use lighty_loaders::loaders::lighty_updater;
+    pub use lighty_loaders::loaders::optifine;
+
+    // Back-compat alias: `lighty_launcher::loaders::mods` continues to
+    // resolve to the (now standalone) modsloader crate. New code should
+    // prefer `lighty_launcher::mods` (top-level, see crate root).
+    #[cfg(any(feature = "modrinth", feature = "curseforge"))]
+    pub use lighty_modsloader as mods;
 }
 
-// ============================================================================
-// Version Module
-// ============================================================================
+/// Mods + modpacks (Modrinth / CurseForge / `.mrpack` / CurseForge `.zip`).
+#[cfg(any(feature = "modrinth", feature = "curseforge"))]
+pub use lighty_modsloader as mods;
 
 pub mod version {
-    //! Version builders for game instances
-    //!
-    //! - `VersionBuilder` - Standard Minecraft versions with loaders
-    //! - `LightyVersionBuilder` - LightyUpdater custom versions
+    //! Version builders for game instances.
 
     pub use lighty_version::{
         VersionBuilder,
@@ -251,19 +177,8 @@ pub mod version {
     };
 }
 
-// ============================================================================
-// Core Module
-// ============================================================================
-
 pub mod core {
-    //! Core utilities and system operations
-    //!
-    //! Provides low-level functionality:
-    //! - File system operations
-    //! - HTTP client management
-    //! - Archive extraction (ZIP, TAR.GZ)
-    //! - SHA1 hashing and verification
-    //! - Download utilities
+    //! Core utilities and system operations.
 
     pub use lighty_core::{
         system,
@@ -290,43 +205,8 @@ pub mod core {
     };
 }
 
-// ============================================================================
-// Macros Module
-// ============================================================================
-
 pub mod macros {
-    //! Utility macros
-    //!
-    //! Provides conditional tracing macros that work with or without the `tracing` feature:
-    //! - `trace_debug!()` - Debug level logging (no-op without `tracing` feature)
-    //! - `trace_info!()` - Info level logging (no-op without `tracing` feature)
-    //! - `trace_warn!()` - Warning level logging (no-op without `tracing` feature)
-    //! - `trace_error!()` - Error level logging (no-op without `tracing` feature)
-    //! - `time_it!()` - Performance timing (no-op without `tracing` feature)
-    //!
-    //! File system utilities:
-    //! - `mkdir!()` - Async directory creation with error logging
-    //! - `join_and_mkdir!()` - Join paths and create directory
-    //! - `join_and_mkdir_vec!()` - Join multiple paths and create directory
-    //! - `mkdir_blocking!()` - Blocking directory creation
-    //!
-    //! ## Example
-    //!
-    //! ```no_run
-    //! use lighty_launcher::macros::*;
-    //!
-    //! async fn example() {
-    //!     trace_info!("Starting operation");
-    //!
-    //!     let result = time_it!("my_operation", {
-    //!         // Some expensive operation
-    //!         42
-    //!     });
-    //!
-    //!     let path = std::path::Path::new("/tmp/my_dir");
-    //!     mkdir!(path);
-    //! }
-    //! ```
+    //! Utility macros — conditional tracing + filesystem helpers.
 
     pub use lighty_core::{
         trace_debug,
@@ -341,60 +221,14 @@ pub mod macros {
     };
 }
 
-// ============================================================================
-// Tauri Module
-// ============================================================================
-
-#[cfg(feature = "tauri-commands")]
-pub mod tauri {
-    //! Tauri command integration
-    //!
-    //! Provides ready-to-use Tauri commands for frontend integration:
-    //! - Authentication commands (offline, Microsoft, Azuriom)
-    //! - Launch commands
-    //! - Java distribution listing
-    //! - Loader listing
-    //! - Version management
-    //! - Path utilities
-    //!
-    //! ## Quick Start
-    //!
-    //! ```no_run
-    //! use lighty_launcher::tauri::lighty_plugin;
-    //!
-    //! tauri::Builder::default()
-    //!     .plugin(lighty_plugin())
-    //!     .run(tauri::generate_context!())
-    //!     .expect("error running tauri application");
-    //! ```
-
-    pub use lighty_tauri::lighty_plugin;
-    pub use lighty_tauri::commands::*;
-    pub use lighty_tauri::core::{
-        AppState,
-        VersionConfig,
-        LaunchConfig,
-        LaunchResult,
-        LoaderInfo,
-        JavaDistInfo,
-    };
-}
-
-// ============================================================================
-// Prelude - Commonly used imports
-// ============================================================================
-
 pub mod prelude {
-    //! Convenient re-exports of most commonly used types
-    //!
-    //! ```
-    //! use lighty_launcher::prelude::*;
-    //! ```
+    //! Convenient re-exports of most commonly used types.
 
-    // Authentication
-    pub use crate::auth::{Authenticator, UserProfile, OfflineAuth, MicrosoftAuth, AzuriomAuth};
+    pub use crate::auth::{
+        Authenticator, UserProfile, AuthProvider, AuthError, UserRole,
+        OfflineAuth, MicrosoftAuth, AzuriomAuth,
+    };
 
-    // Events
     #[cfg(feature = "events")]
     pub use crate::event::{
         EventBus, Event, AuthEvent, JavaEvent, LaunchEvent, LoaderEvent, CoreEvent,
@@ -402,41 +236,35 @@ pub mod prelude {
         ConsoleStream, EVENT_BUS,
     };
 
-    // Java
     pub use crate::java::JavaDistribution;
 
-    // Launch
     pub use crate::launch::{
         Launch, LaunchBuilder, DownloaderConfig, init_downloader_config,
         InstanceControl, InstanceError, InstanceResult,
+        LaunchArguments,
     };
     pub use crate::launch::keys::*;
 
-    // Loaders
     pub use crate::loaders::{Loader, VersionInfo, LoaderExtensions, InstanceSize};
 
-    // Version
+    // `InstanceCache` brings `instance.clear_cache().await` into scope.
+    pub use lighty_modsloader::{InstanceCache, ModRequest, WithMods};
+    #[cfg(any(feature = "modrinth", feature = "curseforge"))]
+    pub use lighty_modsloader::ModpackSource;
+
     pub use crate::version::{VersionBuilder, LightyVersionBuilder};
 
-    // Core utilities
     pub use crate::core::AppState;
 
-    // Macros
     pub use crate::macros::{trace_debug, trace_info, trace_warn, trace_error};
 }
 
-// ============================================================================
-// Root re-exports for convenience
-// ============================================================================
-
-// Most commonly used types at the root for convenience
 pub use loaders::Loader;
 pub use java::JavaDistribution;
 pub use launch::Launch;
 pub use auth::{Authenticator, UserProfile};
 pub use version::{VersionBuilder, LightyVersionBuilder};
 
-// Re-export the crates themselves for advanced usage
 #[doc(hidden)]
 pub use lighty_core as _core;
 #[doc(hidden)]
@@ -452,7 +280,3 @@ pub use lighty_launch as _launch;
 pub use lighty_loaders as _loaders;
 #[doc(hidden)]
 pub use lighty_version as _version;
-
-#[cfg(feature = "tauri-commands")]
-#[doc(hidden)]
-pub use lighty_tauri as _tauri;

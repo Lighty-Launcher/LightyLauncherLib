@@ -1,52 +1,11 @@
 // Copyright (c) 2025 Hamadi
 // Licensed under the MIT License
 
-//! Event system for LightyLauncher
-//!
-//! Simple broadcast-based event system that allows emitting events from the library
-//! and subscribing to them from user code.
-//!
-//! # Example
-//!
-//! ```no_run
-//! use lighty_event::{EventBus, Event, LaunchEvent, EventReceiveError};
-//!
-//! #[tokio::main]
-//! async fn main() {
-//!     let event_bus = EventBus::new(100);
-//!     let mut receiver = event_bus.subscribe();
-//!
-//!     // Spawn a listener with error handling
-//!     tokio::spawn(async move {
-//!         loop {
-//!             match receiver.next().await {
-//!                 Ok(event) => {
-//!                     match event {
-//!                         Event::Launch(LaunchEvent::InstallProgress { bytes }) => {
-//!                             println!("Downloaded {} bytes", bytes);
-//!                         }
-//!                         _ => {}
-//!                     }
-//!                 }
-//!                 Err(EventReceiveError::BusDropped) => {
-//!                     println!("Event bus closed");
-//!                     break;
-//!                 }
-//!                 Err(EventReceiveError::Lagged { skipped }) => {
-//!                     eprintln!("Receiver lagged, missed {} events", skipped);
-//!                 }
-//!             }
-//!         }
-//!     });
-//!
-//!     // Use the launcher with event_bus...
-//! }
-//! ```
+//! Broadcast-based event system for LightyLauncher.
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
-// Re-export event modules
 mod errors;
 pub mod module;
 
@@ -57,7 +16,7 @@ pub use errors::{
 pub use module::{
     AuthEvent, ConsoleOutputEvent, ConsoleStream, CoreEvent, InstanceDeletedEvent,
     InstanceExitedEvent, InstanceLaunchedEvent, InstanceWindowAppearedEvent, JavaEvent,
-    LaunchEvent, LoaderEvent,
+    LaunchEvent, LoaderEvent, ModloaderEvent,
 };
 
 /// Event bus for broadcasting events to multiple listeners
@@ -67,33 +26,21 @@ pub struct EventBus {
 }
 
 impl EventBus {
-    /// Create a new EventBus with the specified buffer capacity
-    ///
-    /// # Arguments
-    /// - `capacity`: Maximum number of events to buffer. If this limit is exceeded
-    ///               and receivers are slow, the oldest events will be dropped.
-    ///
-    /// # Recommended values
-    /// - 100-1000 for most use cases
-    /// - Higher values if you have very slow receivers
+    /// Create a new EventBus with the specified buffer capacity.
+    /// Slow receivers surface [`EventReceiveError::Lagged`] when overflow drops events.
     pub fn new(capacity: usize) -> Self {
         let (sender, _) = broadcast::channel(capacity);
         Self { sender }
     }
 
-    /// Subscribe to events
-    ///
-    /// Returns an EventReceiver that will receive all future events emitted
-    /// after this call.
+    /// Subscribe to events emitted after this call.
     pub fn subscribe(&self) -> EventReceiver {
         EventReceiver {
             receiver: self.sender.subscribe(),
         }
     }
 
-    /// Emit an event to all subscribers
-    ///
-    /// If there are no active subscribers, the event is silently dropped.
+    /// Emit an event. Silently dropped if no active subscribers.
     pub fn emit(&self, event: Event) {
         let _ = self.sender.send(event);
     }
@@ -105,26 +52,12 @@ pub struct EventReceiver {
 }
 
 impl EventReceiver {
-    /// Wait for the next event (async blocking)
-    ///
-    /// Returns `Ok(Event)` when an event is received, or `Err(EventReceiveError)` if
-    /// the EventBus is dropped or the receiver has lagged behind.
-    ///
-    /// # Errors
-    /// - `EventReceiveError::BusDropped` - All event bus senders have been dropped
-    /// - `EventReceiveError::Lagged` - The receiver fell behind and missed some events
+    /// Wait for the next event (async).
     pub async fn next(&mut self) -> EventReceiveResult<Event> {
         self.receiver.recv().await.map_err(Into::into)
     }
 
-    /// Try to receive an event without blocking
-    ///
-    /// Returns `Ok(Event)` if an event is immediately available.
-    ///
-    /// # Errors
-    /// - `EventTryReceiveError::Empty` - No events available right now
-    /// - `EventTryReceiveError::BusDropped` - All event bus senders have been dropped
-    /// - `EventTryReceiveError::Lagged` - The receiver fell behind and missed some events
+    /// Try to receive an event without blocking.
     pub fn try_next(&mut self) -> EventTryReceiveResult<Event> {
         self.receiver.try_recv().map_err(Into::into)
     }
@@ -138,6 +71,7 @@ pub enum Event {
     Java(JavaEvent),
     Launch(LaunchEvent),
     Loader(LoaderEvent),
+    Modloader(ModloaderEvent),
     Core(CoreEvent),
     InstanceLaunched(InstanceLaunchedEvent),
     InstanceWindowAppeared(InstanceWindowAppearedEvent),
@@ -148,24 +82,5 @@ pub enum Event {
 
 use once_cell::sync::Lazy;
 
-/// Global event bus instance
-///
-/// This static event bus is used by the library to emit events.
-/// Users can subscribe to this bus to receive all library events.
-///
-/// # Example
-/// ```no_run
-/// use lighty_event::EVENT_BUS;
-///
-/// #[tokio::main]
-/// async fn main() {
-///     let mut receiver = EVENT_BUS.subscribe();
-///
-///     tokio::spawn(async move {
-///         while let Ok(event) = receiver.next().await {
-///             println!("Received event: {:?}", event);
-///         }
-///     });
-/// }
-/// ```
+/// Global event bus instance used by the library to emit events.
 pub static EVENT_BUS: Lazy<EventBus> = Lazy::new(|| EventBus::new(1000));

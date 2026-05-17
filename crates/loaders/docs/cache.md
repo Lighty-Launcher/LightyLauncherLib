@@ -159,7 +159,7 @@ impl Query for VanillaQuery {
 ### First Request (Cold Cache)
 
 ```rust
-let instance = VersionBuilder::new("vanilla-1.21", Loader::Vanilla, "", "1.21.1", launcher_dir);
+let instance = VersionBuilder::new("vanilla-1.21", Loader::Vanilla, "", "1.21.1");
 
 // First call: fetches from API (~500ms)
 let metadata1 = instance.get_metadata().await?;
@@ -366,14 +366,14 @@ Don't create new instances for same version:
 **Bad**:
 ```rust
 for _ in 0..10 {
-    let instance = VersionBuilder::new("vanilla", Loader::Vanilla, "", "1.21.1", launcher_dir);
+    let instance = VersionBuilder::new("vanilla", Loader::Vanilla, "", "1.21.1");
     instance.get_metadata().await?;  // Cache still works!
 }
 ```
 
 **Good** (but cache works anyway):
 ```rust
-let instance = VersionBuilder::new("vanilla", Loader::Vanilla, "", "1.21.1", launcher_dir);
+let instance = VersionBuilder::new("vanilla", Loader::Vanilla, "", "1.21.1");
 
 for _ in 0..10 {
     instance.get_metadata().await?;  // Cached after first call

@@ -13,10 +13,10 @@ sequenceDiagram
     participant JavaManager
     participant Process
 
-    User->>AppState: new(QUALIFIER, ORGANIZATION, APPLICATION)
-    AppState-->>User: project_dirs
+    User->>AppState: init(name)
+    AppState-->>User: paths stored globally
 
-    User->>VersionBuilder: new(name, loader, loader_version, mc_version, project_dirs)
+    User->>VersionBuilder: new(name, loader, loader_version, mc_version)
     VersionBuilder-->>User: instance
 
     User->>Auth: OfflineAuth::new(username)
@@ -38,12 +38,15 @@ sequenceDiagram
 
     LaunchBuilder->>Installer: install(version_data)
 
-    par Parallel Installation
+    par Parallel Installation (8 buckets via tokio::try_join!)
         Installer->>Installer: Download Libraries
         Installer->>Installer: Download Natives
         Installer->>Installer: Download Client JAR
         Installer->>Installer: Download Assets
-        Installer->>Installer: Download Mods (if applicable)
+        Installer->>Installer: Download Mods (subdir: mods/)
+        Installer->>Installer: Download ResourcePacks (subdir: resourcepacks/)
+        Installer->>Installer: Download ShaderPacks (subdir: shaderpacks/)
+        Installer->>Installer: Download Datapacks (subdir: datapacks/)
     end
 
     Installer->>Installer: Extract Natives
@@ -88,12 +91,8 @@ sequenceDiagram
     User->>OfflineAuth: authenticate()
     OfflineAuth->>UUID: generate_offline_uuid(username)
     UUID-->>OfflineAuth: deterministic UUID (v5)
-    OfflineAuth-->>User: UserProfile {
-        username,
-        uuid,
-        access_token: None,
-        role: User
-    }
+    OfflineAuth-->>User: UserProfile::offline(username, uuid)
+    Note over OfflineAuth: provider = AuthProvider::Offline<br/>access_token = None<br/>all other optional fields default to None / false
 ```
 
 ### Microsoft Authentication
@@ -107,7 +106,7 @@ sequenceDiagram
     participant Minecraft
 
     User->>MicrosoftAuth: new(client_id)
-    User->>MicrosoftAuth: authenticate()
+    User->>MicrosoftAuth: authenticate(event_bus)
 
     MicrosoftAuth->>DeviceFlow: Request Device Code
     DeviceFlow-->>MicrosoftAuth: device_code, user_code, verification_url
@@ -116,30 +115,76 @@ sequenceDiagram
     loop Poll for completion
         MicrosoftAuth->>DeviceFlow: Poll for token
         alt User Authorized
-            DeviceFlow-->>MicrosoftAuth: access_token
+            DeviceFlow-->>MicrosoftAuth: access_token + refresh_token
         else Still Pending
             DeviceFlow-->>MicrosoftAuth: authorization_pending
         end
     end
 
     MicrosoftAuth->>Xbox: Authenticate with Xbox Live
-    Xbox-->>MicrosoftAuth: xbox_token, user_hash
+    Xbox-->>MicrosoftAuth: xbox_token, user_hash (UHS)
 
     MicrosoftAuth->>Xbox: Get XSTS Token
-    Xbox-->>MicrosoftAuth: xsts_token, xuid
+    Xbox-->>MicrosoftAuth: xsts_token
 
-    MicrosoftAuth->>Minecraft: Authenticate with Minecraft
+    MicrosoftAuth->>Minecraft: Authenticate with Minecraft (XBL3.0 x=UHS;xsts_token)
     Minecraft-->>MicrosoftAuth: minecraft_access_token
 
-    MicrosoftAuth->>Minecraft: Get Profile
+    Note over MicrosoftAuth: Decode xuid from MC token JWT payload
+    Note over MicrosoftAuth: (authlib expects it to match --xuid)
+
+    MicrosoftAuth->>Minecraft: Get Profile (Bearer mc_token)
     Minecraft-->>MicrosoftAuth: username, uuid
 
     MicrosoftAuth-->>User: UserProfile {
-        username,
-        uuid,
-        access_token: Some(minecraft_access_token),
-        role: User
+        username, uuid,
+        access_token: Some(SecretString::from(mc_token)),
+        token_handle: None (or Some(handle) if with_keyring),
+        xuid: Some(xuid),
+        provider: AuthProvider::Microsoft {
+            client_id,
+            refresh_token: Some(SecretString::from(rt))
+        }
     }
+    Note over MicrosoftAuth: access_token + refresh_token wrapped in SecretString.<br/>If with_keyring(service) was set, both are written to the OS keychain<br/>and access_token is None — only a TokenHandle is returned.
+```
+
+### Silent Re-authentication
+
+After the first device-code flow, subsequent launches can skip user
+interaction entirely by reusing the persisted refresh token:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Storage as Keyring / Disk
+    participant MicrosoftAuth
+    participant MS as Microsoft OAuth
+    participant Xbox
+    participant Minecraft
+
+    User->>Storage: load_profile()
+    Storage-->>User: UserProfile (provider has refresh_token)
+
+    User->>MicrosoftAuth: authenticate_with_refresh_token(rt)
+    MicrosoftAuth->>MS: POST /token (grant_type=refresh_token)
+    alt Refresh token still valid
+        MS-->>MicrosoftAuth: new access_token + rotated refresh_token
+        MicrosoftAuth->>Xbox: Authenticate (silent)
+        Xbox-->>MicrosoftAuth: xbox_token, UHS
+        MicrosoftAuth->>Xbox: XSTS
+        Xbox-->>MicrosoftAuth: xsts_token
+        MicrosoftAuth->>Minecraft: login_with_xbox
+        Minecraft-->>MicrosoftAuth: new mc_token
+        MicrosoftAuth->>Minecraft: get profile
+        Minecraft-->>MicrosoftAuth: username, uuid
+        MicrosoftAuth-->>User: UserProfile (refresh_token rotated)
+        User->>Storage: save_profile() (persist the new rt)
+    else Refresh token expired (~90d) or revoked
+        MS-->>MicrosoftAuth: 4xx
+        MicrosoftAuth-->>User: AuthError::InvalidToken
+        Note over User: Fall back to authenticate() (device-code)
+    end
 ```
 
 ## Installation Sequence
@@ -156,12 +201,12 @@ sequenceDiagram
 
     Installer->>Installer: Phase 1: Verification (SHA1 Check)
 
-    par Collect Tasks
+    par Collect Tasks (tokio::join! — 8 buckets)
         Installer->>Libraries: Check libraries
         Libraries-->>Installer: library_tasks[]
 
         Installer->>Natives: Check natives
-        Natives-->>Installer: native_tasks[]
+        Natives-->>Installer: (native_download_tasks[], native_extract_paths[])
 
         Installer->>Client: Check client JAR
         Client-->>Installer: client_task?
@@ -169,35 +214,55 @@ sequenceDiagram
         Installer->>Assets: Check assets
         Assets-->>Installer: asset_tasks[]
 
-        Installer->>Mods: Check mods
-        Mods-->>Installer: mod_tasks[]
+        Installer->>Mods: Check mods (subdir: mods/)
+        Mods-->>Installer: (mod_tasks[], mod_bytes)
+
+        Installer->>Mods: Check resourcepacks (subdir: resourcepacks/)
+        Mods-->>Installer: (resourcepack_tasks[], resourcepack_bytes)
+
+        Installer->>Mods: Check shaderpacks (subdir: shaderpacks/)
+        Mods-->>Installer: (shaderpack_tasks[], shaderpack_bytes)
+
+        Installer->>Mods: Check datapacks (subdir: datapacks/)
+        Mods-->>Installer: (datapack_tasks[], datapack_bytes)
     end
 
+    Note over Installer: mod_like_bytes = mod_bytes + resourcepack_bytes + shaderpack_bytes + datapack_bytes<br/>passed to calculate_download_size()
+
     alt All Files Valid (total_downloads == 0)
-        Installer->>EventBus: Emit IsInstalled
+        Installer->>EventBus: Emit LaunchEvent::IsInstalled
         Installer->>Natives: Extract natives only
         Natives-->>Installer: Done
     else Files Need Download
-        Installer->>EventBus: Emit InstallStarted
+        Installer->>EventBus: Emit LaunchEvent::InstallStarted { total_bytes }
 
-        par Phase 2: Parallel Download
+        par Phase 2: Parallel Download (8 buckets)
             Installer->>Libraries: Download library_tasks
-            Libraries->>EventBus: Emit DownloadingLibraries
+            Libraries->>EventBus: Emit LaunchEvent::InstallProgress { bytes } (per chunk)
 
             Installer->>Natives: Download & extract native_tasks
-            Natives->>EventBus: Emit DownloadingNatives
+            Natives->>EventBus: Emit LaunchEvent::InstallProgress { bytes }
 
             Installer->>Client: Download client_task
-            Client->>EventBus: Emit DownloadingClient
+            Client->>EventBus: Emit LaunchEvent::InstallProgress { bytes }
 
             Installer->>Assets: Download asset_tasks
-            Assets->>EventBus: Emit DownloadingAssets
+            Assets->>EventBus: Emit LaunchEvent::InstallProgress { bytes }
 
-            Installer->>Mods: Download mod_tasks
-            Mods->>EventBus: Emit DownloadingMods
+            Installer->>Mods: Download mod_tasks (subdir: mods/)
+            Mods->>EventBus: Emit LaunchEvent::InstallProgress { bytes }
+
+            Installer->>Mods: Download resourcepack_tasks (subdir: resourcepacks/)
+            Mods->>EventBus: Emit ModloaderEvent::ResourcePacksInstalled { count, bytes }
+
+            Installer->>Mods: Download shaderpack_tasks (subdir: shaderpacks/)
+            Mods->>EventBus: Emit ModloaderEvent::ShaderPacksInstalled { count, bytes }
+
+            Installer->>Mods: Download datapack_tasks (subdir: datapacks/)
+            Mods->>EventBus: Emit ModloaderEvent::DatapacksInstalled { count, bytes }
         end
 
-        Installer->>EventBus: Emit InstallCompleted
+        Installer->>EventBus: Emit LaunchEvent::InstallCompleted
     end
 ```
 
@@ -356,17 +421,23 @@ flowchart TB
     EmitInstalled --> ExtractNatives[Extract Natives Only]
     EmitStart --> ParallelDownload[Parallel Download]
 
-    ParallelDownload --> |Libraries| LibEvents[Emit DownloadingLibraries]
-    ParallelDownload --> |Natives| NatEvents[Emit DownloadingNatives]
-    ParallelDownload --> |Client| ClientEvents[Emit DownloadingClient]
-    ParallelDownload --> |Assets| AssetEvents[Emit DownloadingAssets]
-    ParallelDownload --> |Mods| ModEvents[Emit DownloadingMods]
+    ParallelDownload --> |Libraries| LibEvents[Emit InstallProgress per chunk]
+    ParallelDownload --> |Natives| NatEvents[Emit InstallProgress per chunk]
+    ParallelDownload --> |Client| ClientEvents[Emit InstallProgress per chunk]
+    ParallelDownload --> |Assets| AssetEvents[Emit InstallProgress per chunk]
+    ParallelDownload --> |Mods| ModEvents[Emit InstallProgress per chunk]
+    ParallelDownload --> |ResourcePacks| RPEvents[Emit ModloaderEvent::ResourcePacksInstalled]
+    ParallelDownload --> |ShaderPacks| SPEvents[Emit ModloaderEvent::ShaderPacksInstalled]
+    ParallelDownload --> |Datapacks| DPEvents[Emit ModloaderEvent::DatapacksInstalled]
 
     LibEvents --> EmitComplete[Emit InstallCompleted]
     NatEvents --> EmitComplete
     ClientEvents --> EmitComplete
     AssetEvents --> EmitComplete
     ModEvents --> EmitComplete
+    RPEvents --> EmitComplete
+    SPEvents --> EmitComplete
+    DPEvents --> EmitComplete
     ExtractNatives --> EmitComplete
 
     EmitComplete --> BuildArgs[Build Arguments]
@@ -423,19 +494,20 @@ sequenceDiagram
     participant ServerAPI
     participant Vanilla
 
-    User->>LightyBuilder: new(name, server_url, project_dirs)
+    User->>LightyBuilder: new(name, server_url)
     User->>LightyBuilder: get_metadata()
 
     LightyBuilder->>ServerAPI: GET {server_url}/version
     ServerAPI-->>LightyBuilder: {
         minecraft_version,
-        loader,
+        loader,             // "vanilla" | "fabric" | "quilt" | "neoforge" | "forge"
         loader_version,
         mods: [...]
     }
 
-    LightyBuilder->>Vanilla: Fetch vanilla metadata
-    Vanilla-->>LightyBuilder: vanilla_metadata
+    LightyBuilder->>Vanilla: Fetch base-loader metadata
+    Note over LightyBuilder,Vanilla: loader = "forge" now supported in<br/>merge_metadata.rs (mapped to Loader::Forge).<br/>The lighty_updater feature already activates the<br/>forge feature at the workspace level.
+    Vanilla-->>LightyBuilder: base_metadata
 
     LightyBuilder->>LightyBuilder: Add server mods to metadata
     LightyBuilder-->>User: VersionMetaData with custom mods

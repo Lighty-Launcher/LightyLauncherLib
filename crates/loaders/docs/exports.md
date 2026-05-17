@@ -67,7 +67,7 @@ use lighty_loaders::utils::{
 #### error
 
 ```rust
-use lighty_loaders::utils::error::{
+use lighty_core::{
     QueryError,
     Result,  // = std::result::Result<T, QueryError>
 };
@@ -174,18 +174,9 @@ use lighty_launcher::prelude::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
+    AppState::init("MyLauncher")?;
 
-let _app = AppState::new(
-    QUALIFIER.to_string(),
-    ORGANIZATION.to_string(),
-    APPLICATION.to_string(),
-)?;
-    let launcher_dir = AppState::get_project_dirs();
-
-    let instance = VersionBuilder::new("name", Loader::Vanilla, "", "1.21.1", launcher_dir);
+    let instance = VersionBuilder::new("name", Loader::Vanilla, "", "1.21.1");
     let metadata = instance.get_metadata().await?;
 
     Ok(())
@@ -201,18 +192,9 @@ use lighty_launcher::core::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
+    AppState::init("MyLauncher")?;
 
-let _app = AppState::new(
-    QUALIFIER.to_string(),
-    ORGANIZATION.to_string(),
-    APPLICATION.to_string(),
-)?;
-    let launcher_dir = AppState::get_project_dirs();
-
-    let instance = VersionBuilder::new("name", Loader::Vanilla, "", "1.21.1", launcher_dir);
+    let instance = VersionBuilder::new("name", Loader::Vanilla, "", "1.21.1");
     let metadata = instance.get_metadata().await?;
 
     Ok(())
@@ -228,18 +210,9 @@ use lighty_core::app_state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
+    AppState::init("MyLauncher")?;
 
-let _app = AppState::new(
-    QUALIFIER.to_string(),
-    ORGANIZATION.to_string(),
-    APPLICATION.to_string(),
-)?;
-    let launcher_dir = AppState::get_project_dirs();
-
-    let instance = VersionBuilder::new("name", Loader::Vanilla, "", "1.21.1", launcher_dir);
+    let instance = VersionBuilder::new("name", Loader::Vanilla, "", "1.21.1");
     let metadata = instance.get_metadata().await?;
 
     Ok(())
@@ -253,7 +226,7 @@ let _app = AppState::new(
 **Not re-exported in `lighty_launcher`** - use full path:
 
 ```rust
-use lighty_loaders::utils::error::QueryError;
+use lighty_core::QueryError;
 
 match instance.get_metadata().await {
     Ok(metadata) => { /* ... */ }
@@ -308,9 +281,9 @@ Enable specific loaders in `Cargo.toml`:
 
 ```toml
 [dependencies]
-lighty-launcher = { version = "0.8.6", features = ["all-loaders"] }
+lighty-launcher = { version = "26.5.1", features = ["all-loaders"] }
 # or
-lighty-loaders = { version = "0.8.6", features = ["vanilla", "fabric", "quilt"] }
+lighty-loaders = { version = "26.5.1", features = ["vanilla", "fabric", "quilt"] }
 ```
 
 **Available features**:
@@ -340,7 +313,7 @@ use lighty_loaders::loaders::fabric;
 ### Result Types
 
 ```rust
-// In lighty_loaders::utils::error
+// In lighty_core
 pub type Result<T> = std::result::Result<T, QueryError>;
 
 // In lighty_loaders::utils::query
@@ -396,7 +369,7 @@ use lighty_launcher::prelude::*;
 
 // For library development
 use lighty_loaders::types::{Loader, VersionInfo, LoaderExtensions};
-use lighty_loaders::utils::error::QueryError;
+use lighty_core::QueryError;
 
 // For implementing custom loaders
 use lighty_loaders::utils::query::Query;

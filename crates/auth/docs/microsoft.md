@@ -29,29 +29,50 @@ You need to register an application in Azure Active Directory:
 
 ## Quick Start
 
+### First launch (device-code prompt)
+
 ```rust
-use lighty_auth::{microsoft::MicrosoftAuth, Authenticator};
+use lighty_launcher::prelude::*;
 
 #[tokio::main]
-async fn main()  {
+async fn main() -> anyhow::Result<()> {
     let mut auth = MicrosoftAuth::new("your-azure-client-id");
 
     // Set callback to display device code
     auth.set_device_code_callback(|code, url| {
-        println!("Please visit: {}", url);
-        println!("And enter code: {}", code);
+        println!("Please visit: {url}");
+        println!("And enter code: {code}");
     });
 
     // Authenticate (blocks until user completes authorization)
-    let profile = auth.authenticate().await?;
+    let profile = auth.authenticate(None).await?;
 
     println!("Logged in as: {}", profile.username);
     println!("UUID: {}", profile.uuid);
-    println!("Access Token: {}", profile.access_token.unwrap());
-
+    println!("XUID: {:?}", profile.xuid);
     Ok(())
 }
 ```
+
+### Subsequent launches (silent re-auth)
+
+Once you've persisted the resulting `UserProfile`, use the embedded
+refresh token to skip the device-code prompt entirely:
+
+```rust
+let mut auth = MicrosoftAuth::new("your-azure-client-id");
+
+// Load the saved profile from your storage (file, keyring, DB…).
+let saved: UserProfile = load_from_storage()?;
+let AuthProvider::Microsoft { refresh_token: Some(rt), .. } = saved.provider else { /* … */ };
+
+// `rt` is a `SecretString` — pass it as-is, no `expose_secret()` here.
+// Zero user interaction — directly hits the Xbox/XSTS/MC chain.
+let profile = auth.authenticate_with_refresh_token(&rt, None).await?;
+```
+
+See the [Token Management](#token-management) section below for the
+full silent-first pattern and storage recommendations.
 
 ## Authentication Flow
 
@@ -251,6 +272,41 @@ auth.set_timeout(Duration::from_secs(600));  // 10 minutes
 // Match server's "expires_in" field from device code response
 ```
 
+### OS Keychain Routing (`with_keyring`)
+
+Opt-in: route the Minecraft access token (and the rotating refresh
+token) into the OS keychain instead of keeping them in process memory.
+Gated by the `keyring` feature.
+
+```rust
+use lighty_launcher::prelude::*;
+
+let mut auth = MicrosoftAuth::new("your-azure-client-id")
+    .with_keyring("MyLauncher");
+
+auth.set_device_code_callback(|code, url| {
+    println!("Visit {url} and enter: {code}");
+});
+
+let profile = auth.authenticate(None).await?;
+
+// `profile.access_token` is now `None` — the token lives in the
+// OS keychain. Read it on demand via the handle:
+#[cfg(feature = "keyring")]
+if let Some(handle) = &profile.token_handle {
+    let secret = handle.read()?;          // -> SecretString
+    let token  = secret.expose_secret();  // &str, consumed immediately
+    /* feed to argv */
+}
+```
+
+Internally, the token is written under
+`service = "MyLauncher"` / `username = "microsoft:{uuid}"` (Keychain on
+macOS, Credential Manager on Windows, Secret Service on Linux). The
+refresh token stays in `AuthProvider::Microsoft.refresh_token` as a
+`SecretString` so the in-process silent-refresh flow doesn't have to
+round-trip the keychain on every launch.
+
 ### Device Code Callback
 
 Display the code to the user:
@@ -305,7 +361,7 @@ match auth.authenticate().await {
     Err(AuthError::Custom(msg)) if msg.contains("Xbox Live is not available") => {
         eprintln!("Xbox Live is not available in your country");
     }
-    Err(AuthError::NetworkError(e)) => {
+    Err(AuthError::Network(e)) => {
         eprintln!("Network error: {}", e);
     }
     Err(e) => {
@@ -367,61 +423,105 @@ let profile = auth.authenticate(Some(&event_bus)).await?;
 
 ## Token Management
 
-### Access Token Storage
+### Silent Re-authentication (Recommended)
+
+The MS refresh token (issued alongside the access token thanks to the
+`offline_access` scope) lives **~90 days of inactivity**. Persist it
+after the first device-code flow and use it on subsequent launches via
+[`MicrosoftAuth::authenticate_with_refresh_token`] to skip the
+device-code prompt entirely.
 
 ```rust
-// Save token for future use
-let profile = auth.authenticate().await?;
-let token = profile.access_token.unwrap();
+use lighty_launcher::prelude::*;
 
-// Store securely (encrypt at rest)
-save_token_to_keychain(&token)?;
+let mut auth = MicrosoftAuth::new("your-azure-client-id");
+
+// Try silent first. The refresh_token comes from the previous
+// authenticate() call — see "Persistence" below for where to keep it.
+let profile = match auth.authenticate_with_refresh_token(&stored_refresh_token, None).await {
+    Ok(p) => p,
+    Err(_) => {
+        // Token expired/revoked → fall back to device-code.
+        auth.set_device_code_callback(|code, url| {
+            println!("Visit {url} and enter: {code}");
+        });
+        auth.authenticate(None).await?
+    }
+};
 ```
 
-### Token Refresh
+Microsoft **rotates** the refresh token on every refresh (RFC 6749). The
+new token always lands in `profile.provider` as
+`AuthProvider::Microsoft { refresh_token: Some(_), .. }` — just persist
+the whole `UserProfile` again and the next launch picks up the fresh
+token automatically.
 
-Microsoft tokens include refresh tokens (with `offline_access` scope):
+### Persistence with the OS Keyring
+
+`UserProfile` is intentionally **not** `Serialize` / `Deserialize`, and
+its `access_token` is a `SecretString` — dumping a whole profile to
+disk is no longer the right pattern. Two recommended setups:
+
+**A. Built-in keyring routing** (recommended). Activate the `keyring`
+feature, call `MicrosoftAuth::with_keyring("MyLauncher")` once, and the
+provider writes the MC token to the OS keychain automatically (see the
+[OS Keychain Routing](#os-keychain-routing-with_keyring) section above).
+Your app only has to remember the `uuid` to recover the
+[`TokenHandle`](#) on next launch.
+
+**B. Manually persist just the refresh token** for silent re-auth.
+Extract it from `profile.provider` and write it where it fits — the OS
+keychain is the recommended sink:
 
 ```rust
-// Not directly supported by lighty-auth
-// You need to implement refresh token logic yourself:
+use secrecy::{ExposeSecret, SecretString};
 
-use reqwest::Client;
+const SERVICE: &str = "MyLauncher";
+const ACCOUNT: &str = "microsoft-refresh";
 
-async fn refresh_token(refresh_token: &str, client_id: &str) -> Result<String, Box<dyn Error>> {
-    let client = Client::new();
+fn save_refresh(rt: &SecretString) -> anyhow::Result<()> {
+    let entry = keyring::Entry::new(SERVICE, ACCOUNT)?;
+    entry.set_password(rt.expose_secret())?;
+    Ok(())
+}
 
-    let response = client
-        .post("https://login.microsoftonline.com/consumers/oauth2/v2.0/token")
-        .form(&[
-            ("grant_type", "refresh_token"),
-            ("client_id", client_id),
-            ("refresh_token", refresh_token),
-            ("scope", "XboxLive.signin offline_access"),
-        ])
-        .send()
-        .await?;
-
-    let data: serde_json::Value = response.json().await?;
-    Ok(data["access_token"].as_str().unwrap().to_string())
+fn load_refresh() -> Option<SecretString> {
+    let entry = keyring::Entry::new(SERVICE, ACCOUNT).ok()?;
+    Some(SecretString::from(entry.get_password().ok()?))
 }
 ```
+
+Backed by Linux Secret Service / macOS Keychain / Windows Credential
+Manager — encrypted at rest by the OS, prompts the user on first access.
+A complete end-to-end example lives in
+[`examples/auth/microsoft.rs`](../../examples/auth/microsoft.rs).
 
 ## UserProfile Output
 
 ```rust
 pub struct UserProfile {
-    pub id: None,                          // No server ID
-    pub username: String,                  // Minecraft username
-    pub uuid: String,                      // Minecraft UUID (with dashes)
-    pub access_token: Some(String),        // Minecraft access token
-    pub email: None,                       // Not provided
-    pub email_verified: true,              // Assumed verified
-    pub money: None,                       // Not applicable
-    pub role: None,                        // Not applicable
-    pub banned: false,                     // Checked by Minecraft Services
+    pub id: None,                                  // No server ID
+    pub username: String,                          // Minecraft username
+    pub uuid: String,                              // Minecraft UUID (with dashes)
+    pub access_token: Some(SecretString),          // MC access token (~24h)
+    #[cfg(feature = "keyring")]
+    pub token_handle: None,                        // Some(_) only when with_keyring() was called
+    pub xuid: Some(String),                        // Xbox User ID, decoded from MC JWT
+    pub email: None,                               // Not provided
+    pub email_verified: true,                      // Assumed verified
+    pub money: None,                               // Not applicable
+    pub role: None,                                // Not applicable
+    pub banned: false,                             // Checked by Minecraft Services
+    pub provider: AuthProvider::Microsoft {        // Drives silent re-auth
+        client_id: String,
+        refresh_token: Some(SecretString),         // ~90 days, rotates on each use
+    },
 }
 ```
+
+With `with_keyring("…")`, `access_token` is `None` and
+`token_handle` is `Some(_)`; the secret lives in the OS keychain and is
+read on demand via `TokenHandle::read()`.
 
 ## Best Practices
 
@@ -522,6 +622,13 @@ Typical authentication duration: **30-60 seconds**
 
 - **Client ID is public**: Safe to embed in application
 - **No client secret needed**: Device Code Flow doesn't require secrets
-- **Tokens should be encrypted**: Store access tokens securely
+- **Tokens are secret-wrapped**: `access_token` / `refresh_token` are
+  `SecretString`s — `Debug` prints `[REDACTED]` and the profile cannot
+  be `serde`-serialised by accident
+- **OS keychain (opt-in)**: `MicrosoftAuth::with_keyring("…")` routes
+  the MC token into Keychain / Credential Manager / Secret Service —
+  covers core-dump and swap vectors that `SecretString` alone doesn't
 - **HTTPS only**: All requests use HTTPS
-- **Token expiration**: Minecraft tokens expire after 24 hours
+- **Token expiration**: Minecraft tokens expire after 24 hours; the MS
+  refresh token lasts ~90 days of inactivity and rotates per RFC 6749
+- See [`AUTH_SECRETS.md`](../../../AUTH_SECRETS.md) for the full threat model

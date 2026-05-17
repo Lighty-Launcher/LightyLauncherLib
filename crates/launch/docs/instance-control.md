@@ -541,26 +541,15 @@ use lighty_auth::{offline::OfflineAuth, Authenticator};
 use lighty_java::JavaDistribution;
 use lighty_launch::InstanceControl;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     let mut instance = VersionBuilder::new(
         "my-game",
         Loader::Vanilla,
         "",
         "1.21.1",
-        launcher_dir
     );
 
     // Authenticate
@@ -594,8 +583,8 @@ async fn main() -> anyhow::Result<()> {
 use lighty_launch::InstanceControl;
 
 // Launch multiple instances
-let mut instance1 = VersionBuilder::new("game1", Loader::Vanilla, "", "1.21.1", launcher_dir);
-let mut instance2 = VersionBuilder::new("game2", Loader::Fabric, "0.16.9", "1.21.1", launcher_dir);
+let mut instance1 = VersionBuilder::new("game1", Loader::Vanilla, "", "1.21.1");
+let mut instance2 = VersionBuilder::new("game2", Loader::Fabric, "0.16.9", "1.21.1");
 
 let profile1 = auth1.authenticate().await?;
 let profile2 = auth2.authenticate().await?;
@@ -628,8 +617,7 @@ use lighty_launch::InstanceControl;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(/*...*/)?;
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     let event_bus = EventBus::new(1000);
 
@@ -654,7 +642,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Launch instance
-    let mut instance = VersionBuilder::new("game", Loader::Vanilla, "", "1.21.1", launcher_dir);
+    let mut instance = VersionBuilder::new("game", Loader::Vanilla, "", "1.21.1");
     let mut auth = OfflineAuth::new("Player");
     let profile = auth.authenticate(None).await?;
 
@@ -675,7 +663,7 @@ async fn main() -> anyhow::Result<()> {
 ```rust
 use lighty_launch::InstanceControl;
 
-let mut instance = VersionBuilder::new("game", Loader::Fabric, "0.16.9", "1.21.1", launcher_dir);
+let mut instance = VersionBuilder::new("game", Loader::Fabric, "0.16.9", "1.21.1");
 
 // Get metadata
 let metadata = instance.get_metadata().await?;

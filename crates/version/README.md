@@ -4,7 +4,7 @@ Version management and builders for [LightyLauncher](https://crates.io/crates/li
 
 ## Overview
 
-**Version**: 0.8.6
+**Version**: 26.5.1
 **Part of**: [LightyLauncher](https://crates.io/crates/lighty-launcher)
 
 `lighty-version` provides version builders that implement the `VersionInfo` trait from `lighty-loaders`, enabling version management for Minecraft instances.
@@ -21,7 +21,7 @@ Version management and builders for [LightyLauncher](https://crates.io/crates/li
 
 ```toml
 [dependencies]
-lighty-version = "0.8.6"
+lighty-version = "26.5.1"
 ```
 
 ### VersionBuilder (Standard Loaders)
@@ -31,19 +31,9 @@ use lighty_core::AppState;
 use lighty_version::VersionBuilder;
 use lighty_loaders::types::Loader;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // Create instance with Fabric loader
     let instance = VersionBuilder::new(
@@ -51,7 +41,6 @@ async fn main() -> anyhow::Result<()> {
         Loader::Fabric,        // Loader type
         "0.16.9",             // Loader version
         "1.21.1",             // Minecraft version
-        launcher_dir
     );
 
     println!("Instance: {}", instance.name());
@@ -67,25 +56,14 @@ async fn main() -> anyhow::Result<()> {
 use lighty_core::AppState;
 use lighty_version::LightyVersionBuilder;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // Create instance for custom server with LightyUpdater
     let instance = LightyVersionBuilder::new(
         "my-modpack",                  // Instance name
         "https://myserver.com/api",    // Server API URL
-        launcher_dir
     );
 
     println!("Server: {}", instance.loader_version());
@@ -99,16 +77,18 @@ async fn main() -> anyhow::Result<()> {
 ```rust
 use std::path::PathBuf;
 
-// Custom game and Java directories
+// Custom Java directory
 let instance = VersionBuilder::new(
     "custom",
     Loader::Vanilla,
     "",
     "1.21.1",
-    launcher_dir
 )
-.with_custom_game_dir(PathBuf::from("/opt/minecraft/instances/custom"))
 .with_custom_java_dir(PathBuf::from("/usr/lib/jvm/java-21"));
+
+// To relocate the game runtime (mods/saves/options.txt), use the
+// launch-side knob:
+//   .launch(...).with_arguments().set(KEY_GAME_DIRECTORY, "/opt/...").done()
 ```
 
 ## Core Types
@@ -136,7 +116,7 @@ Both implement `VersionInfo` from `lighty-loaders`.
 
 - **[lighty-launcher](../../../README.md)** - Main package
 - **[lighty-loaders](../loaders/README.md)** - VersionInfo trait and loaders
-- **[lighty-core](../core/README.md)** - AppState for project directories
+- **[lighty-core](../core/README.md)** - AppState for launcher paths
 - **[lighty-launch](../launch/README.md)** - Uses VersionBuilder for launching
 
 ## License

@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-/// Erreurs possibles lors de l'installation
+/// Errors raised by the installer pipeline.
 #[derive(Debug, Error)]
 pub enum InstallerError {
     #[error("IO error: {0}")]
@@ -13,7 +13,7 @@ pub enum InstallerError {
     Sha1(#[from] lighty_core::HashError),
 
     #[error("Query error: {0}")]
-    Query(#[from] lighty_loaders::utils::error::QueryError),
+    Query(#[from] lighty_core::QueryError),
 
     #[error("Loader not supported: {0}")]
     UnsupportedLoader(String),

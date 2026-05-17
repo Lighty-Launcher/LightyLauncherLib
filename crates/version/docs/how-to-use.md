@@ -7,19 +7,9 @@
 ```rust
 use lighty_core::AppState;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     Ok(())
 }
@@ -37,7 +27,6 @@ let vanilla = VersionBuilder::new(
     Loader::Vanilla,
     "",              // No loader version for Vanilla
     "1.21.1",
-    launcher_dir
 );
 
 // Fabric instance
@@ -46,7 +35,6 @@ let fabric = VersionBuilder::new(
     Loader::Fabric,
     "0.16.9",        // Fabric loader version
     "1.21.1",
-    launcher_dir
 );
 
 // Quilt instance
@@ -55,7 +43,6 @@ let quilt = VersionBuilder::new(
     Loader::Quilt,
     "0.27.1",        // Quilt loader version
     "1.21.1",
-    launcher_dir
 );
 
 // NeoForge instance
@@ -64,7 +51,6 @@ let neoforge = VersionBuilder::new(
     Loader::NeoForge,
     "21.1.80",       // NeoForge version
     "1.21.1",
-    launcher_dir
 );
 ```
 
@@ -105,16 +91,21 @@ let instance = VersionBuilder::new(
     Loader::Fabric,
     "0.16.9",
     "1.21.1",
-    launcher_dir
 )
-.with_custom_game_dir(PathBuf::from("/opt/minecraft/instances/custom"))
 .with_custom_java_dir(PathBuf::from("/usr/lib/jvm/java-21"));
-
-println!("Game dir: {}", instance.game_dirs().display());
-// Output: Game dir: /opt/minecraft/instances/custom
 
 println!("Java dir: {}", instance.java_dirs().display());
 // Output: Java dir: /usr/lib/jvm/java-21
+
+// To relocate the runtime (mods/saves/options.txt), pass an override
+// through the launch builder. Relative resolves under game_dirs,
+// absolute replaces:
+//   instance.launch(&profile, JavaDistribution::Temurin)
+//       .with_arguments()
+//           .set(KEY_GAME_DIRECTORY, "runtime")      // → game_dirs/runtime
+//           // or .set(KEY_GAME_DIRECTORY, "/mnt/games/custom")  // absolute
+//           .done()
+//       .run().await?;
 ```
 
 ### Check Directory Existence
@@ -151,25 +142,14 @@ For custom servers using LightyUpdater:
 use lighty_core::AppState;
 use lighty_version::LightyVersionBuilder;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // Create LightyUpdater instance
     let modpack = LightyVersionBuilder::new(
         "my-modpack",
         "https://myserver.com/api",
-        launcher_dir
     );
 
     println!("Instance: {}", modpack.name());
@@ -198,7 +178,6 @@ let fabric = VersionBuilder::new(
     Loader::Fabric,
     "0.16.9",
     "1.21.1",
-    launcher_dir
 );
 
 // Get metadata (LoaderExtensions trait)
@@ -214,7 +193,6 @@ let assets = fabric.get_assets().await?;
 let modpack = LightyVersionBuilder::new(
     "modpack",
     "https://server.com/api",
-    launcher_dir
 );
 
 // Same methods available
@@ -234,7 +212,6 @@ let mut instance = VersionBuilder::new(
     Loader::Fabric,
     "0.16.9",
     "1.21.1",
-    launcher_dir
 );
 
 // Get metadata
@@ -268,20 +245,10 @@ use lighty_launch::InstanceControl;
 use lighty_auth::{offline::OfflineAuth, Authenticator};
 use lighty_java::JavaDistribution;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // 1. Initialize AppState
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // 2. Create instance
     let mut instance = VersionBuilder::new(
@@ -289,7 +256,6 @@ async fn main() -> anyhow::Result<()> {
         Loader::Fabric,
         "0.16.9",
         "1.21.1",
-        launcher_dir
     );
 
     println!("Instance: {}", instance.name());
@@ -339,26 +305,15 @@ use lighty_launch::InstanceControl;
 use lighty_auth::{microsoft::MicrosoftAuth, Authenticator};
 use lighty_java::JavaDistribution;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // 1. Initialize AppState
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // 2. Create LightyUpdater instance
     let mut modpack = LightyVersionBuilder::new(
         "survival-modpack",
         "https://play.myserver.com/api",
-        launcher_dir
     );
 
     println!("Modpack: {}", modpack.name());
@@ -447,7 +402,7 @@ use lighty_launcher::{
 ## Related Crates
 
 - **[lighty-loaders](../../loaders/README.md)** - VersionInfo trait and loaders
-- **[lighty-core](../../core/README.md)** - AppState for project directories
+- **[lighty-core](../../core/README.md)** - AppState for launcher paths
 - **[lighty-launch](../../launch/README.md)** - Uses VersionBuilder for launching
 - **[lighty-auth](../../auth/README.md)** - User authentication
 - **[lighty-java](../../java/README.md)** - Java runtime management

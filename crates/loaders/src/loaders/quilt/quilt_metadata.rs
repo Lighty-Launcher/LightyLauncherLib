@@ -1,3 +1,8 @@
+//! Serde mirrors of the JSON returned by `meta.quiltmc.org`.
+//!
+//! These are wire-format types; see `quilt.rs` for the `extract_*`
+//! functions that translate them into the launcher's pivot types.
+
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize,Clone)]

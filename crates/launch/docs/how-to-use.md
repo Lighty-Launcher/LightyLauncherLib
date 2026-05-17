@@ -7,19 +7,9 @@
 ```rust
 use lighty_core::AppState;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     Ok(())
 }
@@ -35,7 +25,6 @@ let mut instance = VersionBuilder::new(
     Loader::Fabric,
     "0.16.9",
     "1.21.1",
-    launcher_dir
 );
 ```
 
@@ -181,20 +170,12 @@ println!("Total: {}", InstanceSize::format(size.total));
 Track launch progress with events:
 
 ```rust
-use lighty_event::{EventBus, Event, LaunchEvent};
+use lighty_event::{EventBus, Event, LaunchEvent, ModloaderEvent};
 use lighty_launch::InstanceControl;
-
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    AppState::init("MyLauncher")?;
 
     // Create event bus
     let event_bus = EventBus::new(1000);
@@ -204,35 +185,49 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move {
         while let Ok(event) = receiver.next().await {
             match event {
-                Event::Launch(LaunchEvent::DownloadingAssets { current, total }) => {
-                    let progress = (current as f64 / total as f64) * 100.0;
-                    println!("Downloading assets: {:.1}%", progress);
+                Event::Launch(LaunchEvent::InstallStarted { version, total_bytes }) => {
+                    println!("Installing {} ({} bytes)", version, total_bytes);
                 }
-                Event::Launch(LaunchEvent::DownloadingLibraries { current, total }) => {
-                    let progress = (current as f64 / total as f64) * 100.0;
-                    println!("Downloading libraries: {:.1}%", progress);
+                Event::Launch(LaunchEvent::InstallProgress { bytes }) => {
+                    // Accumulate against `total_bytes` from InstallStarted to
+                    // drive a progress bar; the installer emits one of these
+                    // per chunk written to disk across all 8 buckets.
+                    println!("+{} bytes downloaded", bytes);
                 }
-                Event::Launch(LaunchEvent::InstanceLaunched { instance_name, pid }) => {
-                    println!("✓ {} launched with PID {}", instance_name, pid);
+                Event::Launch(LaunchEvent::InstallCompleted { version, .. }) => {
+                    println!("Installed {}", version);
                 }
-                Event::Launch(LaunchEvent::ConsoleOutput { pid, line }) => {
+                Event::Modloader(ModloaderEvent::ResolveCompleted { total_mods }) => {
+                    println!("Resolved {} mods", total_mods);
+                }
+                Event::Modloader(ModloaderEvent::ResourcePacksInstalled { count, bytes }) => {
+                    println!("ResourcePacks: {} files / {} bytes", count, bytes);
+                }
+                Event::Modloader(ModloaderEvent::ShaderPacksInstalled { count, bytes }) => {
+                    println!("ShaderPacks: {} files / {} bytes", count, bytes);
+                }
+                Event::Modloader(ModloaderEvent::DatapacksInstalled { count, bytes }) => {
+                    println!("Datapacks: {} files / {} bytes", count, bytes);
+                }
+                Event::Launch(LaunchEvent::Launched { version, pid }) => {
+                    println!("Launched {} with PID {}", version, pid);
+                }
+                Event::Launch(LaunchEvent::ProcessOutput { pid, line, .. }) => {
                     print!("[{}] {}", pid, line);
                 }
-                Event::Launch(LaunchEvent::InstanceExited { pid, exit_code }) => {
-                    println!("Instance {} exited with code: {:?}", pid, exit_code);
+                Event::Launch(LaunchEvent::ProcessExited { pid, exit_code }) => {
+                    println!("Instance {} exited with code: {}", pid, exit_code);
                 }
                 _ => {}
             }
         }
     });
 
-    let launcher_dir = AppState::get_project_dirs();
     let mut instance = VersionBuilder::new(
         "fabric-1.21",
         Loader::Fabric,
         "0.16.9",
         "1.21.1",
-        launcher_dir
     );
 
     let mut auth = OfflineAuth::new("Player");
@@ -274,20 +269,10 @@ use lighty_launcher::prelude::*;
 use lighty_java::JavaDistribution;
 use lighty_launch::InstanceControl;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // 1. Initialize AppState
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // 2. Create instance
     let mut instance = VersionBuilder::new(
@@ -295,7 +280,6 @@ async fn main() -> anyhow::Result<()> {
         Loader::Fabric,
         "0.16.9",
         "1.21.1",
-        launcher_dir
     );
 
     // 3. Authenticate
@@ -385,7 +369,7 @@ match instance.delete_instance().await {
 
 ```toml
 [dependencies]
-lighty-launch = { version = "0.8.6", features = ["events"] }
+lighty-launch = { version = "26.5.1", features = ["events"] }
 ```
 
 Available features:
