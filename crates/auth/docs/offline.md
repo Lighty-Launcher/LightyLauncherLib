@@ -137,17 +137,37 @@ The `UserProfile` returned by offline authentication:
 
 ```rust
 pub struct UserProfile {
-    pub id: None,                     // No server ID
-    pub username: String,             // Input username
-    pub uuid: String,                 // Generated UUID
-    pub access_token: None,           // No session token
-    pub email: None,                  // No email
-    pub email_verified: false,        // Not verified
-    pub money: None,                  // No credits
-    pub role: None,                   // No role
-    pub banned: false,                // Not banned
+    pub id: None,                          // No server ID
+    pub username: String,                  // Input username
+    pub uuid: String,                      // Generated UUID
+    pub access_token: None,                // No session token
+    #[cfg(feature = "keyring")]
+    pub token_handle: None,                // Never set in offline mode
+    pub xuid: None,
+    pub email: None,                       // No email
+    pub email_verified: false,             // Not verified
+    pub money: None,                       // No credits
+    pub role: None,                        // No role
+    pub banned: false,                     // Not banned
+    pub provider: AuthProvider::Offline,
 }
 ```
+
+### Direct constructor
+
+When you only need a placeholder profile (tests, doctests, fixtures,
+fallback paths) skipping the `OfflineAuth` validation step is fine.
+The crate exposes a minimal public constructor:
+
+```rust
+use lighty_auth::UserProfile;
+
+let profile = UserProfile::offline("Steve", "069a79f4-44e9-4726-a5be-fca90e38aaf5");
+// All optional fields default to `None`; `provider` is `AuthProvider::Offline`.
+```
+
+Note: this skips the `OfflineAuth` username-validation rules above. Use
+the `OfflineAuth` flow whenever the username comes from real user input.
 
 ## Event System Integration
 

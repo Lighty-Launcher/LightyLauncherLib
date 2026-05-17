@@ -31,10 +31,40 @@ is intentionally left to the consumer.
 
 ### Mods (under `examples/mods/`)
 
+Pin individual mods from Modrinth or CurseForge. Both examples now
+include a `(slug, Some(version_id))` / `(mod_id, Some(file_id))` pinned
+entry alongside the latest-compatible one, with header-docs explaining
+where to find the IDs on the Modrinth/CurseForge web UIs.
+
 | Example | Source | Auth required |
 |---------|--------|---------------|
 | `mods/modrinth.rs` | Modrinth (public API) | No |
 | `mods/curseforge.rs` | CurseForge (keyed API) | `CURSEFORGE_API_KEY` env var |
+
+The builder API was renamed in this release:
+
+- `with_modrinth(...)` → `with_modrinth_mods(...)`
+- `with_curseforge(...)` → `with_curseforge_mods(...)`
+
+See [`crates/modsloader/docs/mods.md`](../crates/modsloader/docs/mods.md)
+for the procedure to find `version_id` / `file_id`.
+
+### Modpacks (under `examples/modpacks/`)
+
+Install a community modpack (mods + config overrides) from one source
+in a single call. All three ride on the matching provider feature
+(`modrinth` for `.mrpack`, `curseforge` for `.zip`) — there is no
+separate `modpack` feature.
+
+| Example | Source | Auth required |
+|---------|--------|---------------|
+| `modpacks/modrinth_url.rs` | Modrinth `.mrpack` via direct CDN URL | No |
+| `modpacks/modrinth_pinned.rs` | Modrinth `.mrpack` via `(project, version_id)` | No |
+| `modpacks/curseforge.rs` | CurseForge `.zip` via `(project_id, file_id)` | `CURSEFORGE_API_KEY` env var |
+
+See [`crates/modsloader/docs/modpacks.md`](../crates/modsloader/docs/modpacks.md)
+for the manifest formats, Modrinth whitelist, conflict policy on
+overrides, and idempotence model.
 
 ### Full showcase (under `examples/with_events/`)
 
@@ -571,12 +601,12 @@ Event::Java(JavaEvent::JavaExtractionCompleted { distribution, version, binary_p
 Event::Launch(LaunchEvent::IsInstalled { version })
 Event::Launch(LaunchEvent::InstallStarted { version, total_bytes })
 Event::Launch(LaunchEvent::InstallProgress { bytes })
-Event::Launch(LaunchEvent::DownloadingLibraries { current, total })
-Event::Launch(LaunchEvent::DownloadingNatives { current, total })
-Event::Launch(LaunchEvent::DownloadingClient { version })
-Event::Launch(LaunchEvent::DownloadingAssets { current, total })
-Event::Launch(LaunchEvent::DownloadingMods { current, total })
 Event::Launch(LaunchEvent::InstallCompleted { version, total_bytes })
+Event::Launch(LaunchEvent::Launching { version })
+Event::Launch(LaunchEvent::Launched { version, pid })
+Event::Launch(LaunchEvent::NotLaunched { version, error })
+Event::Launch(LaunchEvent::ProcessOutput { pid, stream, line })
+Event::Launch(LaunchEvent::ProcessExited { pid, exit_code })
 ```
 
 #### 4. Loader Events
@@ -587,6 +617,25 @@ Event::Loader(LoaderEvent::DataFetched { loader, minecraft_version, loader_versi
 Event::Loader(LoaderEvent::ManifestCached { loader })
 Event::Loader(LoaderEvent::MergingLoaderData { base_loader, overlay_loader })
 Event::Loader(LoaderEvent::DataMerged { base_loader, overlay_loader })
+```
+
+#### 4b. Modloader Events
+
+Dependency resolution, modpack pipeline, and per-bucket install
+summaries — split out of `LaunchEvent` into its own enum.
+
+```rust
+Event::Modloader(ModloaderEvent::ResolveStarted { request_count })
+Event::Modloader(ModloaderEvent::ResolveFetching { source, identifier })
+Event::Modloader(ModloaderEvent::ResolveDependency { parent, dependency })
+Event::Modloader(ModloaderEvent::ResolveCompleted { total_mods })
+Event::Modloader(ModloaderEvent::ModpackResolveStart { source })
+Event::Modloader(ModloaderEvent::ModpackArchiveDownloaded { sha1, bytes })
+Event::Modloader(ModloaderEvent::ModpackOverridesExtracted { count })
+Event::Modloader(ModloaderEvent::ModpackInstalled { name, mods_count })
+Event::Modloader(ModloaderEvent::ResourcePacksInstalled { count, bytes })
+Event::Modloader(ModloaderEvent::ShaderPacksInstalled { count, bytes })
+Event::Modloader(ModloaderEvent::DatapacksInstalled { count, bytes })
 ```
 
 #### 5. Core Events

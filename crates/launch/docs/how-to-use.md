@@ -170,7 +170,7 @@ println!("Total: {}", InstanceSize::format(size.total));
 Track launch progress with events:
 
 ```rust
-use lighty_event::{EventBus, Event, LaunchEvent};
+use lighty_event::{EventBus, Event, LaunchEvent, ModloaderEvent};
 use lighty_launch::InstanceControl;
 
 #[tokio::main]
@@ -185,22 +185,38 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move {
         while let Ok(event) = receiver.next().await {
             match event {
-                Event::Launch(LaunchEvent::DownloadingAssets { current, total }) => {
-                    let progress = (current as f64 / total as f64) * 100.0;
-                    println!("Downloading assets: {:.1}%", progress);
+                Event::Launch(LaunchEvent::InstallStarted { version, total_bytes }) => {
+                    println!("Installing {} ({} bytes)", version, total_bytes);
                 }
-                Event::Launch(LaunchEvent::DownloadingLibraries { current, total }) => {
-                    let progress = (current as f64 / total as f64) * 100.0;
-                    println!("Downloading libraries: {:.1}%", progress);
+                Event::Launch(LaunchEvent::InstallProgress { bytes }) => {
+                    // Accumulate against `total_bytes` from InstallStarted to
+                    // drive a progress bar; the installer emits one of these
+                    // per chunk written to disk across all 8 buckets.
+                    println!("+{} bytes downloaded", bytes);
                 }
-                Event::Launch(LaunchEvent::InstanceLaunched { instance_name, pid }) => {
-                    println!("✓ {} launched with PID {}", instance_name, pid);
+                Event::Launch(LaunchEvent::InstallCompleted { version, .. }) => {
+                    println!("Installed {}", version);
                 }
-                Event::Launch(LaunchEvent::ConsoleOutput { pid, line }) => {
+                Event::Modloader(ModloaderEvent::ResolveCompleted { total_mods }) => {
+                    println!("Resolved {} mods", total_mods);
+                }
+                Event::Modloader(ModloaderEvent::ResourcePacksInstalled { count, bytes }) => {
+                    println!("ResourcePacks: {} files / {} bytes", count, bytes);
+                }
+                Event::Modloader(ModloaderEvent::ShaderPacksInstalled { count, bytes }) => {
+                    println!("ShaderPacks: {} files / {} bytes", count, bytes);
+                }
+                Event::Modloader(ModloaderEvent::DatapacksInstalled { count, bytes }) => {
+                    println!("Datapacks: {} files / {} bytes", count, bytes);
+                }
+                Event::Launch(LaunchEvent::Launched { version, pid }) => {
+                    println!("Launched {} with PID {}", version, pid);
+                }
+                Event::Launch(LaunchEvent::ProcessOutput { pid, line, .. }) => {
                     print!("[{}] {}", pid, line);
                 }
-                Event::Launch(LaunchEvent::InstanceExited { pid, exit_code }) => {
-                    println!("Instance {} exited with code: {:?}", pid, exit_code);
+                Event::Launch(LaunchEvent::ProcessExited { pid, exit_code }) => {
+                    println!("Instance {} exited with code: {}", pid, exit_code);
                 }
                 _ => {}
             }

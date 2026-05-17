@@ -1,11 +1,4 @@
-//! Foundation utilities shared by every Lighty Launcher crate.
-//!
-//! This crate has no `lighty-*` dependencies; everything else depends on it.
-//! It groups the cross-cutting helpers needed throughout the launcher:
-//! [`AppState`] for project directories, an HTTP client and host-file guard
-//! in [`hosts`], async [`download`] / [`extract`] / [`hash`] helpers, an OS
-//! and architecture detection layer in [`system`], and conditional logging
-//! [`macros`].
+//! Foundation utilities (AppState, HTTP client, hashing, download, extract, OS probe).
 
 pub mod system;
 pub mod macros;
@@ -16,15 +9,14 @@ pub mod hash;
 pub mod errors;
 pub mod app_state;
 
-// Re-export error types for easy access
 pub use errors::{
     SystemError, SystemResult,
     ExtractError, ExtractResult,
     DownloadError, DownloadResult,
     AppStateError, AppStateResult,
+    QueryError, QueryResult,
 };
 
-// Re-export hash types for easy access
 pub use hash::{
     HashError, HashResult,
     verify_file_sha1, verify_file_sha1_streaming,
@@ -32,5 +24,4 @@ pub use hash::{
     calculate_sha1_bytes, calculate_sha1_bytes_raw,
 };
 
-// Re-export app state
 pub use app_state::AppState;

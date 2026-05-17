@@ -11,6 +11,7 @@ lighty-launcher
 ├── java          // Java runtime management
 ├── launch        // Game launching and installation
 ├── loaders       // Mod loader implementations
+├── mods          // Mods + modpacks (Modrinth / CurseForge / .mrpack / .zip)
 ├── version       // Version builders
 ├── core          // Core utilities
 ├── macros        // Utility macros
@@ -77,8 +78,9 @@ let profile = auth.authenticate().await?;
 |-------|-------------|
 | `AuthEvent` | Authentication events |
 | `JavaEvent` | Java download/installation events |
-| `LaunchEvent` | Game installation/launch events |
+| `LaunchEvent` | Game installation/launch events (no longer carries `Mod*` / `Modpack*` variants — those moved to `ModloaderEvent`) |
 | `LoaderEvent` | Loader metadata fetching events |
+| `ModloaderEvent` | Mod resolver + modpack pipeline + per-bucket install summaries (resourcepacks / shaderpacks / datapacks). Wrapped as `Event::Modloader(...)`. Not yet re-exported by `lighty_launcher::event` — import via `lighty_event::ModloaderEvent` for now. |
 | `CoreEvent` | Core operations (extraction, etc.) |
 
 ### Instance Events
@@ -282,9 +284,11 @@ if let Some(pid) = instance.get_pid() {
 | Module | Description |
 |--------|-------------|
 | `cache` | Manifest caching utilities |
-| `error` | Error types |
 | `manifest` | Manifest fetching |
 | `query` | Version querying |
+
+(The unified `QueryError` lives in `lighty_core` — no longer under
+`lighty_loaders::utils::error`.)
 
 **Usage**:
 ```rust
@@ -302,6 +306,65 @@ let libraries = instance.get_libraries().await?;
 ```
 
 **Detailed docs**: [lighty-loaders](../crates/loaders/README.md)
+
+---
+
+## Mods Module (`lighty_launcher::mods`)
+
+**Source**: [`lighty-modsloader`](../crates/modsloader/docs/overview.md)
+
+Exposes the mods + modpacks subsystem. Pulled in automatically as soon
+as `modrinth` or `curseforge` is enabled — each provider feature also
+carries its modpack format parser (no separate `modpack` feature).
+
+### Always available
+
+| Type | Description |
+|------|-------------|
+| `ModRequest` | User-facing request (`Modrinth { id_or_slug, version }` or `CurseForge { mod_id, file_id }`) |
+| `ModSource` | Tag enum: `Modrinth` / `CurseForge` |
+| `ModKey` | Dedup key — `(source, project id)`, version-agnostic |
+| `WithMods` | Trait the launch pipeline bounds against (`VersionBuilder` implements it) |
+
+### With `modrinth` or `curseforge`
+
+| Type | Description |
+|------|-------------|
+| `ModpackSource` | `ModrinthUrl(url)` / `ModrinthPinned { project, version }` / `CurseForgePinned { project_id, file_id }` |
+
+### Submodules (feature-gated)
+
+| Module | Feature | Description |
+|--------|---------|-------------|
+| `modrinth` | `modrinth` | Labrinth-API client (`fetch`), wire types, `.mrpack` parser. Sub-modules: `api`, `client`, `client_metadata`, `modpack`, `modpack_metadata` |
+| `curseforge` | `curseforge` | Core-API client (`fetch`, `set_api_key`, `fetch_pinned_file`, `install_subdir_for`), constants, `.zip` parser. Sub-modules: `api`, `client`, `client_metadata`, `modpack`, `modpack_metadata` |
+| `resolver` | `modrinth` or `curseforge` | BFS dependency resolver (native `ModloaderEvent::Resolve*` emission with `events`) |
+| `modpack` | `modrinth` or `curseforge` | Flat module file holding the `ModpackSource` enum + `From<&str>` / `From<String>` impls — no whitelist helper, no nested provider modules (those moved next to their clients) |
+
+**Asset routing**: clients route each fetched asset to its sub-folder
+(`mods/`, `resourcepacks/`, `shaderpacks/`, `datapacks/`) by reading
+the Modrinth `project_type` / CurseForge `classId`. Unknown types
+surface `QueryError::UnsupportedFormat`. See
+[`crates/modsloader/docs/mods.md`](../crates/modsloader/docs/mods.md)
+and [`ASSETS_ROUTING.md`](../ASSETS_ROUTING.md).
+
+**Usage**:
+
+```rust
+use lighty_launcher::mods::{ModRequest, ModpackSource};
+
+let instance = VersionBuilder::new("mc", Loader::Fabric, "0.16.9", "1.21.1")
+    .with_mod()
+        .with_modrinth_mods(vec![("sodium", None)])
+        .with_modrinth_modpack("https://cdn.modrinth.com/.../pack.mrpack")
+        .done();
+```
+
+> Back-compat: `lighty_launcher::loaders::mods` still resolves to the
+> standalone `lighty_modsloader` crate. New code should prefer the
+> top-level `lighty_launcher::mods` re-export.
+
+**Detailed docs**: [lighty-modsloader/docs](../crates/modsloader/docs/overview.md)
 
 ---
 
@@ -444,6 +507,9 @@ OfflineAuth, MicrosoftAuth, AzuriomAuth
 EventBus, Event, AuthEvent, JavaEvent, LaunchEvent, LoaderEvent, CoreEvent,
 InstanceLaunchedEvent, InstanceExitedEvent, ConsoleOutputEvent,
 InstanceDeletedEvent, ConsoleStream, EVENT_BUS
+// ModloaderEvent is NOT in the prelude (nor in `lighty_launcher::event`
+// today). Reach it directly via `use lighty_event::ModloaderEvent;` —
+// adding it to the facade is a pending follow-up.
 
 // Java
 JavaDistribution
@@ -552,4 +618,5 @@ use lighty_version::VersionBuilder;
 - [lighty-java](../crates/java/README.md)
 - [lighty-launch](../crates/launch/README.md)
 - [lighty-loaders](../crates/loaders/README.md)
+- [lighty-modsloader](../crates/modsloader/docs/overview.md)
 - [lighty-version](../crates/version/README.md)

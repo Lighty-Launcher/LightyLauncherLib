@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Hamadi
 // Licensed under the MIT License
 
-//! Library installation module
+//! Library installation.
 
 use lighty_loaders::types::{VersionInfo, version_metadata::Library};
 use lighty_core::time_it;
@@ -12,7 +12,7 @@ use crate::installer::downloader::download_with_concurrency_limit;
 #[cfg(feature = "events")]
 use lighty_event::EventBus;
 
-/// Collects libraries that need to be downloaded
+/// Collects libraries that need to be downloaded.
 pub async fn collect_library_tasks(
     version: &impl VersionInfo,
     libraries: &[Library],
@@ -22,11 +22,9 @@ pub async fn collect_library_tasks(
 
     for lib in libraries {
         let Some(url) = &lib.url else { continue };
-        // Forge-family installers list libraries with empty URLs when the
-        // file is produced by post-install processors (e.g. `forge:client`)
-        // or bundled inside the installer JAR (extracted separately).
-        // They mustn't be sent to the downloader — reqwest can't build a
-        // request from an empty URL.
+        // Forge-family installers list libraries with empty URLs when the file
+        // is produced by post-install processors or bundled inside the installer
+        // JAR; reqwest can't build a request from an empty URL.
         if url.is_empty() {
             continue;
         }
@@ -42,13 +40,13 @@ pub async fn collect_library_tasks(
     tasks
 }
 
-/// Downloads libraries from pre-collected tasks
+/// Downloads libraries from pre-collected tasks.
 pub async fn download_libraries(
     tasks: Vec<(String, std::path::PathBuf)>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
     if tasks.is_empty() {
-        lighty_core::trace_info!("[Installer] ✓ All libraries already cached and verified");
+        lighty_core::trace_info!("[Installer] All libraries already cached and verified");
         return Ok(());
     }
 
@@ -61,6 +59,6 @@ pub async fn download_libraries(
         )
         .await?
     });
-    lighty_core::trace_info!("[Installer] ✓ Libraries installed");
+    lighty_core::trace_info!("[Installer] Libraries installed");
     Ok(())
 }

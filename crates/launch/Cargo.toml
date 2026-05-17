@@ -16,6 +16,11 @@ lighty-core = { workspace = true }
 lighty-java = { workspace = true }
 lighty-version = { workspace = true }
 lighty-loaders = { workspace = true }
+# Always-on so `WithMods` (the trait the launch pipeline bounds against)
+# and `ModRequest` are available regardless of mod feature flags. Source-
+# specific code paths (Modrinth / CurseForge) are gated below; modpack
+# support rides on whichever provider feature is active.
+lighty-modsloader = { workspace = true }
 lighty-auth = { workspace = true }
 lighty-event = { workspace = true, optional = true }
 
@@ -69,12 +74,16 @@ nix = { version = "0.31.3", features = ["signal", "process"] }
 
 [features]
 default = []
-events = ["lighty-event", "lighty-java/events", "lighty-core/events"]
+events = ["lighty-event", "lighty-java/events", "lighty-core/events", "lighty-modsloader/events"]
 # Required so the installer can run NeoForge post-install processors
 neoforge = ["lighty-loaders/neoforge"]
 # Required so the installer can run Forge post-install processors
 forge = ["lighty-loaders/forge"]
 # Wire up the launch-side mod resolver (which spawns no JVM but reads
-# loaders' mods clients).
-modrinth = ["lighty-loaders/modrinth"]
-curseforge = ["lighty-loaders/curseforge"]
+# modsloader's mods clients). Each provider feature also pulls in its
+# modpack-format support (`.mrpack` for Modrinth, `.zip` for CurseForge).
+modrinth = ["lighty-modsloader/modrinth"]
+curseforge = ["lighty-modsloader/curseforge"]
+# Forwarded from the root so the launch site can read tokens from the
+# OS keychain when the caller opted-in via `MicrosoftAuth::with_keyring`.
+keyring = ["lighty-auth/keyring"]

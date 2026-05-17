@@ -270,7 +270,7 @@ Available features:
 ## Error Handling
 
 ```rust
-use lighty_loaders::utils::error::QueryError;
+use lighty_core::QueryError;
 
 match instance.get_metadata().await {
     Ok(metadata) => {
@@ -295,7 +295,7 @@ match instance.get_metadata().await {
 ```
 
 **Exports**:
-- Type: `lighty_loaders::utils::error::QueryError`
+- Type: `lighty_core::QueryError`
 - Not re-exported in main crate (use full path)
 
 ## Related Documentation

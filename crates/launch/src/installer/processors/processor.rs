@@ -1,17 +1,7 @@
 // Copyright (c) 2025 Hamadi
 // Licensed under the MIT License
 
-//! Install-processor executor for modern Forge-family installers.
-//!
-//! Forge (1.13+) and NeoForge ship the same install_profile.json model
-//! (processors + processor-only libraries + outputs to verify). The
-//! per-loader differences — the Maven base URL where processor JARs
-//! live, and the on-disk subdirectory used to cache files extracted from
-//! the installer JAR — are passed in through [`ProcessorContext::new`].
-//!
-//! This module lives in `lighty-launch` (not `lighty-loaders`) because
-//! it spawns a JVM. It uses the same `java_path` the runner resolved
-//! via [`lighty_java`] for the game launch.
+//! Install-processor executor for Forge (1.13+) and NeoForge.
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -22,34 +12,21 @@ use zip::ZipArchive;
 use lighty_core::download::download_file_untracked;
 use lighty_core::mkdir;
 use lighty_loaders::types::VersionInfo;
-use lighty_loaders::utils::error::QueryError;
+use lighty_core::QueryError;
 use lighty_loaders::utils::forge_installer::{ForgeInstallProfile, Processor};
 
 type Result<T> = std::result::Result<T, QueryError>;
 
 /// Execution context shared by every install-processor invocation.
 pub(crate) struct ProcessorContext {
-    /// Game directory.
     pub game_dir: PathBuf,
-    /// Libraries directory (root of the Maven layout under the game dir).
     pub libraries_dir: PathBuf,
-    /// Minecraft version.
     pub minecraft_version: String,
-    /// Path to the installer JAR.
     pub installer_path: PathBuf,
-    /// Substitution data: `{KEY}` placeholders → resolved values.
     pub data: HashMap<String, String>,
-    /// Side: `"client"` or `"server"`.
     pub side: String,
-    /// Maven repository base URL the processor JARs are fetched from
-    /// (e.g. `"https://maven.neoforged.net/releases"` for NeoForge or
-    /// `"https://maven.minecraftforge.net"` for Forge). No trailing `/`.
     pub maven_base_url: String,
-    /// On-disk subdirectory under `libraries_dir` used to cache files
-    /// extracted from the installer JAR (e.g. `"net/neoforged"` or
-    /// `"net/minecraftforge"`). Keeps Forge and NeoForge extracts isolated.
     pub extract_subdir: String,
-    /// Path to the `java` binary the processors must run with.
     pub java_path: PathBuf,
 }
 
@@ -267,19 +244,12 @@ impl ProcessorContext {
     }
 }
 
-/// Extracts every `maven/...` entry from the installer JAR into
-/// `libraries_dir`, preserving the relative path.
+/// Extracts every `maven/...` entry from the installer JAR into `libraries_dir`.
 ///
-/// Forge installers ship some artifacts (e.g. `forge-shim.jar` in 1.21+,
-/// `forge-universal.jar` + `forge.jar` in 1.14) bundled inside the
-/// installer at `/maven/...` instead of publishing them to Maven. These
-/// files are referenced at runtime by `version.json` (sometimes with an
-/// empty download URL) so they must end up at their normal Maven layout
-/// path under `libraries/` before launch.
-///
-/// Idempotent: skips entries whose target already exists with the right
-/// size. NeoForge installers carry no `/maven/` entries, so this is a
-/// no-op for them.
+/// Forge installers ship some artifacts (forge-shim.jar in 1.21+, forge.jar
+/// in 1.14) bundled at `/maven/...` instead of publishing them. Idempotent:
+/// skips entries whose target already exists with the right size. NeoForge
+/// installers carry no `/maven/` entries, so this is a no-op for them.
 pub(crate) fn extract_maven_bundle_to_libraries(
     installer_path: &Path,
     libraries_dir: &Path,
@@ -412,10 +382,8 @@ async fn execute_processor(context: &ProcessorContext, processor: &Processor) ->
         classpath_paths.push(cp_path);
     }
 
-    // Substitute the processor arguments. Detection runs on the
-    // SUBSTITUTED value because `{KEY}` placeholders can resolve to
-    // either a Maven coord (`[group:artifact:...]`) or an
-    // installer-internal path (`/maven/...`).
+    // Detection runs on the substituted value because `{KEY}` placeholders
+    // can resolve to either a Maven coord or an installer-internal path.
     let mut processed_args = Vec::new();
     for arg in &processor.args {
         let substituted = context.substitute_variables(arg);
@@ -425,9 +393,7 @@ async fn execute_processor(context: &ProcessorContext, processor: &Processor) ->
             let resolved_path = context.resolve_maven_path(maven_coords)?;
             let path = PathBuf::from(&resolved_path);
             if !path.exists() {
-                // Try to download — a 404 means the artifact is a processor
-                // output produced later in the pipeline. Just ensure the
-                // parent dir exists in that case.
+                // A 404 means the artifact is a processor output produced later.
                 match download_processor_jar(context, maven_coords).await {
                     Ok(_) => {}
                     Err(_) => {

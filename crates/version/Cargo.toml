@@ -14,6 +14,10 @@ description = "Minecraft version management for Lighty Launcher"
 # Workspace crates
 lighty-core = { workspace = true }
 lighty-loaders = { workspace = true }
+# Always-on so the `WithMods` trait + `ModRequest` type are available
+# regardless of mod feature flags. Source-specific code paths are still
+# gated via the `modrinth` / `curseforge` features forwarded below.
+lighty-modsloader = { workspace = true }
 
 # Async Runtime
 tokio.workspace = true
@@ -31,16 +35,20 @@ async-trait.workspace = true
 # Error Handling
 thiserror.workspace = true
 
-# Logging
-tracing.workspace = true
+# Logging — optional so the workspace-level `tracing` feature is the
+# only thing that pulls it in (and a build without `tracing` truly
+# excludes the dep).
+tracing = { workspace = true, optional = true }
 
 # Utilities
 once_cell.workspace = true
 version-compare.workspace = true
 
 [features]
-# Forward the mod-source feature gates so the matching `.with_modrinth(...)`
-# / `.with_curseforge(...)` sub-builder methods compile in.
-modrinth   = ["lighty-loaders/modrinth"]
-curseforge = ["lighty-loaders/curseforge"]
+# Forward the mod-source feature gates so the matching sub-builder
+# methods compile in. Each provider feature also activates its modpack
+# variant (`.with_modrinth_modpack(...)` / `.with_curseforge_modpack(...)`).
+modrinth   = ["lighty-modsloader/modrinth"]
+curseforge = ["lighty-modsloader/curseforge"]
+tracing    = ["dep:tracing"]
 default = []

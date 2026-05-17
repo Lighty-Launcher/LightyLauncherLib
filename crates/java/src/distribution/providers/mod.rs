@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Hamadi
 // Licensed under the MIT License
 
-//! Individual Java distribution provider implementations
+//! Per-vendor Java distribution providers.
 
 mod temurin;
 mod graalvm;

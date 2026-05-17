@@ -18,7 +18,6 @@ pub mod errors;
 pub mod installer;
 pub mod instance;
 
-// Re-export commonly used items
 pub use launch::{LaunchBuilder, LaunchConfig};
 pub use installer::Installer;
 pub use instance::{InstanceControl, InstanceError, InstanceResult};

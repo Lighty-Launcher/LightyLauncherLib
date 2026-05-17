@@ -1,40 +1,20 @@
 use std::path::{Path, PathBuf};
-
-use crate::mods::request::ModRequest;
+use std::time::Duration;
 
 /// Generic view of an installable instance.
 ///
 /// Used by `ManifestRepository` to support different builder types
 /// (`VersionBuilder`, `LightyVersionBuilder`, etc.) under a single interface.
-///
-/// # Examples
-///
-/// ```rust
-/// use lighty_loaders::types::VersionInfo;
-/// use lighty_version::VersionBuilder;
-/// use lighty_loaders::types::Loader;
-///
-/// fn print_version_info<V: VersionInfo>(version: &V) {
-///     println!("Name: {}", version.name());
-///     println!("Minecraft: {}", version.minecraft_version());
-///     println!("Game dir: {}", version.game_dirs().display());
-/// }
-/// ```
 pub trait VersionInfo: Clone + Send + Sync {
-    /// Loader type (Vanilla, Fabric, NeoForge, etc.).
     type LoaderType: Clone + Send + Sync + std::fmt::Debug;
 
     /// Instance name (unique profile identifier).
     fn name(&self) -> &str;
 
     /// Loader version (or server URL for `LightyVersionBuilder`).
-    ///
-    /// Examples: `"0.15.0"` for Fabric, `"21.0.0"` for NeoForge.
     fn loader_version(&self) -> &str;
 
     /// Minecraft version.
-    ///
-    /// Examples: `"1.20.1"`, `"1.19.4"`.
     fn minecraft_version(&self) -> &str;
 
     /// Instance root directory (holds `runtime/`, `libraries/`,
@@ -47,29 +27,16 @@ pub trait VersionInfo: Clone + Send + Sync {
     /// Returns the loader.
     fn loader(&self) -> &Self::LoaderType;
 
-    // === Utility methods with default implementations ===
-
     /// Working directory the JVM is launched in — the value passed as
-    /// `${game_directory}` to the Minecraft client. Anything the running
-    /// game reads/writes relative to itself (mods, saves, logs,
-    /// options.txt) lives here.
+    /// `${game_directory}` to the Minecraft client.
     ///
-    /// Default: alias of [`Self::game_dirs`]. The launcher doesn't
-    /// impose a `/runtime` subfolder — if you want one, set it via
-    /// `.with_arguments().set(KEY_GAME_DIRECTORY, "runtime")` and the
-    /// runner resolves it as `game_dirs.join("runtime")` before
-    /// install. An absolute override (`"/mnt/games"`) replaces the
-    /// base entirely (standard `Path::join` semantics).
+    /// Default: alias of [`Self::game_dirs`].
     fn runtime_dir(&self) -> &Path {
         self.game_dirs()
     }
 
     /// Internal setter used by the launch runner to write the
-    /// effective runtime dir back onto a mutable builder after
-    /// resolving `arg_overrides[KEY_GAME_DIRECTORY]`.
-    ///
-    /// Plumbing only — not part of the user-facing API. Impls that
-    /// don't track a runtime override keep the default no-op.
+    /// effective runtime dir back onto a mutable builder.
     fn set_runtime_dir(&mut self, _path: PathBuf) {}
 
     /// Returns whether the game directory exists on disk.
@@ -94,25 +61,19 @@ pub trait VersionInfo: Clone + Send + Sync {
         )
     }
 
-    /// Returns the (game_dir, java_dir) tuple — useful for logging.
+    /// Returns the (game_dir, java_dir) tuple.
     fn paths(&self) -> (&Path, &Path) {
         (self.game_dirs(), self.java_dirs())
     }
 
-    /// Returns whether the instance is installed.
-    ///
-    /// An instance is considered installed when its game directory exists.
+    /// Returns whether the instance is installed (game directory exists).
     fn is_installed(&self) -> bool {
         self.game_dirs().exists()
     }
 
-    /// User-attached mod requests pulled from Modrinth/CurseForge at
-    /// install time, in addition to mods coming from the loader's own
-    /// metadata.
-    ///
-    /// Default: empty slice. [`VersionBuilder`](crate) overrides this
-    /// to expose what was accumulated through `.with_mod().with_*()`.
-    fn mod_requests(&self) -> &[ModRequest] {
-        &[]
+    /// TTL applied to every cache entry the launcher associates with
+    /// this instance. Default = 24h.
+    fn ttl(&self) -> Duration {
+        Duration::from_secs(86_400)
     }
 }

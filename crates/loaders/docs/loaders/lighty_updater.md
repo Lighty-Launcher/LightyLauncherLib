@@ -96,16 +96,31 @@ Return `VersionMetaData` compatible JSON:
 }
 ```
 
-## Merging with Vanilla
+## Merging with a base loader
 
-LightyUpdater can optionally merge with Vanilla:
+LightyUpdater merges its server-side metadata with a base loader's
+metadata. The base loader is selected by the `loader` string returned
+in the server's `ServerInfo` payload. Supported values:
 
-```rust
-// Server returns additional libraries/args
-// LightyUpdater merges them with Vanilla base
-```
+| `loader` value | Resolved to        |
+|----------------|--------------------|
+| `"vanilla"`    | `Loader::Vanilla`  |
+| `"fabric"`     | `Loader::Fabric`   |
+| `"quilt"`      | `Loader::Quilt`    |
+| `"neoforge"`   | `Loader::NeoForge` |
+| `"forge"`      | `Loader::Forge`    |
 
-This is configured server-side.
+`"forge"` was added on top of the original four: when the server
+returns `"forge"`, the merger fetches the Forge loader metadata
+(installer + processors honoured by `lighty-launch`) and folds the
+server's extra libraries / args on top. The `lighty_updater` feature
+already activates `forge` at the workspace level, so no extra feature
+flag is needed.
+
+Unknown values short-circuit with
+`QueryError::UnsupportedLoader("Unknown loader '...'")`.
+
+This is configured server-side; clients don't pick the base loader.
 
 ## Use Cases
 

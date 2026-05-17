@@ -9,8 +9,8 @@ use super::quilt_metadata::QuiltMetaData;
 use crate::types::VersionInfo;
 
 use crate::loaders::vanilla::vanilla::VanillaQuery;
-use crate::utils::
-{query::Query, error::QueryError, manifest::ManifestRepository};
+use lighty_core::QueryError;
+use crate::utils::{query::Query, manifest::ManifestRepository};
 use crate::utils::maven::{fetch_file_size, fetch_maven_sha1};
 use crate::types::version_metadata::
 {Library, VersionMetaData, Arguments, MainClass, Version};
@@ -27,13 +27,9 @@ pub type Result<T> = std::result::Result<T, QueryError>;
 /// Sub-queries supported by the Quilt loader.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum QuiltQuery {
-    /// Main class to launch.
     MainClass,
-    /// Merged library list (Quilt + Vanilla).
     Libraries,
-    /// Merged JVM/game argument list.
     Arguments,
-    /// Full merged [`Version`] for a Quilt instance.
     QuiltBuilder,
 }
 
@@ -71,7 +67,6 @@ impl Query for QuiltQuery {
     }
 
     async fn version_builder<V: VersionInfo>(version: &V, full_data: &QuiltMetaData) -> Result<Version> {
-        // Fetch Vanilla and Quilt data in parallel
         let (vanilla_builder, quilt_libraries) = tokio::try_join!(
         async {
             let vanilla_data = VanillaQuery::fetch_full_data(version).await?;
@@ -80,7 +75,6 @@ impl Query for QuiltQuery {
         extract_libraries(full_data)
     )?;
 
-        // Merge with Vanilla as the base, Quilt overriding where it provides a value
         Ok(Version {
             main_class: merge_main_class(vanilla_builder.main_class, extract_main_class(full_data)),
             java_version: vanilla_builder.java_version,
@@ -122,18 +116,16 @@ fn merge_arguments(vanilla: Arguments, quilt: Arguments) -> Arguments {
     }
 }
 
-/// Merges library lists, de-duplicating by `group:artifact` (version-agnostic).
+/// Merges library lists, de-duplicating by `group:artifact`. Quilt wins.
 fn merge_libraries(vanilla_libs: Vec<Library>, quilt_libs: Vec<Library>) -> Vec<Library> {
     let capacity = vanilla_libs.len() + quilt_libs.len();
     let mut lib_map: HashMap<String, Library> = HashMap::with_capacity(capacity);
 
-    // Insert Vanilla first
     for lib in vanilla_libs {
         let key = extract_artifact_key(&lib.name);
         lib_map.insert(key, lib);
     }
 
-    // Quilt overrides Vanilla on key collision (typically a newer version)
     for lib in quilt_libs {
         let key = extract_artifact_key(&lib.name);
         lib_map.insert(key, lib);
@@ -142,7 +134,6 @@ fn merge_libraries(vanilla_libs: Vec<Library>, quilt_libs: Vec<Library>) -> Vec<
     lib_map.into_values().collect()
 }
 
-/// Extracts the `group:artifact` (version-agnostic) key used for dedup.
 fn extract_artifact_key(maven_name: &str) -> String {
     let mut parts = maven_name.split(':');
     match (parts.next(), parts.next()) {
@@ -151,7 +142,6 @@ fn extract_artifact_key(maven_name: &str) -> String {
     }
 }
 
-///-----------------------------
 fn extract_main_class(full_data: &QuiltMetaData) -> MainClass {
     MainClass {
         main_class: full_data.main_class.clone(),
@@ -167,7 +157,6 @@ async fn extract_libraries(full_data: &QuiltMetaData) -> Result<Vec<Library>> {
         async move {
             let (path, full_url) = maven_artifact_to_path_and_url(&lib_name, &lib_url);
 
-            // Run SHA1 and size HEAD requests in parallel
             let (sha1, size) = tokio::join!(
                 fetch_maven_sha1(&full_url),
                 fetch_file_size(&full_url)
@@ -183,7 +172,6 @@ async fn extract_libraries(full_data: &QuiltMetaData) -> Result<Vec<Library>> {
         }
     });
 
-    // Await all requests in parallel
     Ok(join_all(futures).await)
 }
 
@@ -195,16 +183,9 @@ fn maven_artifact_to_path_and_url(maven_name: &str, base_url: &str) -> (String, 
         _ => return (String::new(), String::new()),
     };
 
-    // Convert group.id to a path (e.g. "org.ow2.asm" -> "org/ow2/asm")
     let group_path = group_id.replace('.', "/");
-
-    // Build the JAR filename
     let jar_name = format!("{}-{}.jar", artifact_id, version);
-
-    // Build the relative path
     let path = format!("{}/{}/{}/{}", group_path, artifact_id, version, jar_name);
-
-    // Build the full URL
     let base = base_url.trim_end_matches('/');
     let full_url = format!("{}/{}", base, path);
 

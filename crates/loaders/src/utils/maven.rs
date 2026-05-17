@@ -2,23 +2,13 @@
 // Licensed under the MIT License
 
 //! Shared HEAD/sidecar helpers for Maven artifact metadata.
-//!
-//! Used by every loader that pulls libraries from a Maven repository
-//! (Fabric, Quilt, Forge, NeoForge). Centralized here so each loader
-//! doesn't reimplement the same two HTTP probes.
 
 use lighty_core::hosts::HTTP_CLIENT as CLIENT;
 
 /// Fetches the expected SHA1 of a Maven artifact from its `.sha1` sidecar.
 ///
-/// Maven repositories publish a sibling `.sha1` file next to every artifact
-/// containing exactly the 40-char hex hash (sometimes followed by the
-/// filename). Returns `None` when the request fails or the response isn't
-/// a valid SHA1.
-///
-/// We can't read the hash from an `X-Checksum-Sha1` HTTP header because
-/// the Forge-family CDNs (Cloudflare in front of JFrog) strip custom
-/// checksum headers; the sidecar is the only authoritative source.
+/// The Forge-family CDNs (Cloudflare in front of JFrog) strip custom
+/// checksum headers, so the sidecar is the only authoritative source.
 pub async fn fetch_maven_sha1(jar_url: &str) -> Option<String> {
     let sha1_url = format!("{}.sha1", jar_url);
 
@@ -34,9 +24,6 @@ pub async fn fetch_maven_sha1(jar_url: &str) -> Option<String> {
 }
 
 /// Returns a remote file's size without downloading the body (HEAD request).
-///
-/// Reads the `Content-Length` response header. Returns `None` when the
-/// server doesn't provide the header or the request fails.
 pub async fn fetch_file_size(url: &str) -> Option<u64> {
     CLIENT
         .head(url)
@@ -52,32 +39,21 @@ pub async fn fetch_file_size(url: &str) -> Option<u64> {
 }
 
 /// Fetches `(sha1, size)` in parallel for a single Maven artifact URL.
-///
-/// Convenience wrapper that runs [`fetch_maven_sha1`] and
-/// [`fetch_file_size`] with `tokio::join!` so they share the same wall
-/// time. Useful when a loader needs both for a [`Library`] entry.
-///
-/// [`Library`]: crate::types::version_metadata::Library
 pub async fn fetch_maven_metadata(url: &str) -> (Option<String>, Option<u64>) {
     tokio::join!(fetch_maven_sha1(url), fetch_file_size(url))
 }
 
-/// Probes a list of Maven bases (in order) and returns the first one
-/// that serves `relative_path` with a non-zero `Content-Length`.
+/// Probes a list of Maven bases and returns the first one that serves
+/// `relative_path` with a non-zero `Content-Length`.
 ///
-/// Used by legacy Forge to resolve `versionInfo.libraries` entries that
-/// ship without an explicit `url` field — the original Forge installer
-/// tried Mojang libs, Forge Maven, and Maven Central in turn.
-///
-/// `bases` must already have a trailing `/`. Returns the full URL on
-/// success, `None` if every base 404s or returns an empty body.
+/// `bases` must already have a trailing `/`.
 pub async fn probe_maven_bases(bases: &[&str], relative_path: &str) -> Option<String> {
     for base in bases {
         let url = format!("{}{}", base, relative_path);
         if let Ok(resp) = CLIENT.head(&url).send().await {
             if resp.status().is_success() {
-                // Treat zero-byte responses as not-found: some CDNs answer
-                // 200 with an empty body when the artifact is missing.
+                // Some CDNs answer 200 with an empty body when the
+                // artifact is missing — treat zero-length as not-found.
                 let len = resp
                     .headers()
                     .get("content-length")

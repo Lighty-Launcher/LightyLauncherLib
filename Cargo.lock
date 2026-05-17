@@ -1364,9 +1364,11 @@ name = "lighty-auth"
 version = "26.5.1"
 dependencies = [
  "base64",
+ "keyring",
  "lighty-core",
  "lighty-event",
  "reqwest",
+ "secrecy",
  "serde",
  "serde_json",
  "thiserror",
@@ -1439,6 +1441,7 @@ dependencies = [
  "lighty-event",
  "lighty-java",
  "lighty-loaders",
+ "lighty-modsloader",
  "lighty-version",
  "nix 0.31.3",
  "once_cell",
@@ -1468,6 +1471,7 @@ dependencies = [
  "lighty-java",
  "lighty-launch",
  "lighty-loaders",
+ "lighty-modsloader",
  "lighty-version",
  "once_cell",
  "reqwest",
@@ -1501,12 +1505,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "lighty-modsloader"
+version = "26.5.1"
+dependencies = [
+ "async-trait",
+ "futures",
+ "lighty-core",
+ "lighty-event",
+ "lighty-loaders",
+ "once_cell",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "lighty-version"
 version = "26.5.1"
 dependencies = [
  "async-trait",
  "lighty-core",
  "lighty-loaders",
+ "lighty-modsloader",
  "once_cell",
  "reqwest",
  "serde",
@@ -2373,6 +2396,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91c1b7e4904c873ef0710c1f407dde2e6287de2bebc1bbbf7d430bb7cbffd939"
 dependencies = [
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "secrecy"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e891af845473308773346dc847b2c23ee78fe442e0472ac50e22a18a93d3ae5a"
+dependencies = [
+ "zeroize",
 ]
 
 [[package]]

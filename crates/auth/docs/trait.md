@@ -35,6 +35,12 @@ the `AuthProvider` enum. The enum is reserved for the `UserProfile`
 return value, where it captures provider-specific data (e.g. the MS
 refresh token).
 
+`UserProfile.access_token` is a [`SecretString`](https://docs.rs/secrecy/)
+(re-exported as `lighty_auth::SecretString`). Custom authenticators
+must wrap their token in `SecretString::from(token)` before constructing
+the profile — see the example below. `Debug` redacts it automatically
+and the profile cannot be serialised in plain JSON.
+
 ## Implementing Custom Authenticator
 
 A minimal implementation against a hypothetical HTTP backend — closely
@@ -119,7 +125,9 @@ impl Authenticator for CustomAuth {
             id: None,
             username: body.username,
             uuid: body.uuid,
-            access_token: Some(body.access_token),
+            access_token: Some(SecretString::from(body.access_token)),
+            #[cfg(feature = "keyring")]
+            token_handle: None,
             xuid: None,
             email: None,
             email_verified: false,

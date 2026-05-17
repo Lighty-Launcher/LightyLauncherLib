@@ -1,6 +1,6 @@
 use crate::types::version_metadata::VersionMetaData;
 use crate::types::{Loader, VersionInfo};
-use crate::utils::error::QueryError;
+use lighty_core::QueryError;
 #[cfg(feature = "lighty_updater")]
 use crate::loaders::lighty_updater::lighty_updater::{LIGHTY_UPDATER, LightyQuery};
 #[cfg(feature = "neoforge")]
@@ -18,58 +18,37 @@ use std::sync::Arc;
 
 pub type Result<T> = std::result::Result<T, QueryError>;
 
-/// Extension trait for loading metadata from any loader
+/// Generic interface for fetching metadata from different mod loaders.
 ///
-/// This trait provides a generic interface for fetching metadata from different mod loaders.
-/// The main method is `get_metadata()`, which automatically dispatches to the correct
-/// loader implementation based on `self.loader()`.
-///
-/// Specialized query methods are also available for retrieving specific parts of the metadata.
+/// [`Self::get_metadata`] dispatches to the correct loader implementation
+/// based on `self.loader()`. Specialized accessors are available for
+/// retrieving specific parts of the metadata.
 #[async_trait]
 pub trait LoaderExtensions {
-    /// Get complete metadata for the current loader
-    ///
-    /// This is the main method that should be used. It automatically dispatches
-    /// to the appropriate repository based on the loader type.
-    ///
-    /// # Example
-    /// ```no_run
-    /// use lighty_loaders::{VersionBuilder, Loader, LoaderExtensions};
-    ///
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let instance = VersionBuilder::new("instance", Loader::Fabric, "0.16.9", "1.21.1", path);
-    /// let metadata = instance.get_metadata().await?;
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Get complete metadata for the current loader.
     async fn get_metadata(&self) -> Result<Arc<VersionMetaData>>;
 
-    /// Get only libraries metadata
-    ///
-    /// This method fetches just the libraries information, which can be faster
-    /// than fetching the complete metadata if you only need the libraries.
+    /// Get only libraries metadata.
     async fn get_libraries(&self) -> Result<Arc<VersionMetaData>>;
 
-    /// Get main class information (Vanilla-based loaders only)
+    /// Get main class information (Vanilla-based loaders only).
     async fn get_main_class(&self) -> Result<Arc<VersionMetaData>>;
 
-    /// Get native libraries (Vanilla-based loaders only)
+    /// Get native libraries (Vanilla-based loaders only).
     async fn get_natives(&self) -> Result<Arc<VersionMetaData>>;
 
-    /// Get Java version requirement (Vanilla-based loaders only)
+    /// Get Java version requirement (Vanilla-based loaders only).
     async fn get_java_version(&self) -> Result<Arc<VersionMetaData>>;
 
-    /// Get assets information (Vanilla-based loaders only)
+    /// Get assets information (Vanilla-based loaders only).
     async fn get_assets(&self) -> Result<Arc<VersionMetaData>>;
 }
 
-/// Default implementation for any type that implements VersionInfo<LoaderType = Loader>
 #[async_trait]
 impl<T> LoaderExtensions for T
 where
     T: VersionInfo<LoaderType = Loader> + Send + Sync,
 {
-    /// Get complete metadata by dispatching to the appropriate repository
     async fn get_metadata(&self) -> Result<Arc<VersionMetaData>> {
         match self.loader() {
             #[cfg(feature = "vanilla")]
@@ -102,7 +81,6 @@ where
                 LIGHTY_UPDATER.get(self, LightyQuery::LightyBuilder).await
             }
 
-            // Fallback for unsupported loaders or disabled features
             _ => {
                 Err(QueryError::UnsupportedLoader(
                     format!("Loader {:?} is not supported or feature is not enabled", self.loader())
@@ -111,7 +89,6 @@ where
         }
     }
 
-    /// Get libraries metadata for the current loader
     async fn get_libraries(&self) -> Result<Arc<VersionMetaData>> {
         match self.loader() {
             #[cfg(feature = "vanilla")]
@@ -131,13 +108,13 @@ where
 
             #[cfg(feature = "neoforge")]
             Loader::NeoForge => {
-                // NeoForge doesn't have a separate libraries query, use full metadata
+                // No separate libraries query — fall back to the full builder.
                 NEOFORGE.get(self, NeoForgeQuery::NeoForgeBuilder).await
             }
 
             #[cfg(feature = "forge")]
             Loader::Forge => {
-                // Forge has no separate libraries query — use full builder
+                // No separate libraries query — fall back to the full builder.
                 FORGE.get(self, ForgeQuery::ForgeBuilder).await
             }
 
@@ -149,7 +126,6 @@ where
         }
     }
 
-    /// Get main class (Vanilla-based queries only)
     async fn get_main_class(&self) -> Result<Arc<VersionMetaData>> {
         #[cfg(feature = "vanilla")]
         {
@@ -164,7 +140,6 @@ where
         }
     }
 
-    /// Get natives (Vanilla-based queries only)
     async fn get_natives(&self) -> Result<Arc<VersionMetaData>> {
         #[cfg(feature = "vanilla")]
         {
@@ -179,7 +154,6 @@ where
         }
     }
 
-    /// Get Java version requirement (Vanilla-based queries only)
     async fn get_java_version(&self) -> Result<Arc<VersionMetaData>> {
         #[cfg(feature = "vanilla")]
         {
@@ -194,7 +168,6 @@ where
         }
     }
 
-    /// Get assets (Vanilla-based queries only)
     async fn get_assets(&self) -> Result<Arc<VersionMetaData>> {
         #[cfg(feature = "vanilla")]
         {

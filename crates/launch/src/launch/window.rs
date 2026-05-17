@@ -2,21 +2,21 @@
 // Licensed under the MIT License
 
 //! Game window detection helpers.
-//!
-//! Used by the launch pipeline to emit the [`InstanceWindowAppeared`]
-//! event once the freshly spawned Minecraft process has a visible window.
-//!
-//! [`InstanceWindowAppeared`]: lighty_event::Event::InstanceWindowAppeared
 
 #![cfg(feature = "events")]
 
 use lighty_event::{Event, EventBus, InstanceWindowAppearedEvent};
+
+use crate::instance::INSTANCE_MANAGER;
 
 /// Watches for the game window to appear and emits `InstanceWindowAppeared`.
 ///
 /// On Windows: polls every 100ms for up to 30s using `EnumWindows`.
 /// On other platforms: emits unconditionally after a 5s delay (heuristic,
 /// since there is no portable per-PID window enumeration).
+///
+/// Bails out if the PID exits before detection completes, so a stale
+/// event doesn't override `InstanceExited` downstream.
 pub(crate) async fn detect_window_appearance(
     pid: u32,
     instance_name: String,
@@ -27,11 +27,18 @@ pub(crate) async fn detect_window_appearance(
     {
         use std::time::Duration;
 
-        // Poll every 100ms for up to 30 seconds
         let max_attempts = 300;
         let check_interval = Duration::from_millis(100);
 
         for _ in 0..max_attempts {
+            if !INSTANCE_MANAGER.is_alive(pid) {
+                lighty_core::trace_debug!(
+                    "[Launch] Window watcher aborted: PID {} exited",
+                    pid
+                );
+                return;
+            }
+
             if has_visible_window(pid) {
                 lighty_core::trace_info!("[Launch] Window appeared for PID: {}", pid);
 
@@ -52,8 +59,16 @@ pub(crate) async fn detect_window_appearance(
 
     #[cfg(not(windows))]
     {
-        // Non-Windows platforms: emit unconditionally after a fixed delay (best-effort)
+        // No portable per-PID window enumeration: best-effort 5s delay.
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+        if !INSTANCE_MANAGER.is_alive(pid) {
+            lighty_core::trace_debug!(
+                "[Launch] Window watcher aborted: PID {} exited",
+                pid
+            );
+            return;
+        }
 
         lighty_core::trace_info!(
             "[Launch] Assuming window appeared for PID: {} (non-Windows platform)",
@@ -87,7 +102,6 @@ fn has_visible_window(pid: u32) -> bool {
     unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
         let data = &mut *(lparam.0 as *mut EnumData);
 
-        // Skip invisible windows
         if IsWindowVisible(hwnd).as_bool() {
             let mut window_pid: u32 = 0;
             GetWindowThreadProcessId(hwnd, Some(&mut window_pid));

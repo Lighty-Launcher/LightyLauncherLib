@@ -51,6 +51,37 @@ async fn main()  {
 }
 ```
 
+## OS Keychain Routing (`with_keyring`)
+
+Opt-in: route the Azuriom session token into the OS keychain instead of
+keeping it as a `SecretString` in process memory. Gated by the
+`keyring` feature.
+
+```rust
+use lighty_launcher::prelude::*;
+
+let mut auth = AzuriomAuth::new(
+    "https://your-server.com",
+    "user@example.com",
+    "password123",
+)
+.with_keyring("MyLauncher");
+
+let profile = auth.authenticate(None).await?;
+
+// `profile.access_token` is now `None`; read the token on demand:
+#[cfg(feature = "keyring")]
+if let Some(handle) = &profile.token_handle {
+    let secret = handle.read()?;          // -> SecretString
+    let token  = secret.expose_secret();  // &str, consumed immediately
+    /* feed to argv or to verify()/logout() */
+}
+```
+
+Token lives in the OS keychain under `service = "MyLauncher"` /
+`username = "azuriom:{uuid}"` (Keychain on macOS, Credential Manager on
+Windows, Secret Service on Linux).
+
 ## Authentication Flow
 
 ### Basic Authentication
@@ -180,14 +211,17 @@ async fn authenticate_with_2fa(
 Verify if a token is still valid:
 
 ```rust
-let mut auth = AzuriomAuth::new(url, email, password);
-let profile = auth.authenticate().await?;
+use secrecy::ExposeSecret;
 
-// Save token
-let token = profile.access_token.clone().unwrap();
+let mut auth = AzuriomAuth::new(url, email, password);
+let profile = auth.authenticate(None).await?;
+
+// `access_token` is a `SecretString` — expose right before the call.
+let secret = profile.access_token.as_ref().expect("token");
+let token  = secret.expose_secret();
 
 // Later: verify token
-match auth.verify(&token).await {
+match auth.verify(token).await {
     Ok(profile) => {
         println!("Token is valid for: {}", profile.username);
     }
@@ -204,15 +238,18 @@ match auth.verify(&token).await {
 Invalidate an access token:
 
 ```rust
-let mut auth = AzuriomAuth::new(url, email, password);
-let profile = auth.authenticate().await?;
+use secrecy::ExposeSecret;
 
-let token = profile.access_token.unwrap();
+let mut auth = AzuriomAuth::new(url, email, password);
+let profile = auth.authenticate(None).await?;
+
+let secret = profile.access_token.as_ref().expect("token");
+let token  = secret.expose_secret();
 
 // Use token for authenticated requests...
 
 // Logout when done
-auth.logout(&token).await?;
+auth.logout(token).await?;
 println!("Successfully logged out");
 ```
 
@@ -223,7 +260,7 @@ use lighty_auth::{azuriom::AzuriomAuth, Authenticator, AuthError};
 
 let mut auth = AzuriomAuth::new(url, email, password);
 
-match auth.authenticate().await {
+match auth.authenticate(None).await {
     Ok(profile) => {
         println!("Success: {}", profile.username);
     }
@@ -248,12 +285,17 @@ match auth.authenticate().await {
         eprintln!("Account {} is banned", username);
     }
 
-    Err(AuthError::NetworkError(e)) => {
+    Err(AuthError::Network(e)) => {
         eprintln!("Network error: {}", e);
     }
 
     Err(AuthError::InvalidResponse(msg)) => {
         eprintln!("Invalid response from server: {}", msg);
+    }
+
+    #[cfg(feature = "keyring")]
+    Err(AuthError::Keyring(e)) => {
+        eprintln!("OS keychain error: {}", e);
     }
 
     Err(e) => {
@@ -266,17 +308,25 @@ match auth.authenticate().await {
 
 ```rust
 pub struct UserProfile {
-    pub id: Some(u64),                 // Azuriom user ID
-    pub username: String,              // Display name
-    pub uuid: String,                  // Minecraft UUID
-    pub access_token: Some(String),    // Session token
-    pub email: Some(String),           // User email
-    pub email_verified: bool,          // Email verification status
-    pub money: Option<f64>,            // Server credits/balance
-    pub role: Option<UserRole>,        // User role/rank
-    pub banned: bool,                  // Ban status
+    pub id: Some(u64),                     // Azuriom user ID
+    pub username: String,                  // Display name
+    pub uuid: String,                      // Minecraft UUID
+    pub access_token: Some(SecretString),  // Session token (secret-wrapped)
+    #[cfg(feature = "keyring")]
+    pub token_handle: None,                // Some(_) only with with_keyring()
+    pub xuid: None,                        // Not applicable (Microsoft-only)
+    pub email: Some(String),               // User email
+    pub email_verified: bool,              // Email verification status
+    pub money: Option<f64>,                // Server credits/balance
+    pub role: Option<UserRole>,            // User role/rank
+    pub banned: bool,                      // Ban status
+    pub provider: AuthProvider::Azuriom { base_url: String },
 }
 ```
+
+`Debug`-printing this profile renders
+`access_token: Some("[REDACTED]")` — the `SecretString` wrapper redacts
+the token automatically.
 
 ### Example Output
 
@@ -285,7 +335,7 @@ UserProfile {
     id: Some(42),
     username: "Steve",
     uuid: "069a79f4-44e9-4726-a5be-fca90e38aaf5",
-    access_token: Some("eyJ0eXAiOiJKV1QiLCJhbGc..."),
+    access_token: Some("[REDACTED]"),
     email: Some("steve@example.com"),
     email_verified: true,
     money: Some(150.50),
@@ -436,29 +486,31 @@ let auth = AzuriomAuth::new(url, email, password);
 ### Token Caching
 
 ```rust
-// ✅ Good: Cache valid tokens
+use secrecy::SecretString;
+
+// ✅ Good: cache the SecretString in-memory; consider with_keyring()
+// for a stronger guarantee (token lives in the OS keychain).
 struct TokenCache {
-    token: Option<String>,
+    token: Option<SecretString>,
     expires_at: Option<Instant>,
 }
 
 impl TokenCache {
-    async fn get_or_authenticate(&mut self, auth: &mut AzuriomAuth) -> Result<String> {
-        // Check if cached token is still valid
-        if let Some(token) = &self.token {
-            if let Some(expires) = self.expires_at {
-                if Instant::now() < expires {
-                    return Ok(token.clone());
-                }
+    async fn get_or_authenticate(
+        &mut self,
+        auth: &mut AzuriomAuth,
+    ) -> Result<SecretString, AuthError> {
+        if let (Some(token), Some(expires)) = (&self.token, self.expires_at) {
+            if Instant::now() < expires {
+                return Ok(token.clone());
             }
         }
 
-        // Re-authenticate
-        let profile = auth.authenticate().await?;
-        let token = profile.access_token.unwrap();
+        let profile = auth.authenticate(None).await?;
+        let token = profile.access_token.expect("Azuriom returns a token");
 
         self.token = Some(token.clone());
-        self.expires_at = Some(Instant::now() + Duration::from_hours(24));
+        self.expires_at = Some(Instant::now() + Duration::from_secs(24 * 3600));
 
         Ok(token)
     }
@@ -479,7 +531,7 @@ async fn authenticate_with_retry(
         match auth.authenticate().await {
             Ok(profile) => return Ok(profile),
 
-            Err(AuthError::NetworkError(e)) if attempts < max_retries => {
+            Err(AuthError::Network(e)) if attempts < max_retries => {
                 attempts += 1;
                 eprintln!("Network error (attempt {}/{}): {}", attempts, max_retries, e);
                 tokio::time::sleep(Duration::from_secs(2)).await;
@@ -523,10 +575,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_token_verify() {
+        use secrecy::ExposeSecret;
         // ... (same as above to get token)
-        let token = profile.access_token.unwrap();
+        let secret = profile.access_token.as_ref().unwrap();
 
-        let verified_profile = auth.verify(&token).await.unwrap();
+        let verified_profile = auth.verify(secret.expose_secret()).await.unwrap();
         assert_eq!(verified_profile.username, profile.username);
     }
 }
@@ -576,3 +629,9 @@ With 2FA: **200-1000ms** (two requests)
 - **2FA Recommended**: Enable 2FA for enhanced security
 - **Token Expiration**: Tokens expire after 24 hours (configurable server-side)
 - **Rate Limiting**: Azuriom may rate-limit authentication requests
+- **Tokens are secret-wrapped**: `UserProfile.access_token` is a
+  `SecretString` — `Debug` prints `[REDACTED]` and the profile cannot
+  be serialised in plain JSON
+- **OS keychain (opt-in)**: `AzuriomAuth::with_keyring("…")` routes the
+  session token into Keychain / Credential Manager / Secret Service
+- See [`AUTH_SECRETS.md`](../../../AUTH_SECRETS.md) for the full threat model

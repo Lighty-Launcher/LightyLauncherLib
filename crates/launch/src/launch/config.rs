@@ -1,34 +1,20 @@
 // Copyright (c) 2025 Hamadi
 // Licensed under the MIT License
 
-//! Global launch configuration
-//!
-//! Configure username, UUID, and Java distribution globally instead of passing them to each launch call.
+//! Global launch configuration shared across all launches.
 
 use lighty_java::JavaDistribution;
 
-/// Launch configuration
-///
-/// Configure these parameters once and reuse them across all launches.
+/// Launch configuration shared across launches.
 #[derive(Debug, Clone)]
 pub struct LaunchConfig {
-    /// Username for authentication
     pub username: String,
-
-    /// Player UUID (with dashes)
     pub uuid: String,
-
-    /// Java distribution to use
     pub java_distribution: JavaDistribution,
 }
 
 impl LaunchConfig {
-    /// Create a new launch configuration
-    ///
-    /// # Arguments
-    /// - `username`: Player username
-    /// - `uuid`: Player UUID (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
-    /// - `java_distribution`: Java distribution to download/use
+    /// Create a new launch configuration.
     pub fn new(
         username: impl Into<String>,
         uuid: impl Into<String>,

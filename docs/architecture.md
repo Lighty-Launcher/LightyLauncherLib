@@ -22,15 +22,17 @@
 │  - Extract    │          │  - Installer  │         │  - Fabric     │
 │  - Hash       │          │  - Arguments  │         │  - Quilt      │
 │  - Download   │          │  - Instance   │         │  - Forge      │
+│  - QueryError │          │  - Modpack    │         │  - NeoForge   │
 └───────┬───────┘          └───────┬───────┘         └───────┬───────┘
         │                          │                         │
-        │                          │                         │
-┌───────▼───────┐          ┌───────▼───────┐         ┌───────▼────────┐
-│  lighty-auth  │          │  lighty-java  │         │ lighty-version │
-│  - Offline    │          │  - Temurin    │         │  - Builder     │
-│  - Microsoft  │          │  - GraalVM    │         │  - Lighty      │
-│  - Azuriom    │          │  - Zulu       │         │                │
-└───────────────┘          └───────────────┘         └────────────────┘
+        │                ┌─────────┴────────┐                │
+        │                ▼                  ▼                │
+┌───────▼───────┐ ┌───────────────┐ ┌──────────────────┐ ┌───▼────────────┐
+│  lighty-auth  │ │  lighty-java  │ │lighty-modsloader │ │ lighty-version │
+│  - Offline    │ │  - Temurin    │ │  - Modrinth      │ │  - Builder     │
+│  - Microsoft  │ │  - GraalVM    │ │  - CurseForge    │ │  - WithMods    │
+│  - Azuriom    │ │  - Zulu       │ │  - Modpack       │ │                │
+└───────────────┘ └───────────────┘ └──────────────────┘ └────────────────┘
         │                                                    │
         └────────────────────┬───────────────────────────────┘
                              │
@@ -48,13 +50,14 @@ Transitive deps are not listed (they're implied by the chain).
 
 | Crate | Depends on | Optional (`events` feature) | Role |
 |-------|------------|-----------------------------|------|
-| `lighty-core` | — | `lighty-event` | Foundation: AppState, HTTP client, hashing, archive I/O, system probe |
+| `lighty-core` | — | `lighty-event` | Foundation: AppState, HTTP client, hashing, archive I/O, system probe, shared `QueryError` |
 | `lighty-event` | — | — | Broadcast event bus and event types |
 | `lighty-auth` | `lighty-core` | `lighty-event` | Authentication providers (Offline, Microsoft, Azuriom) + the `Authenticator` trait |
 | `lighty-java` | `lighty-core` | `lighty-event` | Java distribution detection/install (Temurin, Zulu, GraalVM) and process spawning |
 | `lighty-loaders` | `lighty-core` | — | Loader metadata + install pipelines (Vanilla, Forge, NeoForge, Fabric, Quilt, OptiFine, LightyUpdater) |
-| `lighty-version` | `lighty-core`, `lighty-loaders` | — | High-level `VersionBuilder` that ties a loader version + MC version together |
-| `lighty-launch` | `lighty-core`, `lighty-java`, `lighty-version`, `lighty-loaders`, `lighty-auth` | `lighty-event` | Argument building, library + processor install, JVM launch, instance lifecycle |
+| `lighty-modsloader` | `lighty-core`, `lighty-loaders` | `lighty-event` | Mods + modpacks: Modrinth/CurseForge clients, BFS resolver, `.mrpack` / CurseForge `.zip` parsing, `WithMods` trait |
+| `lighty-version` | `lighty-core`, `lighty-loaders`, `lighty-modsloader` | — | High-level `VersionBuilder` that ties a loader version + MC version together; sub-builder for mods/modpacks |
+| `lighty-launch` | `lighty-core`, `lighty-java`, `lighty-version`, `lighty-loaders`, `lighty-modsloader`, `lighty-auth` | `lighty-event` | Argument building, library + processor install, JVM launch, instance lifecycle, modpack install pipeline |
 | `lighty-launcher` | all of the above | — | Re-export shell exposed to end-users (`use lighty_launcher::prelude::*`) |
 
 **Properties this layout enforces:**
@@ -135,8 +138,16 @@ Transitive deps are not listed (they're implied by the chain).
 **Key Exports**:
 - `EventBus` - Main event bus
 - `Event` - Event enum
-- Specific events: `AuthEvent`, `JavaEvent`, `LaunchEvent`, etc.
+- Specific events: `AuthEvent`, `JavaEvent`, `LaunchEvent`,
+  `LoaderEvent`, `ModloaderEvent`, `CoreEvent`,
+  `InstanceLaunchedEvent`, `InstanceExitedEvent`,
+  `ConsoleOutputEvent`, ...
 - `EVENT_BUS` - Global singleton
+
+`ModloaderEvent` (mod-source pipeline) is its own module: dependency
+resolution, modpack pipeline, and per-bucket install summaries for
+resourcepacks / shaderpacks / datapacks. These variants used to live
+inside `LaunchEvent` and have moved here.
 
 **Dependencies**: None
 
@@ -442,17 +453,28 @@ async fn main() -> Result<()> {
 
 ### Parallel Downloads
 
-Multiple downloads run concurrently:
+Eight buckets run concurrently in a single `tokio::try_join!`:
 
 ```rust
 tokio::try_join!(
     libraries::download_libraries(library_tasks),
-    natives::download_and_extract_natives(native_tasks),
+    natives::download_and_extract_natives(native_download_tasks, native_extract_paths),
     client::download_client(client_task),
     assets::download_assets(asset_tasks),
     mods::download_mods(mod_tasks),
+    resourcepacks::download_resourcepacks(resourcepack_tasks, resourcepack_bytes),
+    shaderpacks::download_shaderpacks(shaderpack_tasks, shaderpack_bytes),
+    datapacks::download_datapacks(datapack_tasks, datapack_bytes),
 )?;
 ```
+
+The four mod-like buckets (`mods`, `resourcepacks`, `shaderpacks`,
+`datapacks`) are thin wrappers around a single private helper
+`crates/launch/src/installer/ressources/asset_partition.rs` that
+factors `collect(version, mods, subdir, legacy_fallback)` and
+`download(tasks, label, event_bus)`. Each bucket pins its own subdir
+prefix; only `mods` keeps the legacy unqualified-path fallback. See
+`ASSETS_ROUTING.md` at the repo root for the full design.
 
 **Performance**: 5x-10x faster than sequential downloads
 
@@ -583,9 +605,19 @@ All downloaded files verified against expected hash
 
 All API calls use HTTPS (automatically upgraded)
 
-### 3. No Credentials Storage
+### 3. Secret tokens never plain in memory
 
-Tokens and credentials not stored by default
+Both `UserProfile.access_token` and the Microsoft `refresh_token` are
+wrapped in `secrecy::SecretString`. `Debug` / serialisation never leak
+the plaintext. The one site that actually needs the raw value
+(`crates/launch/src/arguments/arguments.rs:229`) calls
+`ExposeSecret::expose_secret` exactly once, at the moment the value is
+written into the argv map for `--accessToken`. With the opt-in
+`keyring` feature, `MicrosoftAuth::with_keyring(...)` /
+`AzuriomAuth::with_keyring(...)` route the token to the OS keychain
+and `UserProfile` only keeps a `TokenHandle`; the argv builder calls
+`TokenHandle::read()` on demand. See `AUTH_SECRETS.md` at the repo
+root for the full threat model and key layout.
 
 ### 4. Sandboxed Execution
 

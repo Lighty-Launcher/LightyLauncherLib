@@ -1,10 +1,4 @@
 //! Compile-time OS / architecture detection and per-vendor name mapping.
-//!
-//! Provides the [`OS`] and [`ARCHITECTURE`] constants resolved from
-//! `cfg!(target_os/target_arch)`, plus accessor methods that map them to
-//! the naming conventions used by each Java distribution API
-//! (Adoptium, Azul Zulu, BellSoft Liberica via Foojay, Oracle GraalVM)
-//! and Mojang's version manifest.
 
 use crate::errors::{SystemError, SystemResult};
 use serde::Deserialize;
@@ -23,15 +17,15 @@ pub const OS: OperatingSystem = if cfg!(target_os = "windows") {
 
 /// Current CPU architecture, resolved at compile time.
 pub const ARCHITECTURE: Architecture = if cfg!(target_arch = "x86") {
-    Architecture::X86 // 32-bit
+    Architecture::X86
 } else if cfg!(target_arch = "x86_64") {
-    Architecture::X64 // 64-bit
+    Architecture::X64
 } else if cfg!(target_arch = "arm") {
-    Architecture::ARM // ARM
+    Architecture::ARM
 } else if cfg!(target_arch = "aarch64") {
-    Architecture::AARCH64 // AARCH64
+    Architecture::AARCH64
 } else {
-    Architecture::UNKNOWN // Unsupported architecture
+    Architecture::UNKNOWN
 };
 
 /// Supported operating systems.

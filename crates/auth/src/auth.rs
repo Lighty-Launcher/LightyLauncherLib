@@ -1,120 +1,177 @@
 //! Core authentication types: [`Authenticator`] trait, [`UserProfile`],
-//! [`UserRole`], [`AuthProvider`], plus the [`generate_offline_uuid`] helper
-//! for deterministic offline UUIDs.
+//! [`UserRole`], [`AuthProvider`], plus [`generate_offline_uuid`].
 
+use std::fmt;
 use std::future::Future;
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use crate::AuthError;
+
+#[cfg(feature = "keyring")]
+use crate::keyring::TokenHandle;
 
 #[cfg(feature = "events")]
 use lighty_event::EventBus;
 
 pub type AuthResult<T> = Result<T, AuthError>;
 
-/// User profile returned after successful authentication
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// User profile returned after successful authentication.
+///
+/// Intentionally not `Serialize` / `Deserialize`: dumping a profile in
+/// plain JSON would leak the session token. See `AUTH_SECRETS.md`.
+#[derive(Clone)]
 pub struct UserProfile {
-    /// User ID (optional for offline mode)
     pub id: Option<u64>,
-
-    /// Username
     pub username: String,
-
-    /// Minecraft UUID (with dashes)
     pub uuid: String,
-
-    /// Access token for session validation
-    pub access_token: Option<String>,
-
-    /// Xbox User ID (`xid` claim). Only populated by Microsoft auth; offline
-    /// and Azuriom leave this `None`. Surfaced to the JVM as `${auth_xuid}`.
+    /// Minecraft/Azuriom session token. Wrapped in [`SecretString`] so
+    /// `Debug` prints `[REDACTED]` and `serde` cannot serialise it.
+    /// Read at launch-time via [`secrecy::ExposeSecret::expose_secret`].
+    pub access_token: Option<SecretString>,
+    /// Opt-in OS-keychain handle. When present, the token is stored
+    /// outside the process address space and `access_token` is `None`.
+    #[cfg(feature = "keyring")]
+    pub token_handle: Option<TokenHandle>,
     pub xuid: Option<String>,
-
-    /// User email (optional)
     pub email: Option<String>,
-
-    /// Email verification status
     pub email_verified: bool,
-
-    /// User money/credits (for custom launchers)
     pub money: Option<f64>,
-
-    /// User role/rank
     pub role: Option<UserRole>,
-
-    /// Whether the account is banned
     pub banned: bool,
-
-    /// Which authenticator produced this profile. Drives the `${user_type}`
-    /// placeholder (`"msa"` / `"mojang"` / `"legacy"`) at launch time.
     pub provider: AuthProvider,
 }
 
-/// User role/rank information
+impl UserProfile {
+    /// Minimal offline-mode profile — intended for tests, doctests and
+    /// `OfflineAuth` integrations. All optional fields default to `None`.
+    pub fn offline(username: impl Into<String>, uuid: impl Into<String>) -> Self {
+        Self {
+            id: None,
+            username: username.into(),
+            uuid: uuid.into(),
+            access_token: None,
+            #[cfg(feature = "keyring")]
+            token_handle: None,
+            xuid: None,
+            email: None,
+            email_verified: false,
+            money: None,
+            role: None,
+            banned: false,
+            provider: AuthProvider::Offline,
+        }
+    }
+}
+
+impl fmt::Debug for UserProfile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("UserProfile")
+            .field("id", &self.id)
+            .field("username", &self.username)
+            .field("uuid", &self.uuid)
+            .field("access_token", &self.access_token.as_ref().map(|_| "[REDACTED]"))
+            .field("xuid", &self.xuid)
+            .field("email", &self.email)
+            .field("email_verified", &self.email_verified)
+            .field("money", &self.money)
+            .field("role", &self.role)
+            .field("banned", &self.banned)
+            .field("provider", &self.provider)
+            .finish()
+    }
+}
+
+/// User role/rank information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserRole {
-    /// Role name
     pub name: String,
-
-    /// Role color (hex format: #RRGGBB)
     pub color: Option<String>,
 }
 
-/// Authentication provider type
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Authentication provider type.
+///
+/// `Microsoft.refresh_token` is wrapped in [`SecretString`] for the
+/// same reason as `UserProfile.access_token`. The enum is therefore
+/// not `Serialize` / `Deserialize`.
+#[derive(Debug, Clone)]
 pub enum AuthProvider {
-    /// Offline mode - no authentication
     Offline,
-
-    /// Azuriom CMS authentication
     Azuriom {
-        /// Base URL of the Azuriom instance (e.g., "https://example.com")
         base_url: String,
     },
-
-    /// Microsoft/Xbox Live authentication
     Microsoft {
-        /// OAuth client ID
         client_id: String,
-        /// OAuth refresh token (long-lived, ~90 days). Populated by the
-        /// device-code flow and forwarded through `authenticate_with_refresh_token`
-        /// for silent re-auth. Persist this in an OS keyring so the user
-        /// doesn't need to re-enter a device code on every launch.
-        refresh_token: Option<String>,
+        refresh_token: Option<SecretString>,
     },
-
-    /// Custom authentication endpoint
     Custom {
-        /// Base URL of the custom auth API
         base_url: String,
     },
 }
 
-/// Core authentication trait
-///
-/// All authentication providers must implement this trait
+/// Helper return type for [`route_token`].
+pub(crate) struct TokenRouting {
+    pub access_token: Option<SecretString>,
+    #[cfg(feature = "keyring")]
+    pub token_handle: Option<TokenHandle>,
+}
+
+/// Wraps a freshly obtained token. If the provider was configured with
+/// `with_keyring(service)`, the secret is written to the OS keychain
+/// under `keyring_key` and only a [`TokenHandle`] is returned. Otherwise
+/// the secret stays in process memory inside a [`SecretString`].
+pub(crate) fn route_token(
+    token: String,
+    _keyring_service: Option<&str>,
+    _keyring_key: &str,
+) -> Result<TokenRouting, AuthError> {
+    let secret = SecretString::from(token);
+    #[cfg(feature = "keyring")]
+    if let Some(service) = _keyring_service {
+        let handle = TokenHandle::new(service, _keyring_key);
+        handle.store(&secret)?;
+        return Ok(TokenRouting {
+            access_token: None,
+            token_handle: Some(handle),
+        });
+    }
+    Ok(TokenRouting {
+        access_token: Some(secret),
+        #[cfg(feature = "keyring")]
+        token_handle: None,
+    })
+}
+
+impl PartialEq for AuthProvider {
+    fn eq(&self, other: &Self) -> bool {
+        use secrecy::ExposeSecret;
+        match (self, other) {
+            (Self::Offline, Self::Offline) => true,
+            (Self::Azuriom { base_url: a }, Self::Azuriom { base_url: b }) => a == b,
+            (Self::Custom { base_url: a }, Self::Custom { base_url: b }) => a == b,
+            (
+                Self::Microsoft { client_id: ca, refresh_token: ta },
+                Self::Microsoft { client_id: cb, refresh_token: tb },
+            ) => {
+                ca == cb
+                    && ta.as_ref().map(|s| s.expose_secret().to_string())
+                        == tb.as_ref().map(|s| s.expose_secret().to_string())
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Eq for AuthProvider {}
+
+/// Core authentication trait implemented by every provider.
 pub trait Authenticator {
-    /// Authenticate a user and return their profile
-    ///
-    /// # Arguments
-    /// - `event_bus`: Optional event bus for emitting auth events
-    ///
-    /// # Returns
-    /// - `Ok(UserProfile)` on success
-    /// - `Err(AuthError)` on failure
+    /// Authenticate a user and return their profile.
     fn authenticate(
         &mut self,
         #[cfg(feature = "events")] event_bus: Option<&EventBus>,
     ) -> impl Future<Output = AuthResult<UserProfile>> + Send;
 
-    /// Verify if a token is still valid
-    ///
-    /// # Arguments
-    /// - `token`: The access token to verify
-    ///
-    /// # Returns
-    /// - `Ok(UserProfile)` if token is valid
-    /// - `Err(AuthError)` if token is invalid or expired
+    /// Verify if a token is still valid.
     fn verify(&self, token: &str) -> impl Future<Output = AuthResult<UserProfile>> + Send {
         async move {
             let _ = token;
@@ -122,10 +179,7 @@ pub trait Authenticator {
         }
     }
 
-    /// Logout and invalidate the token
-    ///
-    /// # Arguments
-    /// - `token`: The access token to invalidate
+    /// Logout and invalidate the token.
     fn logout(&self, token: &str) -> impl Future<Output = AuthResult<()>> + Send {
         async move {
             let _ = token;
@@ -134,29 +188,16 @@ pub trait Authenticator {
     }
 }
 
-/// Helper to generate UUID v5 from username (for offline mode)
-///
-/// Uses SHA1 hashing to generate a deterministic UUID from the username.
-/// This ensures the same username always produces the same UUID.
-///
-/// # Arguments
-/// - `username`: The username to generate a UUID for
-///
-/// # Returns
-/// A UUID v5 string in the format: xxxxxxxx-xxxx-5xxx-yxxx-xxxxxxxxxxxx
+/// Generates a deterministic UUID v5 (SHA1-based) from a username for offline mode.
 pub fn generate_offline_uuid(username: &str) -> String {
-    // Namespace for offline UUIDs (OfflinePlayer)
     const NAMESPACE: &[u8] = b"OfflinePlayer:";
 
-    // Concatenate namespace and username
     let mut data = Vec::with_capacity(NAMESPACE.len() + username.len());
     data.extend_from_slice(NAMESPACE);
     data.extend_from_slice(username.as_bytes());
 
-    // Calculate SHA1 hash using lighty-core
     let hash = lighty_core::calculate_sha1_bytes_raw(&data);
 
-    // Format as UUID v5 (SHA1-based)
     // Version bits: 0101 (5) in the 13th position
     // Variant bits: 10xx in the 17th position (RFC 4122)
     format!(

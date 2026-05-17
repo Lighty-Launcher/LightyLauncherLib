@@ -300,7 +300,7 @@ java_dirs/
 All operations return `Result<T, QueryError>`:
 
 **Exports**:
-- `lighty_loaders::utils::error::QueryError`
+- `lighty_core::QueryError`
 
 ```rust
 pub enum QueryError {

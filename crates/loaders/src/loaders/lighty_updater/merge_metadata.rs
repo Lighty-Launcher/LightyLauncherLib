@@ -1,33 +1,28 @@
-use crate::types::{VersionInfo, Loader, LoaderExtensions};
 use crate::types::version_metadata::{Version, VersionMetaData};
-use crate::utils::error::QueryError;
+use crate::types::{Loader, LoaderExtensions, VersionInfo};
+use lighty_core::QueryError;
 
 pub type Result<T> = std::result::Result<T, QueryError>;
 
 /// Fetches and merges the base loader's metadata into a [`Version`].
 ///
 /// The base loader is selected from the `loader` string supplied by
-/// `ServerInfo` (`"vanilla"`, `"fabric"`, `"quilt"`, `"neoforge"`).
+/// `ServerInfo` (`"vanilla"`, `"fabric"`, `"quilt"`, `"neoforge"`, `"forge"`).
 pub async fn merge_metadata<V: VersionInfo>(version: &V, loader: &str) -> Result<Version> {
-    lighty_core::trace_debug!("[merge_metadata] START with loader={}", loader);
-
-    // Map string loader to Loader enum
     let loader_type = match loader {
         "vanilla" => Loader::Vanilla,
         "fabric" => Loader::Fabric,
         "quilt" => Loader::Quilt,
         "neoforge" => Loader::NeoForge,
+        "forge" => Loader::Forge,
         _ => {
-            lighty_core::trace_error!("[merge_metadata] Unknown loader: {}", loader);
-            return Err(QueryError::UnsupportedLoader(
-                format!("Unknown loader '{}' - please check your LightyUpdater config", loader)
-            ))
+            return Err(QueryError::UnsupportedLoader(format!(
+                "Unknown loader '{}' - please check your LightyUpdater config",
+                loader
+            )))
         }
     };
 
-    lighty_core::trace_debug!("[merge_metadata] Loader mapped: {:?}", loader_type);
-
-    // Create temporary VersionInfo with the correct loader
     let temp_version = TempVersionInfo {
         name: version.name().to_string(),
         loader_version: version.loader_version().to_string(),
@@ -37,26 +32,20 @@ pub async fn merge_metadata<V: VersionInfo>(version: &V, loader: &str) -> Result
         loader: loader_type,
     };
 
-    // Use get_metadata() to fetch the builder data
-    lighty_core::trace_debug!("[merge_metadata] Fetching base loader data using get_metadata()...");
     let metadata = temp_version.get_metadata().await?;
 
-    // Extract Version from VersionMetaData
     let merged_metadata = match &*metadata {
         VersionMetaData::Version(version) => version.clone(),
         _ => {
-            lighty_core::trace_error!("❌ [merge_metadata] Expected Version metadata");
             return Err(QueryError::UnsupportedLoader(
-                "Failed to extract Version from metadata".to_string()
+                "Failed to extract Version from metadata".to_string(),
             ))
         }
     };
 
-    lighty_core::trace_debug!("[merge_metadata] Base loader data fetched successfully");
     Ok(merged_metadata)
 }
 
-/// Temporary VersionInfo implementation for merge operations
 #[derive(Clone)]
 struct TempVersionInfo {
     name: String,

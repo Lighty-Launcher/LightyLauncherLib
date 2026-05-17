@@ -1,9 +1,4 @@
 //! Concrete mod-loader implementations, one submodule per loader.
-//!
-//! Each submodule exposes a `Lazy<ManifestRepository<_>>` static (e.g.
-//! [`vanilla::vanilla::VANILLA`], [`fabric::fabric::FABRIC`]) that caches
-//! its manifest fetches and dispatches sub-queries via the [`crate::utils::query::Query`]
-//! trait.
 
 #[cfg(feature = "fabric")]
 pub mod fabric;

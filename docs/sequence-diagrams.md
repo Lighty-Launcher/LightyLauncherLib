@@ -38,12 +38,15 @@ sequenceDiagram
 
     LaunchBuilder->>Installer: install(version_data)
 
-    par Parallel Installation
+    par Parallel Installation (8 buckets via tokio::try_join!)
         Installer->>Installer: Download Libraries
         Installer->>Installer: Download Natives
         Installer->>Installer: Download Client JAR
         Installer->>Installer: Download Assets
-        Installer->>Installer: Download Mods (if applicable)
+        Installer->>Installer: Download Mods (subdir: mods/)
+        Installer->>Installer: Download ResourcePacks (subdir: resourcepacks/)
+        Installer->>Installer: Download ShaderPacks (subdir: shaderpacks/)
+        Installer->>Installer: Download Datapacks (subdir: datapacks/)
     end
 
     Installer->>Installer: Extract Natives
@@ -88,12 +91,8 @@ sequenceDiagram
     User->>OfflineAuth: authenticate()
     OfflineAuth->>UUID: generate_offline_uuid(username)
     UUID-->>OfflineAuth: deterministic UUID (v5)
-    OfflineAuth-->>User: UserProfile {
-        username,
-        uuid,
-        access_token: None,
-        role: User
-    }
+    OfflineAuth-->>User: UserProfile::offline(username, uuid)
+    Note over OfflineAuth: provider = AuthProvider::Offline<br/>access_token = None<br/>all other optional fields default to None / false
 ```
 
 ### Microsoft Authentication
@@ -139,10 +138,15 @@ sequenceDiagram
 
     MicrosoftAuth-->>User: UserProfile {
         username, uuid,
-        access_token: Some(mc_token),
+        access_token: Some(SecretString::from(mc_token)),
+        token_handle: None (or Some(handle) if with_keyring),
         xuid: Some(xuid),
-        provider: Microsoft { client_id, refresh_token: Some(rt) }
+        provider: AuthProvider::Microsoft {
+            client_id,
+            refresh_token: Some(SecretString::from(rt))
+        }
     }
+    Note over MicrosoftAuth: access_token + refresh_token wrapped in SecretString.<br/>If with_keyring(service) was set, both are written to the OS keychain<br/>and access_token is None — only a TokenHandle is returned.
 ```
 
 ### Silent Re-authentication
@@ -197,12 +201,12 @@ sequenceDiagram
 
     Installer->>Installer: Phase 1: Verification (SHA1 Check)
 
-    par Collect Tasks
+    par Collect Tasks (tokio::join! — 8 buckets)
         Installer->>Libraries: Check libraries
         Libraries-->>Installer: library_tasks[]
 
         Installer->>Natives: Check natives
-        Natives-->>Installer: native_tasks[]
+        Natives-->>Installer: (native_download_tasks[], native_extract_paths[])
 
         Installer->>Client: Check client JAR
         Client-->>Installer: client_task?
@@ -210,35 +214,55 @@ sequenceDiagram
         Installer->>Assets: Check assets
         Assets-->>Installer: asset_tasks[]
 
-        Installer->>Mods: Check mods
-        Mods-->>Installer: mod_tasks[]
+        Installer->>Mods: Check mods (subdir: mods/)
+        Mods-->>Installer: (mod_tasks[], mod_bytes)
+
+        Installer->>Mods: Check resourcepacks (subdir: resourcepacks/)
+        Mods-->>Installer: (resourcepack_tasks[], resourcepack_bytes)
+
+        Installer->>Mods: Check shaderpacks (subdir: shaderpacks/)
+        Mods-->>Installer: (shaderpack_tasks[], shaderpack_bytes)
+
+        Installer->>Mods: Check datapacks (subdir: datapacks/)
+        Mods-->>Installer: (datapack_tasks[], datapack_bytes)
     end
 
+    Note over Installer: mod_like_bytes = mod_bytes + resourcepack_bytes + shaderpack_bytes + datapack_bytes<br/>passed to calculate_download_size()
+
     alt All Files Valid (total_downloads == 0)
-        Installer->>EventBus: Emit IsInstalled
+        Installer->>EventBus: Emit LaunchEvent::IsInstalled
         Installer->>Natives: Extract natives only
         Natives-->>Installer: Done
     else Files Need Download
-        Installer->>EventBus: Emit InstallStarted
+        Installer->>EventBus: Emit LaunchEvent::InstallStarted { total_bytes }
 
-        par Phase 2: Parallel Download
+        par Phase 2: Parallel Download (8 buckets)
             Installer->>Libraries: Download library_tasks
-            Libraries->>EventBus: Emit DownloadingLibraries
+            Libraries->>EventBus: Emit LaunchEvent::InstallProgress { bytes } (per chunk)
 
             Installer->>Natives: Download & extract native_tasks
-            Natives->>EventBus: Emit DownloadingNatives
+            Natives->>EventBus: Emit LaunchEvent::InstallProgress { bytes }
 
             Installer->>Client: Download client_task
-            Client->>EventBus: Emit DownloadingClient
+            Client->>EventBus: Emit LaunchEvent::InstallProgress { bytes }
 
             Installer->>Assets: Download asset_tasks
-            Assets->>EventBus: Emit DownloadingAssets
+            Assets->>EventBus: Emit LaunchEvent::InstallProgress { bytes }
 
-            Installer->>Mods: Download mod_tasks
-            Mods->>EventBus: Emit DownloadingMods
+            Installer->>Mods: Download mod_tasks (subdir: mods/)
+            Mods->>EventBus: Emit LaunchEvent::InstallProgress { bytes }
+
+            Installer->>Mods: Download resourcepack_tasks (subdir: resourcepacks/)
+            Mods->>EventBus: Emit ModloaderEvent::ResourcePacksInstalled { count, bytes }
+
+            Installer->>Mods: Download shaderpack_tasks (subdir: shaderpacks/)
+            Mods->>EventBus: Emit ModloaderEvent::ShaderPacksInstalled { count, bytes }
+
+            Installer->>Mods: Download datapack_tasks (subdir: datapacks/)
+            Mods->>EventBus: Emit ModloaderEvent::DatapacksInstalled { count, bytes }
         end
 
-        Installer->>EventBus: Emit InstallCompleted
+        Installer->>EventBus: Emit LaunchEvent::InstallCompleted
     end
 ```
 
@@ -397,17 +421,23 @@ flowchart TB
     EmitInstalled --> ExtractNatives[Extract Natives Only]
     EmitStart --> ParallelDownload[Parallel Download]
 
-    ParallelDownload --> |Libraries| LibEvents[Emit DownloadingLibraries]
-    ParallelDownload --> |Natives| NatEvents[Emit DownloadingNatives]
-    ParallelDownload --> |Client| ClientEvents[Emit DownloadingClient]
-    ParallelDownload --> |Assets| AssetEvents[Emit DownloadingAssets]
-    ParallelDownload --> |Mods| ModEvents[Emit DownloadingMods]
+    ParallelDownload --> |Libraries| LibEvents[Emit InstallProgress per chunk]
+    ParallelDownload --> |Natives| NatEvents[Emit InstallProgress per chunk]
+    ParallelDownload --> |Client| ClientEvents[Emit InstallProgress per chunk]
+    ParallelDownload --> |Assets| AssetEvents[Emit InstallProgress per chunk]
+    ParallelDownload --> |Mods| ModEvents[Emit InstallProgress per chunk]
+    ParallelDownload --> |ResourcePacks| RPEvents[Emit ModloaderEvent::ResourcePacksInstalled]
+    ParallelDownload --> |ShaderPacks| SPEvents[Emit ModloaderEvent::ShaderPacksInstalled]
+    ParallelDownload --> |Datapacks| DPEvents[Emit ModloaderEvent::DatapacksInstalled]
 
     LibEvents --> EmitComplete[Emit InstallCompleted]
     NatEvents --> EmitComplete
     ClientEvents --> EmitComplete
     AssetEvents --> EmitComplete
     ModEvents --> EmitComplete
+    RPEvents --> EmitComplete
+    SPEvents --> EmitComplete
+    DPEvents --> EmitComplete
     ExtractNatives --> EmitComplete
 
     EmitComplete --> BuildArgs[Build Arguments]
@@ -470,13 +500,14 @@ sequenceDiagram
     LightyBuilder->>ServerAPI: GET {server_url}/version
     ServerAPI-->>LightyBuilder: {
         minecraft_version,
-        loader,
+        loader,             // "vanilla" | "fabric" | "quilt" | "neoforge" | "forge"
         loader_version,
         mods: [...]
     }
 
-    LightyBuilder->>Vanilla: Fetch vanilla metadata
-    Vanilla-->>LightyBuilder: vanilla_metadata
+    LightyBuilder->>Vanilla: Fetch base-loader metadata
+    Note over LightyBuilder,Vanilla: loader = "forge" now supported in<br/>merge_metadata.rs (mapped to Loader::Forge).<br/>The lighty_updater feature already activates the<br/>forge feature at the workspace level.
+    Vanilla-->>LightyBuilder: base_metadata
 
     LightyBuilder->>LightyBuilder: Add server mods to metadata
     LightyBuilder-->>User: VersionMetaData with custom mods

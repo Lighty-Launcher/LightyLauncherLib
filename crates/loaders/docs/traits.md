@@ -369,7 +369,7 @@ async fn main() -> anyhow::Result<()> {
 ### Error Handling
 
 ```rust
-use lighty_loaders::utils::error::QueryError;
+use lighty_core::QueryError;
 
 match instance.get_metadata().await {
     Ok(metadata) => {

@@ -1,31 +1,9 @@
 // Copyright (c) 2025 Hamadi
 // Licensed under the MIT License
 
-//! Legacy Forge implementation (Minecraft 1.4.x → 1.12.2).
-//!
-//! Unlike modern Forge (1.13+), the legacy installer ships a single
-//! `install_profile.json` with two top-level blocks (`install` and
-//! `versionInfo`), no `processors`, and no separate `version.json`.
-//!
-//! Pipeline:
-//! 1. Download the installer JAR from the Forge Maven (URL pattern
-//!    differs slightly for MC 1.7.x vs 1.8+).
-//! 2. Read `install_profile.json` directly from the installer ZIP.
-//! 3. Merge `versionInfo.libraries` with the vanilla baseline, with
-//!    Forge winning on `group:artifact` collisions.
-//! 4. After the runtime libraries are downloaded, extract the
-//!    "universal" JAR from inside the installer and place it at the
-//!    Maven path declared by `install.path`. This is the file the
-//!    runtime classpath references for the Forge entry point.
-//!
-//! Pivot mapping:
-//! - `main_class` ← `versionInfo.mainClass` (typically
-//!   `net.minecraft.launchwrapper.Launch`)
-//! - `arguments.game` ← `versionInfo.minecraftArguments` split on
-//!   whitespace; `arguments.jvm = None` (legacy era has no JVM args
-//!   in the manifest — the launch pipeline applies its defaults)
-//! - `java_version`, `natives`, `client`, `assets_index`, `assets`
-//!   ← all inherited from the vanilla pivot
+//! Legacy Forge (Minecraft 1.4.x -> 1.12.2): single `install_profile.json`
+//! with embedded `versionInfo`, no processors, universal JAR extracted
+//! from the installer ZIP.
 
 use std::{collections::HashMap, fs::File, io::Read, path::{Path, PathBuf}};
 
@@ -40,7 +18,7 @@ use lighty_core::system::OS;
 use crate::loaders::vanilla::vanilla::{should_apply_rules, VanillaQuery};
 use crate::types::version_metadata::{Arguments, Library, MainClass, Version};
 use crate::types::VersionInfo;
-use crate::utils::error::QueryError;
+use lighty_core::QueryError;
 use crate::utils::maven::probe_maven_bases;
 use crate::utils::query::Query;
 
@@ -50,27 +28,20 @@ pub type Result<T> = std::result::Result<T, QueryError>;
 
 /// Discriminates which install_profile.json schema an installer ships.
 ///
-/// Used by the Forge dispatcher to pick the right parser when the
-/// Minecraft version alone is ambiguous (e.g. Forge 14.23.5.2860 for
-/// MC 1.12.2 is a back-ported build that uses the modern schema).
+/// Used by the Forge dispatcher when the Minecraft version alone is
+/// ambiguous (e.g. Forge 14.23.5.2860 for MC 1.12.2 is a back-ported
+/// build that uses the modern schema).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstallProfileKind {
-    /// Modern schema: `spec`, `processors`, `data`, separate `version.json`.
     Modern,
-    /// Legacy schema: `versionInfo` + `install` blocks, no processors.
     Legacy,
 }
 
-/// Forge Maven repository (used for installer URL construction).
 const FORGE_MAVEN: &str = "https://maven.minecraftforge.net";
 
-/// Probe order for legacy library entries that ship without an explicit
-/// `url`. Each base is HEAD-probed in order; the first one that serves
-/// a non-empty body wins. The original Forge installer used the same
-/// list:
-/// - Mojang libs: vanilla shared artifacts (launchwrapper, jopt-simple, lzma…)
-/// - Forge Maven: Forge-shipped artifacts (forge-versioned asm-all, scala-…)
-/// - Maven Central: ultimate fallback (e.g. guava-17.0, commons-lang3-3.3.2)
+/// Probe order for legacy library entries shipped without an explicit `url`.
+/// Same list the original Forge installer uses: Mojang libs (vanilla shared
+/// artifacts), Forge Maven (Forge-shipped), then Maven Central as fallback.
 const LEGACY_FALLBACK_BASES: [&str; 3] = [
     "https://libraries.minecraft.net/",
     "https://maven.minecraftforge.net/",
@@ -78,28 +49,21 @@ const LEGACY_FALLBACK_BASES: [&str; 3] = [
 ];
 
 /// Returns whether the Minecraft version predates the modern Forge
-/// installer format (which started at 1.13). Legacy covers 1.4.x → 1.12.2.
+/// installer format (which started at 1.13).
 pub fn is_legacy_forge(mc: &str) -> bool {
     version_compare::compare_to(mc, "1.13", version_compare::Cmp::Lt).unwrap_or(false)
 }
 
 /// Returns whether the Minecraft version predates Forge's installer
-/// format (≤ 1.5.1 — only `-universal.zip` artifacts exist, with no
-/// installer that we can drive automatically).
+/// format (<= 1.5.1, only `-universal.zip` artifacts exist).
 fn is_pre_installer_forge(mc: &str) -> bool {
     version_compare::compare_to(mc, "1.5.2", version_compare::Cmp::Lt).unwrap_or(false)
 }
 
-/// Builds the two candidate installer URLs for a legacy Forge build.
-///
-/// Returns `(single_suffix, double_suffix)`:
-/// - **Single**: `/forge/{mc}-{fg}/forge-{mc}-{fg}-installer.jar` — used
-///   by 1.5.2, 1.6.x, 1.8+, plus most 1.7.2 builds.
-/// - **Double**: `/forge/{mc}-{fg}-{mc}/forge-{mc}-{fg}-{mc}-installer.jar`
-///   — used by the canonical 1.7.10 builds (and some early 1.7.2).
-///
-/// Both shapes coexist in the Forge Maven across the 1.5–1.7 era; the
-/// caller must HEAD-probe to pick the one that actually exists.
+/// Builds the two candidate installer URLs for a legacy Forge build:
+/// single-suffix (`{mc}-{fg}/forge-{mc}-{fg}-installer.jar`, used by most
+/// builds) and double-suffix (used by canonical 1.7.10 and some early
+/// 1.7.2). Both shapes coexist across 1.5-1.7; the caller HEAD-probes.
 fn legacy_installer_url_candidates<V: VersionInfo>(version: &V) -> (String, String) {
     let mc = version.minecraft_version();
     let fg = version.loader_version();
@@ -115,14 +79,8 @@ fn legacy_installer_url_candidates<V: VersionInfo>(version: &V) -> (String, Stri
 }
 
 /// Probes both candidate installer URLs and returns the one that exists.
-///
-/// `probe_maven_bases` does a HEAD + non-empty body check, which matches
-/// how the Forge Maven (Reposilite via Cloudflare) responds to either a
-/// valid artifact or a missing one.
 async fn resolve_legacy_installer_url<V: VersionInfo>(version: &V) -> Option<String> {
     let (single, double) = legacy_installer_url_candidates(version);
-    // Probe each full URL by splitting into base + filename — reuses the
-    // same HEAD-then-content-length logic used for legacy library URLs.
     for candidate in [&single, &double] {
         let (base, file) = match candidate.rsplit_once('/') {
             Some((b, f)) => (format!("{}/", b), f),
@@ -135,7 +93,7 @@ async fn resolve_legacy_installer_url<V: VersionInfo>(version: &V) -> Option<Str
     None
 }
 
-/// Path to the cached installer JAR — same naming as modern Forge so
+/// Path to the cached installer JAR. Same naming as modern Forge so
 /// both dispatchers find the same on-disk file.
 pub fn legacy_installer_path<V: VersionInfo>(version: &V) -> PathBuf {
     version
@@ -146,10 +104,6 @@ pub fn legacy_installer_path<V: VersionInfo>(version: &V) -> PathBuf {
 
 /// Downloads (or reuses) the legacy installer JAR for `version` and
 /// returns its on-disk path.
-///
-/// Used by both the legacy path (which then parses
-/// `install_profile.json` directly) and the dispatcher (which peeks at
-/// the install_profile to decide between Modern and Legacy parsing).
 pub async fn ensure_installer_cached<V: VersionInfo>(version: &V) -> Result<PathBuf> {
     let mc = version.minecraft_version();
     if is_pre_installer_forge(mc) {
@@ -195,10 +149,9 @@ pub async fn ensure_installer_cached<V: VersionInfo>(version: &V) -> Result<Path
 /// Detects whether an installer JAR ships a legacy or modern
 /// `install_profile.json` by inspecting its top-level keys.
 ///
-/// `versionInfo` ⇒ legacy; anything else (typically `processors` +
-/// `data` + `spec`) ⇒ modern. Some 1.12.2 builds (e.g. 14.23.5.2860)
-/// were repackaged with the modern schema even though MC < 1.13, so
-/// dispatching on MC version alone is wrong.
+/// `versionInfo` => legacy; anything else => modern. Some 1.12.2 builds
+/// (e.g. 14.23.5.2860) were repackaged with the modern schema even
+/// though MC < 1.13, so dispatching on MC version alone is wrong.
 pub async fn peek_install_profile_kind(installer_path: &Path) -> Result<InstallProfileKind> {
     let path = installer_path.to_owned();
     tokio::task::spawn_blocking(move || {
@@ -288,12 +241,9 @@ fn maven_relative_path(name: &str) -> Option<String> {
 }
 
 /// Returns whether `lib_name` is the Forge universal JAR declared by
-/// `profile.install.path` — exact `group:artifact` match.
-///
-/// The universal artifact name shifted across the legacy era: 1.6.x
-/// uses `net.minecraftforge:minecraftforge`, 1.7+ uses
-/// `net.minecraftforge:forge`. The install profile names it directly,
-/// so we match against that rather than hardcoding a prefix.
+/// `profile.install.path`. The artifact name shifts across the legacy
+/// era (1.6.x: `minecraftforge`, 1.7+: `forge`), so we match the
+/// install profile's declaration rather than hardcoding a prefix.
 fn is_universal_artifact(lib_name: &str, install_path: &str) -> bool {
     fn group_artifact(coord: &str) -> Option<(&str, &str)> {
         let mut parts = coord.split(':');
@@ -307,10 +257,7 @@ fn is_universal_artifact(lib_name: &str, install_path: &str) -> bool {
     }
 }
 
-/// Normalizes legacy library base URLs:
-/// - Old http Forge files repo → new https Maven
-/// - http://libraries.minecraft.net/ → https
-/// - Trailing slash guaranteed.
+/// Normalizes legacy library base URLs (http -> https, trailing slash).
 fn normalize_lib_base(url: &str) -> String {
     let mut s = url.to_string();
     s = s.replace(
@@ -329,11 +276,10 @@ fn normalize_lib_base(url: &str) -> String {
 
 /// Resolves a legacy library entry to its final download URL.
 ///
-/// - Entries with an explicit `url` use that base (normalized http→https).
-/// - Entries without `url` are HEAD-probed against [`LEGACY_FALLBACK_BASES`]
-///   in order; the first base that serves a non-empty body wins. When
-///   every probe fails we fall back to Mojang libs so the downloader
-///   surfaces a clear 404 rather than a silent classpath miss.
+/// Entries with an explicit `url` use that base. Entries without `url`
+/// are HEAD-probed against [`LEGACY_FALLBACK_BASES`]; the first base
+/// serving a non-empty body wins. When every probe fails we fall back
+/// to Mojang libs so the downloader surfaces a clear 404.
 async fn resolve_legacy_url(lib: &ForgeLegacyLibrary, relative_path: &str) -> String {
     if let Some(base) = lib.url.as_deref() {
         return format!("{}{}", normalize_lib_base(base), relative_path);
@@ -341,8 +287,8 @@ async fn resolve_legacy_url(lib: &ForgeLegacyLibrary, relative_path: &str) -> St
     if let Some(url) = probe_maven_bases(&LEGACY_FALLBACK_BASES, relative_path).await {
         return url;
     }
-    // None of the mirrors had the artifact; emit a Mojang-libs URL so
-    // the downloader fails loudly with HTTP 404 on this exact lib.
+    // Emit a Mojang-libs URL so the downloader fails loudly with a 404
+    // rather than silently leaving a classpath gap.
     format!("{}{}", LEGACY_FALLBACK_BASES[0], relative_path)
 }
 
@@ -360,7 +306,7 @@ async fn legacy_library_to_pivot(
         return None;
     }
 
-    // OS rules — skip libs explicitly disallowed for the current platform
+    // Skip libs explicitly disallowed for the current platform
     // (1.6.x bundles mac-only LWJGL 2.9.1-nightly variants).
     if let Some(rules) = &lib.rules {
         let os_name = OS.get_vanilla_os().ok()?;
@@ -369,11 +315,10 @@ async fn legacy_library_to_pivot(
         }
     }
 
-    // Natives-only entries — Mojang's CDN dropped the bare-JAR side of
-    // these in the 1.5/1.6 era, only the `-natives-{os}` classifiers
-    // remain. The vanilla natives extractor handles them via the
-    // vanilla manifest; the libraries pipeline must skip them so it
-    // doesn't try to fetch a non-existent base JAR.
+    // Mojang's CDN dropped the bare-JAR side of natives-only entries in
+    // the 1.5/1.6 era, only `-natives-{os}` classifiers remain. The
+    // vanilla natives extractor handles them; the libraries pipeline
+    // must skip them to avoid fetching a non-existent base JAR.
     if lib.natives.is_some() {
         return None;
     }
@@ -414,12 +359,8 @@ pub async fn extract_legacy_libraries(profile: &ForgeLegacyInstallProfile) -> Ve
     join_all(futures).await.into_iter().flatten().collect()
 }
 
-/// Parses a legacy `minecraftArguments` single-string command line
-/// into the pivot `Arguments`.
-///
-/// `extra_jvm` is appended to the JVM flag list when non-empty —
-/// used to inject 1.6.x-specific Forge workarounds (e.g. the
-/// `ignoreInvalidMinecraftCertificates` flag).
+/// Parses a legacy `minecraftArguments` string into the pivot `Arguments`,
+/// appending `extra_jvm` to the JVM flag list when non-empty.
 fn parse_legacy_arguments(s: &str, extra_jvm: Vec<String>) -> Arguments {
     Arguments {
         game: s.split_whitespace().map(String::from).collect(),
@@ -429,19 +370,10 @@ fn parse_legacy_arguments(s: &str, extra_jvm: Vec<String>) -> Arguments {
 
 /// Returns JVM flags that legacy FML needs for `mc`.
 ///
-/// The legacy install_profile.json carries no JVM args at all — only
-/// the `minecraftArguments` game-args string — so this can't come from
-/// upstream. FML 1.6.x reads the client-JAR location from
-/// `ClientBrandRetriever.class.getProtectionDomain().getCodeSource()`
-/// and rejects anything whose filename isn't `minecraft.jar` or the
-/// `versions/X.X.X/X.X.X.jar` vanilla-launcher layout. We stage the
-/// client JAR as `<instance>.jar`, so FML aborts with "CRITICAL
-/// TAMPERING" unless we set the bypass flag. 1.7+ FML downgrades the
-/// same condition to a warning, so this only applies pre-1.7.
-///
-/// Proper fix (deferred): stage the client JAR at
-/// `versions/{mc}/{mc}.jar` in the launch crate so FML's path check
-/// passes naturally and no flag is needed.
+/// FML 1.6.x rejects client JARs whose filename isn't `minecraft.jar` or
+/// the `versions/X.X.X/X.X.X.jar` layout. We stage the client JAR as
+/// `<instance>.jar` so FML aborts with "CRITICAL TAMPERING" unless we set
+/// the bypass flag. 1.7+ downgrades this to a warning.
 fn legacy_fml_jvm_workarounds(mc: &str) -> Vec<String> {
     if version_compare::compare_to(mc, "1.7", version_compare::Cmp::Lt).unwrap_or(false) {
         vec!["-Dfml.ignoreInvalidMinecraftCertificates=true".to_string()]
@@ -450,8 +382,7 @@ fn legacy_fml_jvm_workarounds(mc: &str) -> Vec<String> {
     }
 }
 
-/// Merges library lists, de-duplicating by `group:artifact`
-/// (version-agnostic). Forge wins on collisions.
+/// Merges library lists, de-duplicating by `group:artifact`. Forge wins.
 fn merge_libraries(vanilla_libs: Vec<Library>, forge_libs: Vec<Library>) -> Vec<Library> {
     let capacity = vanilla_libs.len() + forge_libs.len();
     let mut lib_map: HashMap<String, Library> = HashMap::with_capacity(capacity);
@@ -505,10 +436,6 @@ pub async fn legacy_version_builder<V: VersionInfo>(
 
 /// Extracts the universal JAR from the cached legacy installer to its
 /// target Maven path under `{game_dir}/libraries/`.
-///
-/// Must run after [`fetch_legacy_install_profile`] has cached the
-/// installer JAR on disk, and before the game is launched (the
-/// universal JAR is on the runtime classpath).
 pub async fn extract_universal_jar<V: VersionInfo>(
     version: &V,
     profile: &ForgeLegacyInstallProfile,

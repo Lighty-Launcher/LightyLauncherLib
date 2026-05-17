@@ -6,19 +6,20 @@ members = [
     "crates/java",
     "crates/launch",
     "crates/loaders",
+    "crates/modsloader",
     "crates/version",
 ]
 resolver = "2"
 
 [workspace.package]
 version = "26.5.1"
-edition = "2021"
+edition = "2024"
 authors = ["Hamadi <dev.hamadipro@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/Lighty-Launcher/LightyLauncherLib"
 homepage = "https://github.com/Lighty-Launcher/LightyLauncherLib"
 documentation = "https://docs.rs/lighty-launcher"
-rust-version = "1.75"
+rust-version = "1.95"
 
 [package]
 name = "lighty-launcher"
@@ -51,6 +52,7 @@ lighty-event = { version = "26.5.1", path = "crates/event" }
 lighty-java = { version = "26.5.1", path = "crates/java" }
 lighty-launch = { version = "26.5.1", path = "crates/launch" }
 lighty-loaders = { version = "26.5.1", path = "crates/loaders" }
+lighty-modsloader = { version = "26.5.1", path = "crates/modsloader" }
 lighty-version = { version = "26.5.1", path = "crates/version" }
 
 # ---- Async Runtime ----
@@ -87,6 +89,10 @@ serde_json = "1.0.149"
 futures = "0.3.32"
 futures-util = { version = "0.3.32", features = ["io", "async-await-macro"] }
 async-trait = "0.1.89"
+
+# ---- Secrets ----
+# Wraps auth tokens to disable accidental Debug/Serialize leaks. See AUTH_SECRETS.md.
+secrecy = { version = "0.10" }
 
 # ---- Error Handling ----
 thiserror = "2.0.18"
@@ -147,6 +153,7 @@ lighty-event = { workspace = true, optional = true }
 lighty-java = { workspace = true }
 lighty-launch = { workspace = true }
 lighty-loaders = { workspace = true }
+lighty-modsloader = { workspace = true }
 lighty-version = { workspace = true }
 
 # Required for examples
@@ -186,12 +193,15 @@ neoforge = ["lighty-loaders/neoforge", "lighty-launch/neoforge"]
 forge = ["lighty-loaders/forge", "lighty-launch/forge"]
 lighty_updater = ["lighty-loaders/lighty_updater"]
 # Mod sources (Modrinth public API, CurseForge keyed API).
+# Each provider feature also pulls in its modpack-format support
+# (`.mrpack` for Modrinth, `.zip` for CurseForge) — no separate `modpack`
+# feature, the parsers ride on whichever provider is active.
 # Each forwards into:
-#   - lighty-loaders: API clients + resolver
-#   - lighty-launch:  runner-side mod_resolver (event-aware bridge)
-#   - lighty-version: matching .with_modrinth() / .with_curseforge() methods
-modrinth = ["lighty-loaders/modrinth", "lighty-launch/modrinth", "lighty-version/modrinth"]
-curseforge = ["lighty-loaders/curseforge", "lighty-launch/curseforge", "lighty-version/curseforge"]
+#   - lighty-modsloader: API clients + resolver + modpack parsers
+#   - lighty-launch:     install-time modpack pipeline (download / extract / overrides)
+#   - lighty-version:    matching .with_*_mods() / .with_*_modpack() methods
+modrinth = ["lighty-modsloader/modrinth", "lighty-launch/modrinth", "lighty-version/modrinth"]
+curseforge = ["lighty-modsloader/curseforge", "lighty-launch/curseforge", "lighty-version/curseforge"]
 all-mods = ["modrinth", "curseforge"]
 all-loaders = [
     "lighty-loaders/all-loaders",
@@ -202,6 +212,10 @@ all-loaders = [
 # Event system
 events = ["lighty-event", "lighty-auth/events", "lighty-launch/events"]
 
+# OS keychain storage for Microsoft / Azuriom tokens (opt-in).
+# Pulls D-Bus on Linux — keep off in headless / CI environments.
+keyring = ["lighty-auth/keyring", "lighty-launch/keyring"]
+
 # Logging
 tracing = [
     "dep:tracing",
@@ -210,6 +224,8 @@ tracing = [
     "lighty-java/tracing",
     "lighty-launch/tracing",
     "lighty-loaders/tracing",
+    "lighty-modsloader/tracing",
+    "lighty-version/tracing",
 ]
 
 default = []
@@ -286,6 +302,23 @@ required-features = ["modrinth", "fabric", "tracing"]
 name = "curseforge"
 path = "examples/mods/curseforge.rs"
 required-features = ["curseforge", "fabric", "tracing"]
+
+# --- Modpacks (Modrinth .mrpack, CurseForge .zip), under examples/modpacks/ ---
+
+[[example]]
+name = "modpack_modrinth_url"
+path = "examples/modpacks/modrinth_url.rs"
+required-features = ["modrinth", "fabric", "events", "tracing"]
+
+[[example]]
+name = "modpack_modrinth_pinned"
+path = "examples/modpacks/modrinth_pinned.rs"
+required-features = ["modrinth", "fabric", "events", "tracing"]
+
+[[example]]
+name = "modpack_curseforge"
+path = "examples/modpacks/curseforge.rs"
+required-features = ["curseforge", "forge", "events", "tracing"]
 
 # --- Full event-bus showcase, under examples/with_events/ ---
 

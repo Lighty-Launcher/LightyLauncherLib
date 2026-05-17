@@ -1,71 +1,41 @@
 // Copyright (c) 2025 Hamadi
 // Licensed under the MIT License
 
-//! Mod installation module
+//! Mod (`mods/*.jar`) installation.
 
-use lighty_loaders::types::{VersionInfo, version_metadata::Mods};
-use lighty_core::time_it;
+use std::path::PathBuf;
+
+use lighty_loaders::types::{version_metadata::Mods, VersionInfo};
+
 use crate::errors::InstallerResult;
-use crate::installer::verifier::needs_download;
-use crate::installer::downloader::download_with_concurrency_limit;
 
 #[cfg(feature = "events")]
 use lighty_event::EventBus;
 
-/// Collects mods that need to be downloaded
+use super::asset_partition;
+
+/// Collects mods that need to be downloaded. Filters entries whose
+/// `path` is under `mods/` (or unqualified, for legacy compat). Returns
+/// `(tasks, total_bytes_to_download)`.
 pub async fn collect_mod_tasks(
     version: &impl VersionInfo,
     mods: &[Mods],
-) -> Vec<(String, std::path::PathBuf)> {
-    // Don't create mods directory if there are no mods
-    if mods.is_empty() {
-        return Vec::new();
-    }
-
-    // Mods land where the running game scans for them — i.e. the
-    // working dir the JVM is launched in (`${game_directory}`).
-    // `VersionInfo::runtime_dir()` is the same source the argument
-    // builder uses, so install + launch can never disagree.
-    let parent_path = version.runtime_dir().join("mods");
-
-    // Create mods directory only if there are mods to install
-    lighty_core::mkdir!(&parent_path);
-
-    let mut tasks = Vec::new();
-
-    for _mod in mods {
-        let Some(url) = &_mod.url else { continue };
-        let Some(path_str) = &_mod.path else { continue };
-
-        let path = parent_path.join(path_str);
-
-        if needs_download(&path, _mod.sha1.as_ref(), &_mod.name).await {
-            tasks.push((url.clone(), path));
-        }
-    }
-
-    tasks
+) -> (Vec<(String, PathBuf)>, u64) {
+    asset_partition::collect(version, mods, "mods", true).await
 }
 
-/// Downloads mods from pre-collected tasks
+/// Downloads mods from pre-collected tasks. Per-file progress is
+/// already surfaced through the global `LaunchEvent::InstallProgress`
+/// stream, so no bucket-scoped completion event is emitted here.
 pub async fn download_mods(
-    tasks: Vec<(String, std::path::PathBuf)>,
+    tasks: Vec<(String, PathBuf)>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
-    if tasks.is_empty() {
-        lighty_core::trace_info!("[Installer] ✓ All mods already cached and verified");
-        return Ok(());
-    }
-
-    lighty_core::trace_info!("[Installer] Downloading {} mods...", tasks.len());
-    time_it!("Mods download", {
-        download_with_concurrency_limit(
-            tasks,
-            #[cfg(feature = "events")]
-            event_bus,
-        )
-        .await?
-    });
-    lighty_core::trace_info!("[Installer] ✓ Mods installed");
-    Ok(())
+    asset_partition::download(
+        tasks,
+        "mods",
+        #[cfg(feature = "events")]
+        event_bus,
+    )
+    .await
 }

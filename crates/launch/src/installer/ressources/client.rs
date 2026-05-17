@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Hamadi
 // Licensed under the MIT License
 
-//! Client JAR installation module
+//! Client JAR installation.
 
 use lighty_loaders::types::{VersionInfo, version_metadata::Client};
 use lighty_core::time_it;
@@ -12,7 +12,7 @@ use crate::installer::downloader::download_large_file;
 #[cfg(feature = "events")]
 use lighty_event::EventBus;
 
-/// Collects client JAR task if it needs to be downloaded
+/// Collects client JAR task if it needs to be downloaded.
 pub async fn collect_client_task(
     version: &impl VersionInfo,
     client: Option<&Client>,
@@ -28,13 +28,13 @@ pub async fn collect_client_task(
     }
 }
 
-/// Downloads client JAR from pre-collected task
+/// Downloads client JAR from pre-collected task.
 pub async fn download_client(
     task: Option<(String, std::path::PathBuf)>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
     let Some((url, client_path)) = task else {
-        lighty_core::trace_info!("[Installer] ✓ Client JAR already cached and verified");
+        lighty_core::trace_info!("[Installer] Client JAR already cached and verified");
         return Ok(());
     };
 
@@ -49,6 +49,6 @@ pub async fn download_client(
         )
         .await?
     );
-    lighty_core::trace_info!("[Installer] ✓ Client JAR installed");
+    lighty_core::trace_info!("[Installer] Client JAR installed");
     Ok(())
 }

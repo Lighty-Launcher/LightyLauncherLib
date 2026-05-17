@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-/// Authentication errors
+/// Authentication errors.
 #[derive(Debug, Error)]
 pub enum AuthError {
     #[error("Invalid credentials")]
@@ -41,6 +41,10 @@ pub enum AuthError {
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[cfg(feature = "keyring")]
+    #[error("OS keychain error: {0}")]
+    Keyring(#[from] ::keyring::Error),
 
     #[error("{0}")]
     Custom(String),

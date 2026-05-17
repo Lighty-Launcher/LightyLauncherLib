@@ -1,24 +1,7 @@
 // Copyright (c) 2025 Hamadi
 // Licensed under the MIT License
 
-//! Lighty Java - Java Runtime Management
-//!
-//! This crate provides functionality for managing Java Runtime Environments (JRE)
-//! including downloading, installing, and executing Java processes.
-//!
-//! ## Features
-//! - Support for multiple Java distributions (Temurin, GraalVM, Zulu, Liberica)
-//! - Cross-platform JRE download and installation
-//! - Java process execution with I/O streaming
-//! - File size verification for download integrity
-//!
-//! ## License
-//! This implementation is original work licensed under MIT.
-//! It does not derive from GPL-licensed code.
-//!
-//! ## Clean Room Implementation
-//! The distribution management system was implemented from scratch using only
-//! publicly documented APIs from Adoptium, Oracle, Azul, and Foojay.
+//! Lighty Java - JRE download, install, and process execution.
 
 mod distribution;
 pub mod jre_downloader;
@@ -32,10 +15,6 @@ pub use errors::{
     JavaRuntimeError, JavaRuntimeResult,
     DistributionError, DistributionResult,
 };
-
-// ============================================================================
-// Public Types
-// ============================================================================
 
 /// Selection method for Java distribution
 #[derive(Deserialize, Serialize, Clone)]
@@ -117,19 +96,17 @@ impl JavaDistribution {
             return None;
         }
 
-        // Find a compatible distribution
+        // Zulu/Liberica/Temurin in decreasing platform coverage order.
         let candidates = [
-            JavaDistribution::Zulu,      // Best fallback: supports all versions on all platforms
-            JavaDistribution::Liberica,  // Second choice
-            JavaDistribution::Temurin,   // Third choice
+            JavaDistribution::Zulu,
+            JavaDistribution::Liberica,
+            JavaDistribution::Temurin,
         ];
 
         candidates.into_iter().find(|d| d.supports_version(version))
     }
 
     /// Gets download URL for the distribution
-    ///
-    /// Queries the respective API or builds direct download URLs for each distribution.
     pub async fn get_download_url(&self, jre_version: &u8) -> DistributionResult<String> {
         distribution::get_download_url(self, jre_version).await
     }

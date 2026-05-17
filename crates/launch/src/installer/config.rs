@@ -8,11 +8,8 @@ use once_cell::sync::OnceCell;
 /// Tuning knobs for the parallel file downloader.
 #[derive(Debug, Clone, Copy)]
 pub struct DownloaderConfig {
-    /// Maximum number of concurrent downloads (default: 50).
     pub max_concurrent_downloads: usize,
-    /// Maximum retry attempts per failed download (default: 3).
     pub max_retries: u32,
-    /// Initial retry delay in milliseconds; grows exponentially with jitter (default: 20).
     pub initial_delay_ms: u64,
 }
 

@@ -1,14 +1,22 @@
-//! CurseForge mod fetching example (Fabric on MC 1.21.1 with JEI).
+//! CurseForge mod fetching example (Fabric on MC 1.21.1).
 //!
-//! Chain `.with_mod().with_curseforge(...)` on the `VersionBuilder` to
-//! pull a list of mods from CurseForge by numeric mod ID. Optional pin
-//! via `(mod_id, Some(file_id))`; `None` resolves the latest release
-//! compatible with the instance's MC + loader. Required dependencies
-//! are walked transitively.
+//! Chain `.with_mod().with_curseforge_mods(...)` on the `VersionBuilder`
+//! to pull a list of mods from CurseForge. The tuple is `(mod_id, file_id?)`:
+//!
+//! - `None` resolves the latest release compatible with the instance's
+//!   MC + loader. Required dependencies are walked transitively.
+//! - `Some(file_id)` pins a specific CurseForge file by numeric ID.
+//!
+//! ### How to find a `mod_id` / `file_id`
+//!
+//! - **`mod_id`** is shown as "Project ID" in the About sidebar of
+//!   `https://www.curseforge.com/minecraft/mc-mods/<slug>` (e.g. JEI = `238222`).
+//! - **`file_id`** is the trailing segment of a file URL:
+//!   `https://www.curseforge.com/minecraft/mc-mods/<slug>/files/<file_id>`.
 //!
 //! Unlike Modrinth, the CurseForge API requires an API key. Configure
 //! it once before `.run()` via
-//! [`lighty_launcher::loaders::mods::curseforge::set_api_key`].
+//! [`lighty_launcher::mods::curseforge::set_api_key`].
 //! Get a key at <https://console.curseforge.com/?#/api-keys>.
 //!
 //! `VersionBuilder::new(name, Loader::Fabric, loader_version, mc_version)`.
@@ -16,10 +24,9 @@
 //! - MC versions:             <https://piston-meta.mojang.com/mc/game/version_manifest_v2.json>
 //! - Fabric loaders / MC:     <https://meta.fabricmc.net/v2/versions/loader/{mc}>
 //! - CurseForge project page: `https://www.curseforge.com/minecraft/mc-mods/<slug>`
-//!   (the numeric mod ID is shown on the right column, e.g. JEI = `238222`)
 //! - CurseForge API:          <https://docs.curseforge.com/>
 
-use lighty_launcher::loaders::mods::curseforge;
+use lighty_launcher::mods::curseforge;
 use lighty_launcher::prelude::*;
 
 #[tokio::main]
@@ -47,7 +54,15 @@ async fn main() -> anyhow::Result<()> {
 
     instance
         .with_mod()
-            .with_curseforge(vec![(238222, None)]) // JEI — Just Enough Items
+            .with_curseforge_mods(vec![
+                // Latest file compatible with MC + loader:
+                (238222, None),              // JEI — Just Enough Items
+                // Pinned to a specific `file_id`. See the header-doc for
+                // the procedure. Replace `5234567` with a real id from
+                // https://www.curseforge.com/minecraft/mc-mods/jei/files
+                // before running.
+                (238222, Some(5234567)),
+            ])
             .done()
         .launch(&profile, JavaDistribution::Temurin)
         .with_arguments()

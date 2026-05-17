@@ -7,11 +7,8 @@ use lighty_loaders::types::VersionInfo;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
-// Public placeholder keys used in the launch-argument variable map.
-//
-// These match the `${...}` tokens found inside `arguments.game` and
-// `arguments.jvm` of Mojang's version manifest. Pass them to
-// `ArgumentsBuilder::set(key, value)` to override the default substitution.
+// Public placeholder keys matching `${...}` tokens in Mojang's version manifest.
+// Pass them to `ArgumentsBuilder::set(key, value)` to override substitution.
 
 /// Player username (`${auth_player_name}`).
 pub const KEY_AUTH_PLAYER_NAME: &str = "auth_player_name";
@@ -111,26 +108,20 @@ impl<T: VersionInfo> Arguments for T {
         jvm_removals: &HashSet<String>,
         raw_args: &[String],
     ) -> Vec<String> {
-        // Build the placeholder substitution map
         let mut variables = create_variable_map(self, builder, profile);
 
-        // Apply caller-supplied overrides on top
         for (key, value) in arg_overrides {
             variables.insert(key.clone(), value.clone());
         }
 
-        // KEY_GAME_DIRECTORY is special — the runner has already
-        // resolved arg_overrides[KEY_GAME_DIRECTORY] against
-        // `version.game_dirs()` (relative → joined, absolute → wins)
-        // and written the absolute path back via `set_runtime_dir`.
-        // Force the resolved value here so the JVM gets the
-        // already-absolute path instead of the raw user string.
+        // KEY_GAME_DIRECTORY is special: the runner already resolved it against
+        // version.game_dirs() and wrote the absolute path via set_runtime_dir.
+        // Force the resolved value so the JVM gets the absolute path.
         variables.insert(
             KEY_GAME_DIRECTORY.into(),
             self.runtime_dir().display().to_string(),
         );
 
-        // Substitute `${...}` placeholders inside the game arguments
         let game_args = replace_variables_in_vec(&builder.arguments.game, &variables);
 
         let mut jvm_args = builder.arguments.jvm
@@ -138,21 +129,18 @@ impl<T: VersionInfo> Arguments for T {
             .map(|jvm| replace_variables_in_vec(jvm, &variables))
             .unwrap_or_else(|| build_default_jvm_args(&variables));
 
-        // Make sure critical JVM args are always present
-
-        // 0. macOS: -XstartOnFirstThread is MANDATORY for LWJGL/OpenGL
+        // macOS: -XstartOnFirstThread is MANDATORY for LWJGL/OpenGL
         #[cfg(target_os = "macos")]
         if !jvm_args.iter().any(|arg| arg == "-XstartOnFirstThread") {
             jvm_args.insert(0, "-XstartOnFirstThread".to_string());
         }
 
-        // 1. java.library.path (LWJGL needs it to find natives)
+        // LWJGL needs java.library.path to find natives.
         if !jvm_args.iter().any(|arg| arg.starts_with("-Djava.library.path=")) {
             let natives_dir = variables.get(KEY_NATIVES_DIRECTORY).cloned().unwrap_or_default();
             jvm_args.insert(0, format!("-Djava.library.path={}", natives_dir));
         }
 
-        // 2. Launcher brand and version (forwarded to the game's about/log strings)
         if !jvm_args.iter().any(|arg| arg.starts_with("-Dminecraft.launcher.brand=")) {
             let launcher_name = variables.get(KEY_LAUNCHER_NAME).cloned().unwrap_or_default();
             jvm_args.insert(0, format!("-Dminecraft.launcher.brand={}", launcher_name));
@@ -163,14 +151,13 @@ impl<T: VersionInfo> Arguments for T {
             jvm_args.insert(0, format!("-Dminecraft.launcher.version={}", launcher_version));
         }
 
-        // 3. Classpath (must be the last JVM arg before the main class)
+        // Classpath must be the last JVM arg before the main class.
         let module_path_opt = jvm_args
             .iter()
             .position(|arg| arg == "-p")
             .and_then(|p_idx| jvm_args.get(p_idx + 1).cloned());
 
         if let Some(cp_idx) = jvm_args.iter().position(|arg| arg == CP_FLAG) {
-            // `-cp` is already present in version.json; replace it with a filtered version
             if let Some(ref module_path) = module_path_opt {
                 lighty_core::trace_debug!("Module-path detected: {}", module_path);
                 if let Some(existing_cp) = jvm_args.get(cp_idx + 1) {
@@ -178,7 +165,6 @@ impl<T: VersionInfo> Arguments for T {
                         filter_classpath_from_modulepath(existing_cp, module_path);
                     lighty_core::trace_debug!("Classpath filtered for module-path");
 
-                    // Replace the existing classpath
                     jvm_args[cp_idx + 1] = filtered_classpath;
                 } else {
                     lighty_core::trace_warn!("-cp found but no value after it");
@@ -187,7 +173,6 @@ impl<T: VersionInfo> Arguments for T {
                 lighty_core::trace_debug!("No module-path, keeping existing classpath unchanged");
             }
         } else {
-            // No `-cp` yet — append it (default path for Vanilla, Fabric, ...)
             let classpath = variables.get(KEY_CLASSPATH).cloned().unwrap_or_default();
 
             if let Some(ref module_path) = module_path_opt {
@@ -203,21 +188,14 @@ impl<T: VersionInfo> Arguments for T {
             }
         }
 
-        // 4. Apply JVM overrides
         apply_jvm_overrides(&mut jvm_args, jvm_overrides);
-
-        // 5. Apply JVM removals
         apply_jvm_removals(&mut jvm_args, jvm_removals);
-
-        // 6. Apply arg removals (filter game arguments)
         let game_args = apply_arg_removals(game_args, arg_removals);
 
-        // Build the full argv: JVM + MainClass + Game + raw args
         let mut full_args = jvm_args;
         full_args.push(builder.main_class.main_class.clone());
         full_args.extend(game_args);
 
-        // Append any raw args at the very end
         full_args.extend_from_slice(raw_args);
 
         lighty_core::trace_debug!(args = ?full_args, "Launch arguments built");
@@ -244,13 +222,24 @@ fn create_variable_map<T: VersionInfo>(
         #[cfg(not(target_os = "windows"))]
         let classpath_separator = ":";
 
-        // Authentication: derive from the profile when available, otherwise
-        // keep the historical placeholder defaults so offline / no-auth
-        // callers see exactly the same argv as before.
+        // Auth placeholders fall back to legacy defaults when profile is None
+        // so offline/no-auth callers see the same argv as before.
         let username = profile.map(|p| p.username.as_str()).unwrap_or("");
         let uuid = profile.map(|p| p.uuid.as_str()).unwrap_or("");
-        let access_token = profile
-            .and_then(|p| p.access_token.as_deref())
+
+        // Token resolution: prefer the OS-keychain handle (read on demand)
+        // when present; fall back to the in-memory `SecretString`. The
+        // secret is exposed for the strict scope of the argv insertion.
+        let token_secret: Option<lighty_auth::SecretString> = profile.and_then(|p| {
+            #[cfg(feature = "keyring")]
+            if let Some(h) = &p.token_handle {
+                return h.read().ok();
+            }
+            p.access_token.clone()
+        });
+        let access_token = token_secret
+            .as_ref()
+            .map(|s| lighty_auth::ExposeSecret::expose_secret(s))
             .unwrap_or(DEFAULT_ACCESS_TOKEN);
         let xuid = profile
             .and_then(|p| p.xuid.as_deref())
@@ -267,30 +256,25 @@ fn create_variable_map<T: VersionInfo>(
         map.insert(KEY_USER_TYPE.into(), user_type.into());
         map.insert(KEY_USER_PROPERTIES.into(), DEFAULT_USER_PROPERTIES.into());
 
-        // Version
         map.insert(KEY_VERSION_NAME.into(), version.name().into());
         map.insert(KEY_VERSION_TYPE.into(), DEFAULT_VERSION_TYPE.into());
 
-        // Directories — `runtime_dir()` is the single source of truth
-        // shared with the install pipeline (mods land where the game
-        // actually scans for them).
+        // runtime_dir() is the single source of truth shared with the install
+        // pipeline so mods land where the game actually scans for them.
         map.insert(KEY_GAME_DIRECTORY.into(), version.runtime_dir().display().to_string());
         map.insert(KEY_ASSETS_ROOT.into(), version.game_dirs().join("assets").display().to_string());
         map.insert(KEY_NATIVES_DIRECTORY.into(), version.game_dirs().join("natives").display().to_string());
         map.insert(KEY_LIBRARY_DIRECTORY.into(), version.game_dirs().join("libraries").display().to_string());
 
-        // Assets index
         let assets_index_name = builder.assets_index
             .as_ref()
             .map(|idx| idx.id.clone())
             .unwrap_or_else(|| version.minecraft_version().into());
         map.insert(KEY_ASSETS_INDEX_NAME.into(), assets_index_name);
 
-        // Launcher - use AppState for automatic configuration
         map.insert(KEY_LAUNCHER_NAME.into(), lighty_core::AppState::name().to_string());
         map.insert(KEY_LAUNCHER_VERSION.into(), lighty_core::AppState::app_version().to_string());
 
-        // Classpath
         let classpath = build_classpath(version, &builder.libraries);
         map.insert(KEY_CLASSPATH.into(), classpath);
         map.insert(KEY_CLASSPATH_SEPARATOR.into(), classpath_separator.to_string());
@@ -316,7 +300,6 @@ fn build_classpath<T: VersionInfo>(version: &T, libraries: &[lighty_loaders::typ
             })
             .collect();
 
-        // Append the client JAR at the end
         classpath_entries.push(
             version.game_dirs().join(format!("{}.jar", version.name())).display().to_string()
         );
@@ -350,31 +333,25 @@ fn replace_variables_in_vec(args: &[String], variables: &HashMap<String, String>
         .collect()
 }
 
-/// Efficient variable replacement using Cow (Copy-on-Write)
-/// Only allocates when replacements are actually needed
+/// Cow-based variable replacement. Only allocates when replacements are needed.
 fn replace_variables_cow<'a>(
     input: &'a str,
     variables: &HashMap<String, String>
 ) -> Cow<'a, str> {
-    // Fast path: no variables to replace
     if !input.contains("${") {
-        return Cow::Borrowed(input); // Zero allocation!
+        return Cow::Borrowed(input);
     }
 
-    // Pre-allocate with extra capacity for replacements
     let mut result = String::with_capacity(input.len() + 128);
     let mut last_end = 0;
 
-    // Find all ${...} patterns
     for (start, _) in input.match_indices("${") {
         if let Some(end_offset) = input[start..].find('}') {
             let end = start + end_offset;
             let key = &input[start + 2..end];
 
-            // Append text before the variable
             result.push_str(&input[last_end..start]);
 
-            // Replace with value or keep original if not found
             if let Some(value) = variables.get(key) {
                 result.push_str(value);
             } else {
@@ -385,7 +362,6 @@ fn replace_variables_cow<'a>(
         }
     }
 
-    // Append remaining text
     result.push_str(&input[last_end..]);
     Cow::Owned(result)
 }
@@ -400,12 +376,11 @@ fn apply_jvm_overrides(jvm_args: &mut Vec<String>, jvm_overrides: &HashMap<Strin
     for (key, value) in jvm_overrides {
         let formatted_option = format_jvm_option(key, value);
 
-        // Replace the option if it already exists
         let key_prefix = format!("-{}", key.split('=').next().unwrap_or(key));
         if let Some(pos) = jvm_args.iter().position(|arg| arg.starts_with(&key_prefix)) {
             jvm_args[pos] = formatted_option;
         } else {
-            // Insert before the classpath flag (-cp) so the classpath stays last
+            // Insert before -cp so the classpath stays last.
             if let Some(cp_pos) = jvm_args.iter().position(|arg| arg == CP_FLAG) {
                 jvm_args.insert(cp_pos, formatted_option);
             } else {
@@ -426,10 +401,10 @@ fn format_jvm_option(key: &str, value: &str) -> String {
     if value.is_empty() {
         format!("-{}", key)
     } else if key.starts_with('X') && !key.contains(':') && !key.contains('=') {
-        // `-Xmx`, `-Xms`, etc. — no separator between key and value
+        // -Xmx, -Xms, etc. — no separator between key and value.
         format!("-{}{}", key, value)
     } else {
-        // `-D`, `-XX:`, etc. — use `=` as separator
+        // -D, -XX:, etc. — `=` separator.
         format!("-{}={}", key, value)
     }
 }
@@ -437,16 +412,13 @@ fn format_jvm_option(key: &str, value: &str) -> String {
 /// Removes JVM options whose key appears in `jvm_removals`.
 fn apply_jvm_removals(jvm_args: &mut Vec<String>, jvm_removals: &HashSet<String>) {
     jvm_args.retain(|arg| {
-        // Extract the option key (drop the `-` and any value)
         let arg_key = if let Some(stripped) = arg.strip_prefix('-') {
-            // Handle `-Xmx4G`, `-Djava.library.path=/path`, `-XX:+UseG1GC`
             stripped.split('=').next().unwrap_or(stripped)
                 .split(|c: char| c.is_numeric()).next().unwrap_or(stripped)
         } else {
-            return true; // Keep arguments that don't start with '-'
+            return true;
         };
 
-        // Keep the arg if its key is not in jvm_removals
         !jvm_removals.contains(arg_key)
     });
 }
@@ -455,7 +427,6 @@ fn apply_jvm_removals(jvm_args: &mut Vec<String>, jvm_removals: &HashSet<String>
 fn apply_arg_removals(game_args: Vec<String>, arg_removals: &HashSet<String>) -> Vec<String> {
     game_args.into_iter()
         .filter(|arg| {
-            // Drop the arg if it matches exactly or starts with `--{key}`
             !arg_removals.iter().any(|removal| {
                 arg == removal || arg.starts_with(&format!("--{}", removal))
             })
@@ -468,6 +439,7 @@ fn apply_arg_removals(game_args: Vec<String>, arg_removals: &HashSet<String>) ->
 fn filter_classpath_from_modulepath(classpath: &str, module_path: &str) -> String {
     let separator = get_path_separator();
 
+    // Extract base artifact name from a jar filename: "asm-analysis-9.5.jar" -> "asm-analysis"
     let module_artifacts: std::collections::HashSet<String> = module_path
         .split(separator)
         .filter_map(|path| {
@@ -475,13 +447,9 @@ fn filter_classpath_from_modulepath(classpath: &str, module_path: &str) -> Strin
                 .file_name()
                 .and_then(|f| f.to_str())
                 .and_then(|filename| {
-                    // Extract the base artifact name by stripping version and extension.
-                    // Example: "asm-analysis-9.5.jar" -> "asm-analysis"
                     if let Some(stem) = filename.strip_suffix(".jar") {
-                        // Find the last digit position
                         let mut base_name = stem;
                         if let Some(pos) = stem.rfind(|c: char| c.is_ascii_digit()) {
-                            // Walk back to the start of the version (last `-` before the digit)
                             if let Some(dash_pos) = stem[..pos].rfind('-') {
                                 base_name = &stem[..dash_pos];
                             }
@@ -504,8 +472,6 @@ fn filter_classpath_from_modulepath(classpath: &str, module_path: &str) -> Strin
                 .and_then(|f| f.to_str())
             {
                 if let Some(stem) = filename.strip_suffix(".jar") {
-                    // Extract the base artifact name by stripping version and extension.
-                    // Example: "asm-analysis-9.5.jar" -> "asm-analysis"
                     let base_name = if let Some(pos) = stem.rfind(|c: char| c.is_ascii_digit()) {
                         if let Some(dash_pos) = stem[..pos].rfind('-') {
                             &stem[..dash_pos]
@@ -515,13 +481,12 @@ fn filter_classpath_from_modulepath(classpath: &str, module_path: &str) -> Strin
                     } else {
                         stem
                     };
-                    // Keep the JAR only if its artifact is NOT on the module-path
                     !module_artifacts.contains(base_name)
                 } else {
-                    true // Not a JAR — keep defensively
+                    true
                 }
             } else {
-                true // No filename — keep defensively
+                true
             }
         })
         .collect::<Vec<&str>>()

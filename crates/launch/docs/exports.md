@@ -40,7 +40,9 @@ use lighty_launch::instance::{
 use lighty_launch::installer::{
     Installer,
     // Internal modules (not typically used directly):
-    // assets, libraries, natives, mods, client, config
+    // assets, libraries, natives, client,
+    // mods, resourcepacks, shaderpacks, datapacks,
+    // (asset_partition is `pub(super)` — shared helpers only).
 };
 ```
 
@@ -216,9 +218,12 @@ lighty_launch
 │   ├── assets (internal)
 │   ├── libraries (internal)
 │   ├── natives (internal)
-│   ├── mods (internal)
 │   ├── client (internal)
-│   └── config (internal)
+│   ├── mods (internal)            ── subdir: mods/
+│   ├── resourcepacks (internal)   ── subdir: resourcepacks/
+│   ├── shaderpacks (internal)     ── subdir: shaderpacks/
+│   ├── datapacks (internal)       ── subdir: datapacks/
+│   └── asset_partition (super)    ── shared collect/download helpers
 ├── instance
 │   ├── InstanceControl (trait)
 │   ├── InstanceError
@@ -286,21 +291,39 @@ lighty-launch = { version = "26.5.1", features = ["events"] }
 ```
 
 When `events` feature is enabled:
-- `LaunchEvent` types are emitted (from `lighty-event`)
-- Console output is streamed via events
+- `LaunchEvent` types are emitted (install lifecycle + process I/O)
+- `ModloaderEvent` types are emitted (dependency resolution + modpack
+  pipeline + resourcepacks / shaderpacks / datapacks summaries)
+- Console output is streamed via `LaunchEvent::ProcessOutput`
 - Instance lifecycle events are emitted
 
 ```rust
 #[cfg(feature = "events")]
-use lighty_event::{EventBus, Event, LaunchEvent};
+use lighty_event::{EventBus, Event, LaunchEvent, ModloaderEvent};
 
 #[cfg(feature = "events")]
 {
     let event_bus = EventBus::new(1000);
-    // Events are automatically emitted during launch
-    instance.launch(&profile, JavaDistribution::Temurin).run().await?;
+    instance.launch(&profile, JavaDistribution::Temurin)
+        .with_event_bus(&event_bus)
+        .run()
+        .await?;
 }
 ```
+
+### Keyring Feature
+
+```toml
+[dependencies]
+lighty-launch = { version = "26.5.1", features = ["keyring"] }
+```
+
+Forwards to `lighty-auth/keyring`. Enable it when consumers call
+`MicrosoftAuth::with_keyring(...)` or `AzuriomAuth::with_keyring(...)`
+so the argv builder at `arguments/arguments.rs:229` can read the
+access token from the OS keychain on demand via `TokenHandle::read()`
+instead of cloning the in-memory `SecretString`. See `AUTH_SECRETS.md`
+at the repo root for the full design.
 
 ## Related Documentation
 

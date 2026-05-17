@@ -1,9 +1,20 @@
-//! Modrinth mod fetching example (Fabric on MC 1.21.1 with Cobblemon).
+//! Modrinth mod fetching example (Fabric on MC 1.21.1).
 //!
-//! Chain `.with_mod().with_modrinth(...)` on the `VersionBuilder` to
-//! pull a list of mods from Modrinth. Optional pin via `(slug, Some(id))`;
-//! `None` resolves the latest release compatible with the instance's
-//! MC + loader. Required dependencies are walked transitively.
+//! Chain `.with_mod().with_modrinth_mods(...)` on the `VersionBuilder`
+//! to pull a list of mods from Modrinth. The tuple is `(slug, version_id?)`:
+//!
+//! - `None` resolves the latest release compatible with the instance's
+//!   MC + loader. Required dependencies are walked transitively.
+//! - `Some(version_id)` pins a specific Modrinth release. **`version_id`
+//!   is an opaque string** (e.g. `"PpRTuoEh"`), NOT the human-readable
+//!   version number `"0.5.8"`.
+//!
+//! ### How to find a `version_id`
+//!
+//! 1. Open `https://modrinth.com/mod/<slug>/versions`.
+//! 2. Click the target version.
+//! 3. The URL becomes `.../mod/<slug>/version/<version_id>` — the trailing
+//!    segment is the value to plug into `Some(...)`.
 //!
 //! `VersionBuilder::new(name, Loader::Fabric, loader_version, mc_version)`.
 //!
@@ -35,7 +46,15 @@ async fn main() -> anyhow::Result<()> {
 
     instance
         .with_mod()
-            .with_modrinth(vec![("cobblemon", None)])
+            .with_modrinth_mods(vec![
+                // Latest version compatible with MC + loader:
+                ("cobblemon", None),
+                // Pinned to a specific Modrinth `version_id`. See the
+                // header-doc for the procedure to find it. The value
+                // below is illustrative — replace with a real id from
+                // https://modrinth.com/mod/sodium/versions before running.
+                ("sodium", Some("PpRTuoEh".into())),
+            ])
             .done()
         .launch(&profile, JavaDistribution::Temurin)
         .with_arguments()

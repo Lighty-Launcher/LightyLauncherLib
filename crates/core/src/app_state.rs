@@ -1,17 +1,4 @@
-//! Process-wide launcher paths.
-//!
-//! [`AppState::init`] must be called once at startup with the launcher
-//! name. Subsequent calls to [`AppState::data_dir`] /
-//! [`AppState::config_dir`] / [`AppState::cache_dir`] return the
-//! per-OS canonical locations with `<launcher-name>` joined on:
-//!
-//! - **Linux**:   `~/.local/share/<name>/`   (respects `$XDG_DATA_HOME`)
-//! - **macOS**:   `~/Library/Application Support/<name>/`
-//! - **Windows**: `%APPDATA%\<name>\`
-//!
-//! No reverse-DNS qualifier, no organization+application split,
-//! no leading-dot side-effects. The user picks the on-disk name,
-//! the OS decides the parent directory.
+//! Process-wide launcher paths resolved via the `dirs` crate.
 
 use std::path::{Path, PathBuf};
 
@@ -19,30 +6,21 @@ use once_cell::sync::OnceCell;
 
 use crate::errors::{AppStateError, AppStateResult};
 
-/// File under `config_dir` that persists the per-install launcher client_id.
 const CLIENT_ID_FILE: &str = "client_id";
 
 /// Resolved per-launcher paths.
 #[derive(Debug, Clone)]
 pub struct LauncherPaths {
-    /// The launcher name as supplied to [`AppState::init`]. Used
-    /// verbatim as the leaf subdirectory under each OS base.
     pub name: String,
-    /// Persistent application data (instances, libraries, assets,
-    /// natives, mods, …).
     pub data_dir: PathBuf,
-    /// User configuration (launcher settings, the cached JRE).
     pub config_dir: PathBuf,
-    /// Disposable cache (downloads, intermediate files).
     pub cache_dir: PathBuf,
 }
 
 static PATHS: OnceCell<LauncherPaths> = OnceCell::new();
 static CLIENT_ID: OnceCell<String> = OnceCell::new();
 
-/// Zero-sized handle used as the documentation anchor for the global
-/// launcher paths. Every method is associated — there's no instance
-/// state.
+/// Zero-sized handle for the global launcher paths.
 pub struct AppState;
 
 impl AppState {
@@ -113,8 +91,7 @@ impl AppState {
         CLIENT_ID.get_or_init(|| {
             let path = Self::config_dir().join(CLIENT_ID_FILE);
 
-            // Try to reuse what's already on disk; trim avoids trailing \n
-            // from manual edits or POSIX text-file conventions.
+            // Trim avoids trailing \n from manual edits or POSIX conventions.
             if let Ok(raw) = std::fs::read_to_string(&path) {
                 let trimmed = raw.trim();
                 if !trimmed.is_empty() {
@@ -124,9 +101,8 @@ impl AppState {
 
             let fresh = generate_uuid_v4();
 
-            // Best-effort write — if the config dir is missing or unwritable
-            // we still return a valid id so launches go through; next run
-            // will just regenerate.
+            // Best-effort write: if config dir is unwritable we still return
+            // a valid id so launches go through; next run will regenerate.
             if let Some(parent) = path.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
@@ -144,10 +120,6 @@ impl AppState {
 }
 
 /// Generates a RFC 4122 v4 UUID string from `fastrand`.
-///
-/// Same byte layout as the `uuid` crate's `Uuid::new_v4()` but without the
-/// extra dependency — we only need the formatted string and have `fastrand`
-/// in the workspace already.
 fn generate_uuid_v4() -> String {
     let mut bytes = [0u8; 16];
     for b in bytes.iter_mut() {

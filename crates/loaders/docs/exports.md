@@ -67,7 +67,7 @@ use lighty_loaders::utils::{
 #### error
 
 ```rust
-use lighty_loaders::utils::error::{
+use lighty_core::{
     QueryError,
     Result,  // = std::result::Result<T, QueryError>
 };
@@ -226,7 +226,7 @@ async fn main() -> anyhow::Result<()> {
 **Not re-exported in `lighty_launcher`** - use full path:
 
 ```rust
-use lighty_loaders::utils::error::QueryError;
+use lighty_core::QueryError;
 
 match instance.get_metadata().await {
     Ok(metadata) => { /* ... */ }
@@ -313,7 +313,7 @@ use lighty_loaders::loaders::fabric;
 ### Result Types
 
 ```rust
-// In lighty_loaders::utils::error
+// In lighty_core
 pub type Result<T> = std::result::Result<T, QueryError>;
 
 // In lighty_loaders::utils::query
@@ -369,7 +369,7 @@ use lighty_launcher::prelude::*;
 
 // For library development
 use lighty_loaders::types::{Loader, VersionInfo, LoaderExtensions};
-use lighty_loaders::utils::error::QueryError;
+use lighty_core::QueryError;
 
 // For implementing custom loaders
 use lighty_loaders::utils::query::Query;

@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Hamadi
 // Licensed under the MIT License
 
-//! Assets installation module
+//! Assets installation.
 
 use lighty_loaders::types::{VersionInfo, version_metadata::AssetsFile};
 use lighty_core::time_it;
@@ -12,7 +12,7 @@ use crate::installer::downloader::download_small_with_concurrency_limit;
 #[cfg(feature = "events")]
 use lighty_event::EventBus;
 
-/// Collects assets that need to be downloaded
+/// Collects assets that need to be downloaded.
 pub async fn collect_asset_tasks(
     version: &impl VersionInfo,
     assets: Option<&AssetsFile>,
@@ -27,7 +27,7 @@ pub async fn collect_asset_tasks(
     for asset in assets.objects.values() {
         let Some(url) = &asset.url else { continue };
 
-        // Use first 2 characters of hash as subdirectory
+        // First 2 chars of hash form the subdirectory.
         let hash_prefix = &asset.hash[0..2];
         let path = parent_path.join(hash_prefix).join(&asset.hash);
 
@@ -39,13 +39,13 @@ pub async fn collect_asset_tasks(
     tasks
 }
 
-/// Downloads assets from pre-collected tasks
+/// Downloads assets from pre-collected tasks.
 pub async fn download_assets(
     tasks: Vec<(String, std::path::PathBuf)>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
     if tasks.is_empty() {
-        lighty_core::trace_info!("[Installer] ✓ All assets already cached and verified");
+        lighty_core::trace_info!("[Installer] All assets already cached and verified");
         return Ok(());
     }
 
@@ -58,6 +58,6 @@ pub async fn download_assets(
         )
         .await?
     });
-    lighty_core::trace_info!("[Installer] ✓ Assets installed");
+    lighty_core::trace_info!("[Installer] Assets installed");
     Ok(())
 }

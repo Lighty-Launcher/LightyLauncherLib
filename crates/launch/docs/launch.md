@@ -120,8 +120,11 @@ version.install(version_data, event_bus).await?;
 ```rust
 tokio::try_join!(
     libraries::download_libraries(library_tasks, event_bus),
-    natives::download_and_extract_natives(native_tasks, native_paths, event_bus),
+    natives::download_and_extract_natives(native_download_tasks, native_extract_paths, event_bus),
     mods::download_mods(mod_tasks, event_bus),
+    resourcepacks::download_resourcepacks(resourcepack_tasks, resourcepack_bytes, event_bus),
+    shaderpacks::download_shaderpacks(shaderpack_tasks, shaderpack_bytes, event_bus),
+    datapacks::download_datapacks(datapack_tasks, datapack_bytes, event_bus),
     client::download_client(client_task, event_bus),
     assets::download_assets(asset_tasks, event_bus),
 )?;
@@ -133,8 +136,11 @@ game_dirs/
 ├── libraries/          # Java JAR libraries
 ├── natives/            # Platform-specific binaries (LWJGL, etc.)
 ├── assets/objects/     # Game assets (textures, sounds, etc.)
-├── mods/              # Mod files (Fabric/Quilt/NeoForge)
-└── versions/          # Minecraft client JAR
+├── mods/               # Mod files (Fabric/Quilt/NeoForge/Forge)
+├── resourcepacks/      # Resource packs routed by mod source
+├── shaderpacks/        # Shader packs routed by mod source
+├── datapacks/          # Datapacks routed by mod source
+└── versions/           # Minecraft client JAR
 ```
 
 ### 4. Build Arguments
@@ -161,6 +167,52 @@ let arguments = builder.build_arguments(
 2. **Main Class**: `net.minecraft.client.main.Main`
 3. **Game Arguments**: Username, directories, authentication
 4. **Raw Arguments**: Custom arguments passed directly
+
+#### Token routing (`--accessToken`)
+
+The access token is the most sensitive piece of data the launch
+pipeline handles, so the resolution is deliberately narrow. At
+`crates/launch/src/arguments/arguments.rs:229` the variable-map
+builder runs the following sequence:
+
+1. If `profile.token_handle` is `Some` **and** the `keyring` feature is
+   active on `lighty-launch`, read the token from the OS keychain via
+   `TokenHandle::read()` — the token never sat in `UserProfile` heap
+   memory between authentication and launch.
+2. Otherwise, clone the in-memory `SecretString` stored in
+   `profile.access_token`.
+3. `ExposeSecret::expose_secret(&secret)` is called **exactly once**,
+   at the moment the value is inserted into the argv placeholder map
+   for `--accessToken`. No copy of the plaintext is kept past that
+   call.
+
+```rust
+let token_secret: Option<SecretString> = profile.and_then(|p| {
+    #[cfg(feature = "keyring")]
+    if let Some(h) = &p.token_handle {
+        return h.read().ok();
+    }
+    p.access_token.clone()
+});
+let access_token = token_secret
+    .as_ref()
+    .map(|s| s.expose_secret())
+    .unwrap_or(DEFAULT_ACCESS_TOKEN);
+```
+
+When no profile is supplied (offline / dry-run callers), the legacy
+hardcoded default is used. See `AUTH_SECRETS.md` at the repo root for
+the full threat model behind this design.
+
+**Feature flag**: `lighty-launch` exposes a `keyring` feature that
+forwards to `lighty-auth/keyring`. Enable it on consumers that opt in
+to `MicrosoftAuth::with_keyring(...)` / `AzuriomAuth::with_keyring(...)`
+so the argv builder above can read from the keychain:
+
+```toml
+[dependencies]
+lighty-launch = { version = "...", features = ["events", "keyring"] }
+```
 
 **Example result**:
 ```bash
@@ -338,7 +390,7 @@ async fn main() -> anyhow::Result<()> {
 ## With Event Tracking
 
 ```rust
-use lighty_event::{EventBus, Event, LaunchEvent};
+use lighty_event::{EventBus, Event, LaunchEvent, ModloaderEvent};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -349,13 +401,22 @@ async fn main() -> anyhow::Result<()> {
     // Subscribe to events
     let mut receiver = event_bus.subscribe();
     tokio::spawn(async move {
-        while let Ok(event) = receiver.recv().await {
+        while let Ok(event) = receiver.next().await {
             match event {
                 Event::Launch(LaunchEvent::InstallStarted { version, total_bytes }) => {
                     println!("Installing {} ({} bytes)", version, total_bytes);
                 }
-                Event::Launch(LaunchEvent::DownloadingLibraries { current, total }) => {
-                    println!("Libraries: {}/{}", current, total);
+                Event::Launch(LaunchEvent::InstallProgress { bytes }) => {
+                    println!("+{} bytes", bytes);
+                }
+                Event::Launch(LaunchEvent::InstallCompleted { version, .. }) => {
+                    println!("Installed {}", version);
+                }
+                Event::Modloader(ModloaderEvent::ResolveCompleted { total_mods }) => {
+                    println!("Resolved {} mods", total_mods);
+                }
+                Event::Modloader(ModloaderEvent::ResourcePacksInstalled { count, bytes }) => {
+                    println!("ResourcePacks: {} files / {} bytes", count, bytes);
                 }
                 Event::InstanceLaunched(e) => {
                     println!("Launched: {} (PID: {})", e.instance_name, e.pid);
@@ -373,7 +434,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut instance = VersionBuilder::new(/*...*/);
     let mut auth = OfflineAuth::new("Player");
-    let profile = auth.authenticate(None).await?;
+    let profile = auth.authenticate().await?;
 
     instance.launch(&profile, JavaDistribution::Temurin)
         .with_event_bus(&event_bus)
@@ -438,12 +499,15 @@ match instance.launch(&profile, JavaDistribution::Temurin).run().await {
 ## Performance Optimization
 
 ### Parallel Downloads
-All downloads happen concurrently using `tokio::try_join!`:
+All 8 buckets download concurrently using `tokio::try_join!`:
 - Libraries (~200 files)
 - Natives (~10 files)
 - Assets (~5000 files)
 - Client JAR (1 file)
-- Mods (variable)
+- Mods (variable, routed to `mods/`)
+- Resource packs (variable, routed to `resourcepacks/`)
+- Shader packs (variable, routed to `shaderpacks/`)
+- Datapacks (variable, routed to `datapacks/`)
 
 ### SHA1 Verification
 Files are verified before download:

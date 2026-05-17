@@ -1,18 +1,12 @@
 // Copyright (c) 2025 Hamadi
 // Licensed under the MIT License
 
-//! Oracle GraalVM distribution provider
-//!
-//! Downloads: https://www.graalvm.org/downloads/
-//! Note: Oracle only provides JDK for GraalVM, no JRE available
+//! Oracle GraalVM distribution provider. JDK-only, Java 17+.
 
 use crate::errors::{DistributionError, DistributionResult};
 use lighty_core::system::{ARCHITECTURE, OS};
 
-/// Builds GraalVM download URL
-///
-/// Note: Only JDK is available from Oracle, no separate JRE distribution
-/// Supports Java 17+ only
+/// Builds GraalVM download URL. Supports Java 17+ only.
 pub fn build_graalvm_url(version: &u8) -> DistributionResult<String> {
     let os_name = OS.get_graal_name()?;
     let arch = ARCHITECTURE.get_simple_name()?;

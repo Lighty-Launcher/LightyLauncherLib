@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Hamadi
 // Licensed under the MIT License
 
-//! Error types for the event system
+//! Error types for the event system.
 
 use thiserror::Error;
 use tokio::sync::broadcast::error::{RecvError,TryRecvError};

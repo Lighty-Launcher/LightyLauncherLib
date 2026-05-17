@@ -8,11 +8,18 @@ flowchart TD
     F[Java Module] -->|emit| A
     G[Launch Module] -->|emit| A
     H[Loader Module] -->|emit| A
+    I[Modloader Module] -->|emit| A
 
     A -->|broadcast| B[Receiver 1: UI]
     A -->|broadcast| C[Receiver 2: Logger]
     A -->|broadcast| D[Receiver 3: Analytics]
 ```
+
+The `Modloader` source covers the mod-source pipeline (dependency
+resolver, modpack pipeline, per-bucket install summaries for
+resourcepacks/shaderpacks/datapacks). Its variants previously lived
+under `LaunchEvent`; they now reach receivers as
+`Event::Modloader(ModloaderEvent::…)`.
 
 ## Flow
 

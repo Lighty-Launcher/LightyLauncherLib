@@ -64,20 +64,35 @@ pub trait Authenticator {
 The unified profile type returned by all authenticators:
 
 ```rust
+use secrecy::SecretString;
+#[cfg(feature = "keyring")]
+use lighty_auth::TokenHandle;
+
 pub struct UserProfile {
-    pub id: Option<u64>,              // Server-specific user ID
-    pub username: String,             // Display name (required)
-    pub uuid: String,                 // Minecraft UUID (required)
-    pub access_token: Option<String>, // Session token
-    pub xuid: Option<String>,         // Xbox User ID (Microsoft auth only)
-    pub email: Option<String>,        // Email address
-    pub email_verified: bool,         // Verification status
-    pub money: Option<f64>,           // Server credits/balance
-    pub role: Option<UserRole>,       // Permissions/rank
-    pub banned: bool,                 // Ban status
-    pub provider: AuthProvider,       // Which authenticator produced this profile
+    pub id: Option<u64>,                    // Server-specific user ID
+    pub username: String,                   // Display name (required)
+    pub uuid: String,                       // Minecraft UUID (required)
+    pub access_token: Option<SecretString>, // Session token (secret-wrapped)
+    #[cfg(feature = "keyring")]
+    pub token_handle: Option<TokenHandle>,  // Opt-in OS-keychain handle
+    pub xuid: Option<String>,               // Xbox User ID (Microsoft auth only)
+    pub email: Option<String>,              // Email address
+    pub email_verified: bool,               // Verification status
+    pub money: Option<f64>,                 // Server credits/balance
+    pub role: Option<UserRole>,             // Permissions/rank
+    pub banned: bool,                       // Ban status
+    pub provider: AuthProvider,             // Which authenticator produced this profile
 }
 ```
+
+For tests, doctests and `OfflineAuth` integrations, a minimal constructor
+is exposed:
+
+```rust
+let profile = UserProfile::offline("Steve", "069a79f4-44e9-4726-a5be-fca90e38aaf5");
+```
+
+All optional fields default to `None`; `provider` is set to `AuthProvider::Offline`.
 
 **Field Usage by Provider**:
 
@@ -99,12 +114,31 @@ The `provider` field drives the `${user_type}` launch placeholder:
 `Microsoft` → `"msa"`, `Azuriom` → `"mojang"`, `Offline`/`Custom` → `"legacy"`.
 
 For Microsoft, the `refresh_token` (issued by the `offline_access`
-scope) is captured inside the `provider` variant so persisting the
-whole `UserProfile` is enough to enable silent re-auth on subsequent
-launches via [`MicrosoftAuth::authenticate_with_refresh_token`]
-(documented in [`microsoft.md`](./microsoft.md#token-management)).
-The token lasts ≈ 90 days of inactivity and Microsoft rotates it on
-every refresh.
+scope) is captured inside the `provider` variant — wrapped in a
+`SecretString` — so it can drive silent re-auth on subsequent launches
+via [`MicrosoftAuth::authenticate_with_refresh_token`] (documented in
+[`microsoft.md`](./microsoft.md#token-management)). The token lasts
+≈ 90 days of inactivity and Microsoft rotates it on every refresh.
+
+## Secrets
+
+`UserProfile.access_token` and `AuthProvider::Microsoft.refresh_token`
+are both wrapped in [`secrecy::SecretString`](https://docs.rs/secrecy/),
+and neither `UserProfile` nor `AuthProvider` derive `Serialize` /
+`Deserialize`. Concretely:
+
+- `Debug` prints `[REDACTED]` for the token — accidental
+  `tracing::debug!(?profile)` no longer leaks the session.
+- `serde_json::to_string(&profile)` is a compile error — plain-text
+  JSON dumps of a profile are impossible by construction.
+- Reading the token at launch time goes through
+  `secret.expose_secret()` (visible at code-review time).
+- The `keyring` feature adds an optional OS-keychain handle
+  (`UserProfile.token_handle`) so the token never has to stay in
+  process memory long-term.
+
+Full design rationale and threat model live in
+[`AUTH_SECRETS.md`](../../../AUTH_SECRETS.md) at the workspace root.
 
 ## Error Handling
 
@@ -127,10 +161,17 @@ pub enum AuthError {
     // Microsoft OAuth errors
     DeviceCodeExpired,
     Cancelled,
+    Timeout,
 
-    // Network errors
-    NetworkError(reqwest::Error),
+    // Network / parsing / IO errors
+    Network(#[from] reqwest::Error),
     InvalidResponse(String),
+    Serialization(#[from] serde_json::Error),
+    Io(#[from] std::io::Error),
+
+    // OS keychain (feature `keyring`)
+    #[cfg(feature = "keyring")]
+    Keyring(#[from] keyring::Error),
 
     // Generic error
     Custom(String),
@@ -292,9 +333,17 @@ let (profile1, profile2, profile3) = tokio::try_join!(
 
 ### Token Storage
 
-- **Access tokens** should be encrypted at rest
-- **Refresh tokens** (Microsoft) enable re-authentication without credentials
-- Tokens should be rotated periodically
+- **Access tokens** are wrapped in `SecretString` in memory and should
+  be encrypted at rest. Enable the `keyring` feature and call
+  `MicrosoftAuth::with_keyring(...)` / `AzuriomAuth::with_keyring(...)`
+  to delegate at-rest storage to the OS keychain (Keychain, Credential
+  Manager, Secret Service)
+- **Refresh tokens** (Microsoft) enable re-authentication without
+  credentials. They stay in `AuthProvider::Microsoft.refresh_token` as
+  a `SecretString` so the in-process silent-refresh flow doesn't have
+  to round-trip the keychain on every launch
+- Tokens should be rotated periodically; Microsoft rotates the refresh
+  token per RFC 6749 on every call
 
 ### UUID Generation
 
@@ -378,6 +427,7 @@ if let Ok(profile) = auth.verify(&token).await {
     let profile = auth.authenticate(Some(&event_bus)).await?;
 }
 
-// ❌ Bad: Assume token is always valid
-let profile = UserProfile { access_token: Some(old_token), /* ... */ };
+// ❌ Bad: Trying to hand-roll a UserProfile around an old token.
+// Construction by struct literal isn't possible anymore (no Deserialize,
+// `access_token` is a SecretString) — re-authenticate instead.
 ```

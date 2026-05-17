@@ -2,20 +2,19 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{RwLock, Mutex};
+use tokio::sync::{Mutex, Notify, RwLock};
 use tokio::task::JoinHandle;
 
 /// TTL-keyed async cache with thundering-herd protection.
 ///
 /// `store` holds the actual `(value, expires_at)` entries; `fetch_locks`
-/// holds per-key `Arc<Mutex<()>>` so that concurrent callers asking for
-/// the same key serialize behind a single fetch instead of each issuing
-/// their own. When constructed with [`Self::with_smart_cleanup`], a
-/// background task evicts expired entries on an adaptive schedule.
+/// holds per-key `Arc<Mutex<()>>` so concurrent callers asking for the
+/// same key serialize behind a single fetch.
 #[derive(Debug)]
 pub struct Cache<K, V> {
     store: Arc<RwLock<HashMap<K, (V, Instant)>>>,
     fetch_locks: Arc<RwLock<HashMap<K, Arc<Mutex<()>>>>>,
+    cleanup_notify: Arc<Notify>,
     _cleanup_handle: Option<JoinHandle<()>>,
 }
 
@@ -26,45 +25,67 @@ where
 {
     /// Creates an empty cache without a background cleanup task.
     ///
-    /// Expired entries are evicted lazily on read. Use this when you don't
-    /// want a long-running task tied to the cache's lifetime.
+    /// Expired entries are evicted lazily on read.
     pub fn new() -> Self {
         Self {
             store: Arc::new(RwLock::new(HashMap::new())),
             fetch_locks: Arc::new(RwLock::new(HashMap::new())),
+            cleanup_notify: Arc::new(Notify::new()),
             _cleanup_handle: None,
         }
     }
 
-    /// Creates a cache with a background task that evicts expired entries.
-    ///
-    /// The cleanup loop wakes up on demand based on the next expiry time
-    /// (clamped to 1s..=5min) and removes everything past its TTL. The
-    /// task is aborted when the [`Cache`] is dropped.
+    /// Creates a cache with a background task that evicts expired entries
+    /// and sweeps orphaned fetch-locks on the same cadence.
     pub fn with_smart_cleanup() -> Self {
-        let store: Arc<RwLock<HashMap<K, (V, Instant)>>> =
+        let store: Arc<RwLock<HashMap<K, (V, Instant)>>> = Arc::new(RwLock::new(HashMap::new()));
+        let fetch_locks: Arc<RwLock<HashMap<K, Arc<Mutex<()>>>>> =
             Arc::new(RwLock::new(HashMap::new()));
-        let store_clone = Arc::clone(&store);
+        let cleanup_notify = Arc::new(Notify::new());
+
+        let store_bg = Arc::clone(&store);
+        let fetch_locks_bg = Arc::clone(&fetch_locks);
+        let notify_bg = Arc::clone(&cleanup_notify);
 
         let handle = tokio::spawn(async move {
+            const MIN_WAIT: Duration = Duration::from_secs(1);
+            const MAX_WAIT: Duration = Duration::from_secs(300);
+
             loop {
-                tokio::time::sleep(Duration::from_secs(60)).await;
+                let wait = {
+                    let map = store_bg.read().await;
+                    map.values()
+                        .map(|(_, expire_at)| *expire_at)
+                        .min()
+                        .map(|next| {
+                            next.saturating_duration_since(Instant::now())
+                                .clamp(MIN_WAIT, MAX_WAIT)
+                        })
+                        .unwrap_or(MAX_WAIT)
+                };
+
+                // Edge-triggered Notify: future is constructed before await,
+                // so notify_waiters() during the read above is captured by
+                // tokio's permit and consumed on the next iteration.
+                tokio::select! {
+                    _ = tokio::time::sleep(wait) => {}
+                    _ = notify_bg.notified() => {}
+                }
 
                 let now = Instant::now();
-
-                // Two-phase cleanup: Read to identify, write to remove
                 let expired_keys: Vec<K> = {
-                    let map = store_clone.read().await;
+                    let map = store_bg.read().await;
                     map.iter()
                         .filter(|(_, (_, exp))| now >= *exp)
                         .map(|(k, _)| k.clone())
                         .collect()
                 };
 
-                let (removed, next_expiry) = if !expired_keys.is_empty() {
-                    let mut map = store_clone.write().await;
-                    let now = Instant::now();  // Re-check time
-
+                let removed = if expired_keys.is_empty() {
+                    0
+                } else {
+                    let mut map = store_bg.write().await;
+                    let now = Instant::now(); // re-check under write lock
                     let before = map.len();
                     for key in &expired_keys {
                         if let Some((_, exp)) = map.get(key) {
@@ -73,62 +94,57 @@ where
                             }
                         }
                     }
-                    let after = map.len();
-
-                    // Calculate next expiry AFTER cleanup
-                    let next = map.values()
-                        .map(|(_, expire_at)| *expire_at)
-                        .min();
-
-                    (before - after, next)
-                } else {
-                    // No expired entries, just get next expiry
-                    let map = store_clone.read().await;
-                    let next = map.values()
-                        .map(|(_, expire_at)| *expire_at)
-                        .min();
-                    (0, next)
+                    before - map.len()
                 };
 
-                // Log AFTER releasing locks
                 if removed > 0 {
-                    lighty_core::trace_info!(removed = removed, "Cache cleaned expired entries");
+                    lighty_core::trace_info!(
+                        removed = removed,
+                        "Cache cleaned expired entries"
+                    );
                 }
 
-                // Adaptive sleep
-                if let Some(next) = next_expiry {
-                    let wait = next
-                        .saturating_duration_since(Instant::now())
-                        .max(Duration::from_secs(1))    // Min 1s
-                        .min(Duration::from_secs(300)); // Max 5min
-                    tokio::time::sleep(wait).await;
-                } else {
-                    // No entries, sleep max duration
-                    tokio::time::sleep(Duration::from_secs(300)).await;
+                // Sweep orphaned fetch-locks: strong_count==1 means no caller
+                // holds a clone, try_lock succeeding means no waiter is active.
+                let swept = {
+                    let mut locks = fetch_locks_bg.write().await;
+                    let before = locks.len();
+                    locks.retain(|_k, lock| {
+                        Arc::strong_count(lock) > 1 || lock.try_lock().is_err()
+                    });
+                    before - locks.len()
+                };
+                if swept > 0 {
+                    lighty_core::trace_debug!(
+                        swept = swept,
+                        "Cache swept orphan fetch-locks"
+                    );
                 }
             }
         });
 
         Self {
             store,
-            fetch_locks: Arc::new(RwLock::new(HashMap::new())),
+            fetch_locks,
+            cleanup_notify,
             _cleanup_handle: Some(handle),
         }
     }
 
     /// Inserts (or replaces) an entry with the given TTL.
     pub async fn insert_with_ttl(&self, key: K, value: V, ttl: Duration) {
-        let mut store = self.store.write().await;
-        let expire_at = Instant::now() + ttl;
-        store.insert(key, (value, expire_at));
+        {
+            let mut store = self.store.write().await;
+            let expire_at = Instant::now() + ttl;
+            store.insert(key, (value, expire_at));
+        }
+        // Wake the cleanup task in case the new TTL is shorter than the
+        // current sleep. No-op if the cache was built with `new()`.
+        self.cleanup_notify.notify_waiters();
     }
 
     /// Returns the cached value for `key` if present and unexpired.
-    ///
-    /// Expired entries are removed under a write lock using double-check
-    /// locking so that a concurrent refresh isn't accidentally dropped.
     pub async fn get_with_ttl(&self, key: &K) -> Option<V> {
-        // Fast path: read lock
         let store = self.store.read().await;
 
         if let Some((value, expire_at)) = store.get(key) {
@@ -137,92 +153,69 @@ where
                 return Some(value.clone());
             }
 
-            // Entry expired — drop the read lock before requesting the write
-            // lock. Holding both would deadlock with any concurrent writer.
+            // Drop the read lock before requesting the write lock to
+            // avoid deadlocking with any concurrent writer.
             drop(store);
 
-            // Double-checked locking: another task may have refreshed the
-            // entry between the read-lock release and the write-lock acquire.
+            // Double-checked locking: another task may have refreshed
+            // the entry between releasing the read lock and acquiring write.
             let mut store = self.store.write().await;
 
-            // Re-validate: another thread might have refreshed/removed it
             match store.get(key) {
                 Some((value, expire_at)) => {
                     if Instant::now() < *expire_at {
-                        // Another thread refreshed it
                         return Some(value.clone());
                     }
-                    // Still expired, remove it
                     store.remove(key);
                 }
-                None => {
-                    // Another thread already removed it
-                }
+                None => {}
             }
         }
 
         None
     }
 
-    /// Get or compute with Result-returning closure with thundering herd protection
-    /// If the closure returns an error, the error is propagated and nothing is cached
-    /// Multiple concurrent calls with the same key will only execute the closure once
-    pub async fn get_or_try_insert_with<F, Fut, E>(&self, key: K, ttl: Duration, f: F) -> Result<V, E>
+    /// Get or compute with a Result-returning closure, with thundering
+    /// herd protection: multiple concurrent calls for the same key only
+    /// run the closure once. Errors are propagated and not cached.
+    pub async fn get_or_try_insert_with<F, Fut, E>(
+        &self,
+        key: K,
+        ttl: Duration,
+        f: F,
+    ) -> Result<V, E>
     where
         F: FnOnce() -> Fut,
         Fut: std::future::Future<Output = Result<V, E>>,
     {
-        // Fast path: check if value already exists
         if let Some(v) = self.get_with_ttl(&key).await {
             return Ok(v);
         }
 
-        // Per-key Arc<Mutex<()>>: this is the thundering-herd guard. It does
-        // NOT protect the value store — only ensures a single in-flight
-        // fetch per key. Other callers wait here and read the freshly
-        // populated value on the next get_with_ttl().
+        // Per-key Arc<Mutex<()>>: thundering-herd guard. Does NOT protect
+        // the value store; only ensures a single in-flight fetch per key.
         let lock = {
             let mut locks = self.fetch_locks.write().await;
-            locks.entry(key.clone())
+            locks
+                .entry(key.clone())
                 .or_insert_with(|| Arc::new(Mutex::new(())))
                 .clone()
         };
 
-        // Only the first caller proceeds; the rest queue on this mutex.
         let _guard = lock.lock().await;
 
-        // Double-check: another thread might have populated the cache while we waited
+        // Double-check: another task may have populated the cache while
+        // we waited on the mutex.
         if let Some(v) = self.get_with_ttl(&key).await {
-            // Cleanup the lock if no other waiters
-            self.cleanup_fetch_lock(&key).await;
             return Ok(v);
         }
 
-        // Execute the fetch (only one thread reaches here per key)
-        let result = f().await;
-
-        match result {
+        match f().await {
             Ok(value) => {
-                self.insert_with_ttl(key.clone(), value.clone(), ttl).await;
-                self.cleanup_fetch_lock(&key).await;
+                self.insert_with_ttl(key, value.clone(), ttl).await;
                 Ok(value)
             }
-            Err(e) => {
-                // Don't cache errors, but still cleanup the lock
-                self.cleanup_fetch_lock(&key).await;
-                Err(e)
-            }
-        }
-    }
-
-    /// Remove fetch lock for a key if no other tasks are waiting
-    async fn cleanup_fetch_lock(&self, key: &K) {
-        let mut locks = self.fetch_locks.write().await;
-        if let Some(lock) = locks.get(key) {
-            // Check if we can acquire the lock immediately (no waiters)
-            if lock.try_lock().is_ok() {
-                locks.remove(key);
-            }
+            Err(e) => Err(e),
         }
     }
 
@@ -232,8 +225,16 @@ where
         store.clear();
     }
 
-    /// Returns the number of entries currently stored (including expired
-    /// ones not yet evicted).
+    /// Keeps only the entries for which `keep(&K)` returns `true`.
+    pub async fn retain<P>(&self, keep: P)
+    where
+        P: Fn(&K) -> bool,
+    {
+        let mut store = self.store.write().await;
+        store.retain(|k, _| keep(k));
+    }
+
+    /// Returns the number of entries currently stored.
     pub async fn len(&self) -> usize {
         let store = self.store.read().await;
         store.len()
@@ -243,6 +244,13 @@ where
     pub async fn is_empty(&self) -> bool {
         let store = self.store.read().await;
         store.is_empty()
+    }
+
+    /// Returns the number of pending fetch-locks currently held in the map.
+    #[doc(hidden)]
+    pub async fn fetch_locks_len(&self) -> usize {
+        let locks = self.fetch_locks.read().await;
+        locks.len()
     }
 }
 
@@ -255,8 +263,6 @@ where
         Self::new()
     }
 }
-
-// REMOVED Clone implementation - use Arc<Cache> instead
 
 impl<K, V> Drop for Cache<K, V> {
     fn drop(&mut self) {

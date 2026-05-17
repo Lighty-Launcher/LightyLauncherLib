@@ -1,8 +1,4 @@
 //! Serde types describing a LightyUpdater server response.
-//!
-//! [`ServersResponse`] is the top-level listing the server returns;
-//! [`ServerInfo`] is one entry inside it; [`LightyMetadata`] is the
-//! optional override document the server publishes for each instance.
 
 use serde::{Deserialize, Serialize};
 
@@ -31,47 +27,37 @@ pub struct ServerInfo {
 }
 
 impl ServerInfo {
-    /// Retourne le nom du serveur
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    /// Retourne le type de loader (vanilla, fabric, quilt, etc.)
     pub fn loader(&self) -> &str {
         &self.loader
     }
 
-    /// Retourne la version du loader
     pub fn loader_version(&self) -> &str {
         &self.loader_version
     }
 
-    /// Retourne la version Minecraft
     pub fn minecraft_version(&self) -> &str {
         &self.minecraft_version
     }
 
-    /// Returns the server URL.
     pub fn url(&self) -> &str {
         &self.url
     }
 
-    /// Returns the timestamp of the last server update.
     pub fn last_update(&self) -> &str {
         &self.last_update
     }
 }
 
-//STRUCTURE OF LIGHTY_UPDATER METADATA
-/// Metadata document returned by a LightyUpdater server.
-///
-/// Every field is optional: the LightyUpdater server may supply only the
-/// overrides it cares about, and the base loader (vanilla / fabric / quilt
-/// / ...) fills in everything else.
+/// Metadata document returned by a LightyUpdater server. Every field is
+/// optional — server supplies only the overrides, base loader fills the rest.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LightyMetadata {
-    #[serde(skip)]  // server_info comes from a separate request, never serialized into LightyMetadata
+    #[serde(skip)]
     pub server_info: Option<ServerInfo>,
     pub main_class: Option<MainClass>,
     pub java_version: Option<JavaVersion>,
@@ -142,7 +128,7 @@ pub struct Native {
     pub path: String,
     pub sha1: String,
     pub size: u64,
-    pub os: String,  // "windows", "linux", or "macos"
+    pub os: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

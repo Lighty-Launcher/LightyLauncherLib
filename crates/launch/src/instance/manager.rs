@@ -1,30 +1,21 @@
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::RwLock;
+use std::sync::{PoisonError, RwLock};
 use std::time::SystemTime;
 
 use super::errors::{InstanceError, InstanceResult};
 
 /// Internal representation of a running game instance.
-///
-/// `version`/`username`/`game_dir`/`started_at` are stored for future
-/// audit/debug APIs (e.g. `pub fn started_at()` exposed via `InstanceControl`).
 pub(crate) struct GameInstance {
-    /// Process ID
     pub pid: u32,
-    /// Instance name
     pub instance_name: String,
-    /// Version string (e.g., "1.20.1-fabric-0.15.0")
     #[allow(dead_code)]
     pub version: String,
-    /// Username used to launch
     #[allow(dead_code)]
     pub username: String,
-    /// Game directory path
     #[allow(dead_code)]
     pub game_dir: PathBuf,
-    /// Launch timestamp
     #[allow(dead_code)]
     pub started_at: SystemTime,
 }
@@ -47,7 +38,10 @@ impl InstanceManager {
 
     /// Get the first PID for a given instance name
     pub fn get_pid(&self, instance_name: &str) -> Option<u32> {
-        let instances = self.instances.read().unwrap();
+        let instances = self
+            .instances
+            .read()
+            .unwrap_or_else(PoisonError::into_inner);
         instances
             .values()
             .find(|inst| inst.instance_name == instance_name)
@@ -56,7 +50,10 @@ impl InstanceManager {
 
     /// Get all PIDs for a given instance name
     pub fn get_pids(&self, instance_name: &str) -> Vec<u32> {
-        let instances = self.instances.read().unwrap();
+        let instances = self
+            .instances
+            .read()
+            .unwrap_or_else(PoisonError::into_inner);
         instances
             .values()
             .filter(|inst| inst.instance_name == instance_name)
@@ -64,15 +61,41 @@ impl InstanceManager {
             .collect()
     }
 
-    /// Register a new running instance
-    pub async fn register_instance(&self, instance: GameInstance) {
-        let mut instances = self.instances.write().unwrap();
+    /// Returns `true` if `pid` is still tracked as a running instance.
+    pub fn is_alive(&self, pid: u32) -> bool {
+        let instances = self
+            .instances
+            .read()
+            .unwrap_or_else(PoisonError::into_inner);
+        instances.contains_key(&pid)
+    }
+
+    /// Register a new running instance.
+    ///
+    /// Returns `Err(InstanceError::DuplicatePid)` if `instance.pid` is
+    /// already tracked (race between two concurrent `register_instance`
+    /// calls, or OS PID reuse before our `unregister_instance` fired).
+    pub async fn register_instance(&self, instance: GameInstance) -> InstanceResult<()> {
+        let mut instances = self
+            .instances
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some(existing) = instances.get(&instance.pid) {
+            return Err(InstanceError::DuplicatePid {
+                pid: instance.pid,
+                existing_instance: existing.instance_name.clone(),
+            });
+        }
         instances.insert(instance.pid, instance);
+        Ok(())
     }
 
     /// Unregister an instance by PID
     pub async fn unregister_instance(&self, pid: u32) {
-        let mut instances = self.instances.write().unwrap();
+        let mut instances = self
+            .instances
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
         instances.remove(&pid);
     }
 
@@ -81,18 +104,19 @@ impl InstanceManager {
     /// Kills the process using the system's kill mechanism.
     /// The instance will be unregistered automatically by the console handler.
     pub async fn close_instance(&self, pid: u32) -> InstanceResult<()> {
-        let mut instances = self.instances.write().unwrap();
+        let mut instances = self
+            .instances
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
         instances
             .remove(&pid)
             .ok_or(InstanceError::NotFound { pid })?;
 
-        drop(instances); // Release the lock
+        drop(instances);
 
-        // Platform-specific kill:
-        // - Windows: shell out to `taskkill /F`, which terminates the process
-        //   tree without raising a console close event.
-        // - Unix: send SIGTERM so the JVM runs its shutdown hooks. SIGKILL is
-        //   deliberately avoided so the world/save state has a chance to flush.
+        // Unix uses SIGTERM so the JVM runs its shutdown hooks (avoids losing
+        // unflushed world state); Windows shells out to `taskkill /F` to
+        // terminate the process tree.
         #[cfg(target_os = "windows")]
         {
             use std::process::Command;

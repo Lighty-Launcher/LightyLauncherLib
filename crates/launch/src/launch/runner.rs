@@ -13,6 +13,7 @@ use lighty_java::JavaDistribution;
 use lighty_java::JreError;
 use lighty_loaders::types::version_metadata::{Version, VersionMetaData};
 use lighty_loaders::types::{Loader, LoaderExtensions, VersionInfo};
+use lighty_modsloader::WithMods;
 
 use crate::arguments::Arguments;
 use crate::errors::{InstallerError, InstallerResult};
@@ -77,10 +78,19 @@ pub trait Launch {
         Self: Sized;
 }
 
-// Blanket impl for any type that implements VersionInfo plus the required traits
+// Blanket impl for any type that implements the launch pipeline traits.
+//
+// `WithMods` is always required (provides `mod_requests()` — defaults to
+// `&[]` for types that don't track mods, so it's free for vanilla
+// instances). Modrinth / CurseForge / modpack features only gate which
+// builder methods exist and which API clients compile in.
 impl<T> Launch for T
 where
-    T: VersionInfo<LoaderType = Loader> + LoaderExtensions + Arguments + Installer,
+    T: VersionInfo<LoaderType = Loader>
+        + LoaderExtensions
+        + Arguments
+        + Installer
+        + WithMods,
 {
     fn launch<'a>(
         &'a mut self,
@@ -104,7 +114,11 @@ pub(crate) async fn execute_launch<T>(
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()>
 where
-    T: VersionInfo<LoaderType = Loader> + LoaderExtensions + Arguments + Installer,
+    T: VersionInfo<LoaderType = Loader>
+        + LoaderExtensions
+        + Arguments
+        + Installer
+        + WithMods,
 {
     // 1. Fetch the loader metadata
     let metadata = prepare_metadata(
@@ -145,34 +159,9 @@ where
         }
     }
 
-    // Resolve user-attached mods (Modrinth / CurseForge) and
-    // merge them into the pivot before install. Skipped when both
-    // source features are off (the builder methods are gated too,
-    // so `mod_requests()` is always empty in that case).
-    #[cfg(any(feature = "modrinth", feature = "curseforge"))]
-    let _merged_owned;
-    #[cfg(any(feature = "modrinth", feature = "curseforge"))]
-    let version_data: &Version = {
-        let user_mods = crate::installer::ressources::mod_resolver::resolve_user_mods(
-            version.mod_requests(),
-            version.minecraft_version(),
-            version.loader(),
-            #[cfg(feature = "events")]
-            event_bus,
-        )
-        .await?;
-        if user_mods.is_empty() {
-            version_data
-        } else {
-            let mut merged = version_data.clone();
-            match &mut merged.mods {
-                Some(existing) => existing.extend(user_mods),
-                slot => *slot = Some(user_mods),
-            }
-            _merged_owned = merged;
-            &_merged_owned
-        }
-    };
+    // Modpack + user-attached mods are resolved by `Installer::install`
+    // itself (Phase 0 of its pipeline). The runner just passes the raw
+    // `Version` here — no merge to do.
 
     // Install Minecraft dependencies (libraries, natives, client, assets)
     time_it!(
@@ -440,7 +429,12 @@ where
                 started_at: std::time::SystemTime::now(),
             };
 
-            INSTANCE_MANAGER.register_instance(instance).await;
+            if let Err(e) = INSTANCE_MANAGER.register_instance(instance).await {
+                lighty_core::trace_warn!(
+                    error = %e,
+                    "Failed to register launched instance — process keeps running"
+                );
+            }
 
             // Emit InstanceLaunched event
             #[cfg(feature = "events")]
