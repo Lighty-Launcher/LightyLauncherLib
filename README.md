@@ -12,9 +12,9 @@
 ## A launcher built with LightyLauncherLib
 
 <p align="center">
-  <video src="docs/assets/exemple_launcher_with_lightylauncherlib.mp4" controls width="100%" autoplay loop muted>
+  <video src="https://github.com/Lighty-Launcher/LightyLauncherLib/releases/download/video-demo/exemple_launcher_with_lightylauncherlib.mp4" controls width="100%">
     Your browser doesn't render inline video —
-    <a href="docs/assets/exemple_launcher_with_lightylauncherlib.mp4">click to watch the demo</a>.
+    <a href="https://github.com/Lighty-Launcher/LightyLauncherLib/releases/download/video-demo/exemple_launcher_with_lightylauncherlib.mp4">click to watch the demo</a>.
   </video>
 </p>
 
