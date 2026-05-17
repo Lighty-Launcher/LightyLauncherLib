@@ -11,12 +11,9 @@
 
 ## A launcher built with LightyLauncherLib
 
-<p align="center">
-  <video src="https://github.com/Lighty-Launcher/LightyLauncherLib/releases/download/video-demo/exemple_launcher_with_lightylauncherlib.mp4" controls width="100%">
-    Your browser doesn't render inline video —
-    <a href="https://github.com/Lighty-Launcher/LightyLauncherLib/releases/download/video-demo/exemple_launcher_with_lightylauncherlib.mp4">click to watch the demo</a>.
-  </video>
-</p>
+
+[exemple_launcher_with_lightylauncherlib_small.webm](https://github.com/user-attachments/assets/36134ddf-935b-4f2d-9047-78c8d6504ade)
+
 
 ---
 
