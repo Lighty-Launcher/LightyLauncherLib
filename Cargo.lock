@@ -1361,7 +1361,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-auth"
-version = "26.5.4"
+version = "26.5.5"
 dependencies = [
  "base64",
  "keyring",
@@ -1378,7 +1378,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-core"
-version = "26.5.4"
+version = "26.5.5"
 dependencies = [
  "async-compression",
  "async_zip",
@@ -1405,7 +1405,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-event"
-version = "26.5.4"
+version = "26.5.5"
 dependencies = [
  "once_cell",
  "serde",
@@ -1415,7 +1415,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-java"
-version = "26.5.4"
+version = "26.5.5"
 dependencies = [
  "lighty-core",
  "lighty-event",
@@ -1428,7 +1428,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-launch"
-version = "26.5.4"
+version = "26.5.5"
 dependencies = [
  "async-trait",
  "async_zip",
@@ -1460,7 +1460,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-launcher"
-version = "26.5.4"
+version = "26.5.5"
 dependencies = [
  "anyhow",
  "criterion",
@@ -1486,7 +1486,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-loaders"
-version = "26.5.4"
+version = "26.5.5"
 dependencies = [
  "async-trait",
  "async_zip",
@@ -1506,7 +1506,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-modsloader"
-version = "26.5.4"
+version = "26.5.5"
 dependencies = [
  "async-trait",
  "futures",
@@ -1524,7 +1524,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-version"
-version = "26.5.4"
+version = "26.5.5"
 dependencies = [
  "async-trait",
  "lighty-core",
