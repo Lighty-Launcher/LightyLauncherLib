@@ -1,5 +1,7 @@
-# LightyLauncher
+# LightyLauncherLib
 
+[![Maintainer](https://img.shields.io/badge/Maintainer-Hamadi-8957e5.svg)](https://github.com/Kalandi)
+[![Maintained](https://img.shields.io/badge/Maintained-yes-2ea44f.svg)](#)
 [![Crates.io](https://img.shields.io/crates/v/lighty-launcher.svg)](https://crates.io/crates/lighty-launcher)
 [![Documentation](https://img.shields.io/badge/docs-gitbook-blue.svg)](https://hamadi.gitbook.io/lightylauncher)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
