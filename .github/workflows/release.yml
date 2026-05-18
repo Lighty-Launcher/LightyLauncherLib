@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    branches: [production]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify-bump:
+    name: Verify version bump
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract.outputs.version }}
+      tag: ${{ steps.extract.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract workspace version
+        id: extract
+        run: |
+          # Pull the version line from [workspace.package] (first match after the section header).
+          VERSION=$(awk '/^\[workspace\.package\]/{f=1} f && /^version = /{print; exit}' Cargo.toml \
+            | sed 's/version = "\(.*\)"/\1/')
+          MINOR=$(echo "${VERSION}" | cut -d. -f1-2)
+          TAG="${MINOR}/${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Detected workspace version: ${VERSION}"
+          echo "Target tag: ${TAG}"
+
+      - name: Fail if tag already exists
+        run: |
+          TAG="${{ steps.extract.outputs.tag }}"
+          if git rev-parse --verify "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::Tag '${TAG}' already exists. Bump [workspace.package].version in Cargo.toml before merging into production."
+            exit 1
+          fi
+          echo "OK — tag '${TAG}' is free."
+
+  build:
+    name: Build release
+    needs: verify-bump
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --workspace --all-features --release
+
+  release:
+    name: Tag + publish to crates.io
+    needs: [verify-bump, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Create and push tag
+        env:
+          TAG: ${{ needs.verify-bump.outputs.tag }}
+        run: |
+          git tag "${TAG}"
+          git push origin "${TAG}"
+
+      - name: Publish to crates.io (dependency order)
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -e
+          # Order matters: each crate's workspace deps must already be on the registry.
+          # Sleep between publishes for the index to propagate.
+          for crate in lighty-event lighty-core lighty-loaders lighty-java lighty-auth lighty-modsloader lighty-version lighty-launch lighty-launcher; do
+            echo "==> Publishing ${crate}"
+            cargo publish -p "${crate}"
+            if [ "${crate}" != "lighty-launcher" ]; then
+              echo "Sleeping 30s for crates.io index propagation..."
+              sleep 30
+            fi
+          done
