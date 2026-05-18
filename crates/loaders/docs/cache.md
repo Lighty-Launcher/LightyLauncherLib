@@ -13,7 +13,7 @@ two `Cache<K, V>` layers. Each entry expires after the instance's
 
 Both live inside `ManifestRepository<F>`:
 
-```rust,ignore
+```rust
 pub struct ManifestRepository<F: Query> {
     query_cache:       Arc<Cache<QueryKey<F::Query>, Arc<F::Data>>>,
     raw_version_cache: Arc<Cache<String, Arc<<F as Query>::Raw>>>,
@@ -69,7 +69,7 @@ There's no per-query TTL — the value comes from `VersionInfo::ttl()`,
 defaulting to 24 hours. Override it on your `VersionInfo` impl to
 tighten freshness for development builds or snapshots:
 
-```rust,ignore
+```rust
 fn ttl(&self) -> std::time::Duration {
     std::time::Duration::from_secs(5 * 60)  // 5 minutes for snapshots
 }

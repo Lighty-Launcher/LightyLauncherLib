@@ -9,7 +9,7 @@ exit detection), see [instance-lifecycle.md](./instance-lifecycle.md).
 
 ## The trait
 
-```rust,ignore
+```rust
 #[allow(async_fn_in_trait)]
 pub trait InstanceControl: VersionInfo {
     fn get_pid (&self) -> Option<u32>;
@@ -27,7 +27,7 @@ impl<T: VersionInfo> InstanceControl for T {}
 Auto-implemented for every `VersionInfo`. **The trait must be imported**
 in scope to call the methods:
 
-```rust,no_run
+```rust
 use lighty_launch::InstanceControl;     // required!
 ```
 
@@ -38,7 +38,7 @@ use lighty_launch::InstanceControl;     // required!
 Look up the running PID(s) for this instance name in the global
 [`InstanceManager`](./instance-lifecycle.md#instance-manager).
 
-```rust,no_run
+```rust
 # use lighty_auth::UserProfile;
 # use lighty_core::AppState;
 # use lighty_launch::launch::Launch;
@@ -76,7 +76,7 @@ return `None`), then sends the OS signal:
   hooks; avoids losing unflushed world state).
 - **Windows** — `taskkill /PID <pid> /F` (terminates the process tree).
 
-```rust,no_run
+```rust
 # use lighty_auth::UserProfile;
 # use lighty_core::AppState;
 # use lighty_launch::launch::Launch;
@@ -102,7 +102,7 @@ if let Some(pid) = instance.get_pid() {
 Removes the instance's game directory from disk. Errors if any PID
 for this instance is still tracked — close all PIDs first:
 
-```rust,no_run
+```rust
 # use lighty_auth::UserProfile;
 # use lighty_core::AppState;
 # use lighty_launch::errors::InstallerResult;
@@ -129,7 +129,7 @@ Returns an `InstanceSize` (per-component byte counts from the metadata).
 Useful to render a "this will install N MB" screen before
 `.launch().run()` actually downloads anything.
 
-```rust,no_run
+```rust
 # use lighty_core::AppState;
 # use lighty_launch::errors::InstallerResult;
 # use lighty_launch::InstanceControl;
@@ -159,7 +159,7 @@ there.
 
 ## Error types
 
-```rust,ignore
+```rust
 pub enum InstanceError {
     NotFound      { pid: u32 },
     StillRunning  { instance_name: String, pids: Vec<u32> },
@@ -177,7 +177,7 @@ pub type InstanceResult<T> = Result<T, InstanceError>;
 | `Io` | Filesystem error during `delete_instance` |
 | `DuplicatePid` | Race between two concurrent registrations, or OS PID reuse before `unregister_instance` fired |
 
-```rust,no_run
+```rust
 use lighty_launch::errors::InstanceError;
 # use lighty_launch::InstanceControl;
 # use lighty_loaders::types::Loader;
@@ -203,7 +203,7 @@ match instance.delete_instance().await {
 moment to clean up. If you need to wait, subscribe to
 `LaunchEvent::ProcessExited` (with `events` feature):
 
-```rust,no_run
+```rust
 # #[cfg(feature = "events")]
 # {
 use lighty_event::{Event, LaunchEvent};
@@ -221,7 +221,7 @@ while let Ok(event) = rx.next().await {
 
 ### Graceful close + delete
 
-```rust,no_run
+```rust
 # use lighty_launch::InstanceControl;
 # use lighty_launch::errors::InstanceError;
 # use lighty_loaders::types::Loader;

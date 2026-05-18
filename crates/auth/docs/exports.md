@@ -28,7 +28,7 @@ lighty_auth
 
 ## Crate root
 
-```rust,no_run
+```rust
 use lighty_auth::{
     // Trait
     Authenticator,
@@ -53,7 +53,7 @@ use lighty_auth::{
 
 Provider types live in submodules:
 
-```rust,no_run
+```rust
 use lighty_auth::{
     offline::OfflineAuth,
     microsoft::MicrosoftAuth,
@@ -63,7 +63,7 @@ use lighty_auth::{
 
 ## OS keychain (feature `keyring`)
 
-```rust,no_run
+```rust
 # #[cfg(feature = "keyring")]
 use lighty_auth::TokenHandle;
 ```
@@ -85,7 +85,7 @@ Enabling the feature also adds a variant
 
 ### `UserProfile`
 
-```rust,ignore
+```rust
 pub struct UserProfile {
     pub id: Option<u64>,                     // Server-side user ID (Azuriom only)
     pub username: String,
@@ -114,7 +114,7 @@ only the MS refresh token yourself via the `keyring` crate. Pattern:
 
 ### `UserRole`
 
-```rust,ignore
+```rust
 pub struct UserRole {
     pub name: String,
     pub color: Option<String>,   // hex string, e.g. "#FFD700"
@@ -123,7 +123,7 @@ pub struct UserRole {
 
 ### `AuthProvider`
 
-```rust,ignore
+```rust
 pub enum AuthProvider {
     Offline,
     Azuriom    { base_url: String },
@@ -139,7 +139,7 @@ Also **not** `Serialize` / `Deserialize` (the secret-wrapped
 
 ### `AuthError`
 
-```rust,ignore
+```rust
 pub enum AuthError {
     InvalidCredentials, TwoFactorRequired, Invalid2FACode,
     AccountBanned(String), EmailNotVerified,

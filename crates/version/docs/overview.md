@@ -42,7 +42,7 @@ when you hand the builder to `lighty-launch`.
 
 ## Quickstart
 
-```rust,no_run
+```rust
 use lighty_core::AppState;
 use lighty_loaders::types::Loader;
 use lighty_version::VersionBuilder;

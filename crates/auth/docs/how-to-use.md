@@ -4,7 +4,7 @@ The pattern is the same for every provider: instantiate, call
 `authenticate(&mut self, …)`, hand the resulting `UserProfile` to the
 launch pipeline.
 
-```rust,no_run
+```rust
 use lighty_auth::{offline::OfflineAuth, Authenticator};
 
 # async fn run() -> anyhow::Result<()> {
@@ -66,7 +66,7 @@ emits `AuthEvent` variants (catalogue in
 [events.md](./events.md)) — for the full event-bus mechanics see
 [`crates/event/docs/events.md`](../../event/docs/events.md).
 
-```rust,no_run
+```rust
 # #[cfg(feature = "events")]
 # {
 use lighty_auth::{microsoft::MicrosoftAuth, Authenticator};
@@ -124,7 +124,7 @@ root.
 `AuthError` carries one variant per failure class. The most useful
 ones to match individually:
 
-```rust,no_run
+```rust
 use lighty_auth::{AuthError, microsoft::MicrosoftAuth, Authenticator};
 
 # async fn run() -> anyhow::Result<()> {

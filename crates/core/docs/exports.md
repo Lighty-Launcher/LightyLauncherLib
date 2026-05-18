@@ -4,7 +4,7 @@ Public surface of `lighty-core`.
 
 ## Root re-exports
 
-```rust,ignore
+```rust
 pub use lighty_core::{
     AppState,
     // Errors
@@ -25,7 +25,7 @@ pub use lighty_core::{
 
 ### `app_state`
 
-```rust,ignore
+```rust
 pub struct AppState;
 pub struct LauncherPaths { pub name: String, pub data_dir: PathBuf,
                            pub config_dir: PathBuf, pub cache_dir: PathBuf }
@@ -37,14 +37,14 @@ Methods: `init`, `paths`, `name`, `data_dir`, `config_dir`,
 
 ### `download`
 
-```rust,ignore
+```rust
 pub async fn download_file_untracked(url: &str, path: impl AsRef<Path>) -> DownloadResult<()>;
 pub async fn download_file<F: Fn(u64, u64)>(url: &str, on_progress: F) -> DownloadResult<Vec<u8>>;
 ```
 
 ### `extract`
 
-```rust,ignore
+```rust
 // Without `events`
 pub async fn zip_extract<R>(archive: R, out_dir: &Path) -> ExtractResult<()>
 where R: AsyncRead + AsyncSeek + Unpin + AsyncBufRead;
@@ -61,7 +61,7 @@ pub async fn tar_gz_extract<R>(archive: R, out_dir: &Path,
 
 ### `hash`
 
-```rust,ignore
+```rust
 pub async fn verify_file_sha1          (path: &Path, expected_sha1: &str) -> HashResult<bool>;
 pub async fn verify_file_sha1_streaming(path: &Path, expected_sha1: &str) -> HashResult<bool>;
 pub fn       calculate_file_sha1_sync  (path: &Path) -> HashResult<String>;
@@ -72,7 +72,7 @@ pub fn       calculate_sha1_bytes_raw  (data: &[u8]) -> [u8; 20];     // raw byt
 
 ### `system`
 
-```rust,ignore
+```rust
 pub const OS:           OperatingSystem;
 pub const ARCHITECTURE: Architecture;
 
@@ -88,7 +88,7 @@ Arch methods: `get_simple_name`, `get_vanilla_arch`, `get_arch_bits`,
 
 ### `hosts`
 
-```rust,ignore
+```rust
 pub static HTTP_CLIENT: Lazy<reqwest::Client>;
 ```
 
@@ -96,7 +96,7 @@ Single shared client — use this instead of building your own.
 
 ### `macros` (auto-imported from the crate root)
 
-```rust,ignore
+```rust
 mkdir!($path)                       // async create_dir_all, swallows errors
 try_mkdir!($path)                   // async create_dir_all, returns io::Result
 mkdir_blocking!($path)              // spawn_blocking variant

@@ -5,7 +5,7 @@ launcher path resolver in the workspace.
 
 ## Constants
 
-```rust,no_run
+```rust
 use lighty_core::system::{OS, ARCHITECTURE, OperatingSystem, Architecture};
 
 fn main() {
@@ -23,7 +23,7 @@ Both `OS` and `ARCHITECTURE` are `const`: resolved at build time via
 
 ## Enums
 
-```rust,ignore
+```rust
 pub enum OperatingSystem { WINDOWS, LINUX, OSX, UNKNOWN }
 pub enum Architecture    { X86, X64, ARM, AARCH64, UNKNOWN }
 ```
@@ -58,7 +58,7 @@ fallible accessor returns `SystemResult<&'static str>` and surfaces
 
 ## Errors
 
-```rust,ignore
+```rust
 pub enum SystemError {
     UnsupportedOS,
     UnsupportedArchitecture,

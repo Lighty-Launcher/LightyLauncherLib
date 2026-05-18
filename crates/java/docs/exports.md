@@ -4,7 +4,7 @@ Public surface of `lighty-java`.
 
 ## Root re-exports
 
-```rust,ignore
+```rust
 pub use lighty_java::{
     JavaDistribution, DistributionSelection,
     JreError,             JreResult,
@@ -17,7 +17,7 @@ pub use lighty_java::{
 
 ### `jre_downloader`
 
-```rust,ignore
+```rust
 pub async fn find_java_binary(
     runtimes_folder: &Path,
     distribution: &JavaDistribution,
@@ -44,7 +44,7 @@ pub async fn jre_download<F: Fn(u64, u64)>(
 
 ### `runtime`
 
-```rust,ignore
+```rust
 pub struct JavaRuntime(pub PathBuf);
 
 impl JavaRuntime {
@@ -64,7 +64,7 @@ impl JavaRuntime {
 
 ### Top-level types
 
-```rust,ignore
+```rust
 pub enum JavaDistribution { Temurin, GraalVM, Zulu, Liberica }
 
 impl JavaDistribution {
@@ -86,7 +86,7 @@ DistributionSelection` returns `Automatic(String::new())`.
 
 ### Errors
 
-```rust,ignore
+```rust
 pub enum JreError {
     NotFound { path: PathBuf }, InvalidStructure, Download(String),
     UnsupportedOS, Io(std::io::Error), Extraction(String),

@@ -5,7 +5,7 @@ derives a deterministic UUID v5 from `"OfflinePlayer:" + username`, and
 returns a `UserProfile` with no session token. Useful for tests,
 LAN play and as a fallback when an online provider fails.
 
-```rust,no_run
+```rust
 use lighty_auth::{offline::OfflineAuth, Authenticator};
 
 # async fn run() -> anyhow::Result<()> {
@@ -39,7 +39,7 @@ Same username, same UUID — every time, on every machine. The helper
 [`generate_offline_uuid`](./exports.md) is also re-exported if you
 need the UUID without going through `authenticate()`:
 
-```rust,no_run
+```rust
 use lighty_auth::generate_offline_uuid;
 
 let a = generate_offline_uuid("Steve");
@@ -55,7 +55,7 @@ assert_ne!(a, c);
 When you only need a placeholder profile (doctests, unit fixtures,
 fallback paths), skip the validator and build a profile directly:
 
-```rust,no_run
+```rust
 use lighty_auth::UserProfile;
 
 let profile = UserProfile::offline("Steve", "069a79f4-44e9-4726-a5be-fca90e38aaf5");

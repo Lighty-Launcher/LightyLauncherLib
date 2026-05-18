@@ -24,7 +24,7 @@ is resolved.
 
 ## JavaDistribution
 
-```rust,ignore
+```rust
 pub enum JavaDistribution { Temurin, GraalVM, Zulu, Liberica }
 ```
 

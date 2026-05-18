@@ -29,7 +29,7 @@ lighty_launch
 
 ## Crate root re-exports
 
-```rust,no_run
+```rust
 use lighty_launch::{
     LaunchBuilder,
     LaunchConfig,
@@ -47,7 +47,7 @@ to use its methods (`get_pid`, `close_instance`, `delete_instance`,
 
 ## Per-module imports
 
-```rust,no_run
+```rust
 // The fluent .launch().run() entry point.
 use lighty_launch::launch::{Launch, LaunchBuilder, LaunchConfig};
 
@@ -68,7 +68,7 @@ use lighty_launch::errors::{InstallerError, InstallerResult};
 
 ### `LaunchBuilder<'a, T>`
 
-```rust,ignore
+```rust
 impl<'a, T> LaunchBuilder<'a, T>
 where T: VersionInfo<LoaderType = Loader> + LoaderExtensions + Arguments + Installer + WithMods
 {
@@ -90,7 +90,7 @@ Shared launch configuration (currently username / uuid / java
 distribution). Has a `Default` impl. Used by higher-level helpers
 that want a one-shot config object rather than the builder.
 
-```rust,ignore
+```rust
 pub struct LaunchConfig {
     pub username: String,
     pub uuid: String,
@@ -105,7 +105,7 @@ bounds. Full doc: [launch.md](./launch.md#the-launch-trait).
 
 ### `Installer` trait
 
-```rust,ignore
+```rust
 pub trait Installer {
     fn install(
         &self,
@@ -120,7 +120,7 @@ Detail: [installation.md](./installation.md).
 
 ### `Arguments` trait
 
-```rust,ignore
+```rust
 pub trait Arguments {
     fn build_arguments(
         &self,
@@ -140,7 +140,7 @@ Auto-implemented for every `VersionInfo`. Detail:
 
 ### `InstanceControl` trait
 
-```rust,ignore
+```rust
 pub trait InstanceControl: VersionInfo {
     fn get_pid (&self) -> Option<u32>;
     fn get_pids(&self) -> Vec<u32>;
@@ -155,7 +155,7 @@ Detail: [instance-control.md](./instance-control.md) (API),
 
 ### Errors
 
-```rust,ignore
+```rust
 pub enum InstallerError {
     DownloadFailed(String),
     VerificationFailed(String),

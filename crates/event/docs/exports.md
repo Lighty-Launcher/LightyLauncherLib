@@ -2,7 +2,7 @@
 
 ## Root re-exports
 
-```rust,ignore
+```rust
 pub use lighty_event::{
     // Bus
     EventBus, EventReceiver, EVENT_BUS,
@@ -28,7 +28,7 @@ pub use lighty_event::{
 
 ## Bus
 
-```rust,ignore
+```rust
 pub struct EventBus { /* clone-able sender wrapper */ }
 
 impl EventBus {
@@ -75,7 +75,7 @@ a `SystemTime` timestamp serialized as Unix seconds:
 
 ## Errors
 
-```rust,ignore
+```rust
 pub enum EventReceiveError {
     Closed,                                // bus dropped
     Lagged(u64),                           // missed N events

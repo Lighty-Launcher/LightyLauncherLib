@@ -7,7 +7,7 @@ thundering-herd protection on top.
 
 ## Trait
 
-```rust,ignore
+```rust
 #[async_trait]
 pub trait Query: Send + Sync {
     type Query: Eq + Hash + Clone + Send + Sync + 'static;
@@ -40,7 +40,7 @@ no per-query override is needed.
 
 ## ManifestRepository
 
-```rust,ignore
+```rust
 pub struct ManifestRepository<F: Query> { /* private */ }
 
 impl<F: Query> ManifestRepository<F> {
@@ -62,7 +62,7 @@ mutex (no duplicate downloads even under contention).
 
 Sketch — a loader that pulls a JSON manifest from a custom URL.
 
-```rust,no_run
+```rust
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -157,7 +157,7 @@ Fabric / Quilt / NeoForge / Forge all call into the Vanilla repository
 inside their `version_builder` and then layer their own libraries +
 overrides on top. The pattern:
 
-```rust,no_run
+```rust
 # use std::sync::Arc;
 # use lighty_core::QueryError;
 # use lighty_loaders::{VersionInfo, version_metadata::{Library, Version, VersionMetaData}};
@@ -193,7 +193,7 @@ Wrap the network call between `LoaderEvent::FetchingData` and
 `LoaderEvent::DataFetched` so subscribers see your loader in the
 event stream:
 
-```rust,no_run
+```rust
 # use lighty_core::QueryError;
 # use lighty_loaders::VersionInfo;
 # #[cfg(feature = "events")]

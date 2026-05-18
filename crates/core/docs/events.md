@@ -16,7 +16,7 @@ Variants (defined in `crates/event/src/module/core.rs`):
 
 ## Subscribing
 
-```rust,no_run
+```rust
 use lighty_core::{AppState, extract::zip_extract};
 use lighty_event::{Event, CoreEvent, EventBus};
 use tokio::{fs::File, io::BufReader};

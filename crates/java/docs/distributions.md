@@ -116,7 +116,7 @@ modern (1.17+) versions if you want the JIT improvements.
 
 ## Picking from the API
 
-```rust,no_run
+```rust
 use lighty_java::JavaDistribution;
 
 let dist = JavaDistribution::Temurin;
@@ -127,7 +127,7 @@ println!("install URL: {}", url);
 
 ## Errors
 
-```rust,ignore
+```rust
 pub enum DistributionError {
     UnsupportedVersion { version: u8, distribution: &'static str },
     ApiError          { distribution: &'static str, error: String },

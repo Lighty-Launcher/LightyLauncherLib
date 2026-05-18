@@ -7,7 +7,7 @@ terminator fires).
 
 ## API
 
-```rust,ignore
+```rust
 pub struct JavaRuntime(pub PathBuf);
 
 impl JavaRuntime {
@@ -45,7 +45,7 @@ processes don't pop up a console window.
 
 ### Print `java -version`
 
-```rust,no_run
+```rust
 use lighty_java::runtime::JavaRuntime;
 use tokio::sync::oneshot;
 use std::path::Path;
@@ -71,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
 
 ### Launch a JAR with memory tuning
 
-```rust,no_run
+```rust
 use lighty_java::runtime::JavaRuntime;
 use tokio::sync::oneshot;
 use std::path::Path;
@@ -110,7 +110,7 @@ async fn main() -> anyhow::Result<()> {
 `handle_io` returns once the process exits or the terminator fires.
 The exit code is available via `child.wait().await?`:
 
-```rust,no_run
+```rust
 # use lighty_java::runtime::JavaRuntime;
 # use tokio::sync::oneshot;
 # use std::path::Path;
@@ -128,7 +128,7 @@ println!("exit code: {:?}", status.code());
 
 ## Errors
 
-```rust,ignore
+```rust
 pub enum JavaRuntimeError {
     NotFound { path: PathBuf },
     NonZeroExit { code: i32 },

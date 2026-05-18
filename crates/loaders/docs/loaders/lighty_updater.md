@@ -16,7 +16,7 @@ Fabric / Quilt / NeoForge / Forge).
 
 ## Use it
 
-```rust,no_run
+```rust
 use lighty_core::AppState;
 use lighty_loaders::LoaderExtensions;
 use lighty_version::LightyVersionBuilder;

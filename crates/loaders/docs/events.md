@@ -54,7 +54,7 @@ ManifestNotFound  { loader: "Fabric", error: "...", ... }
 
 ## Subscriber
 
-```rust,no_run
+```rust
 use lighty_event::{Event, EventBus, LoaderEvent};
 
 let bus = EventBus::new(1000);

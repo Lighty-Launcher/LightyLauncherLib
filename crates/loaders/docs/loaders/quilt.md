@@ -15,7 +15,7 @@ manifest, overlays the Quilt loader profile.
 
 ## Use it
 
-```rust,no_run
+```rust
 use lighty_core::AppState;
 use lighty_loaders::{Loader, LoaderExtensions};
 use lighty_version::VersionBuilder;
@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
 
 ## Queries
 
-```rust,ignore
+```rust
 pub enum QuiltQuery { QuiltBuilder, Libraries }
 ```
 

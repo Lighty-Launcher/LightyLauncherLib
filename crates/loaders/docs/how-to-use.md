@@ -13,7 +13,7 @@ focuses on the loader side.
 
 ## Minimum-viable fetch
 
-```rust,no_run
+```rust
 use lighty_core::AppState;
 use lighty_loaders::{Loader, LoaderExtensions};
 use lighty_version::VersionBuilder;
@@ -48,7 +48,7 @@ requested slice. Detail in [`traits.md`](./traits.md).
 
 ## Loaders quick reference
 
-```rust,no_run
+```rust
 use lighty_loaders::Loader;
 use lighty_version::VersionBuilder;
 
@@ -68,7 +68,7 @@ For LightyUpdater (server-defined modpacks) use
 With the `events` feature on, every fetch / merge step emits a
 `LoaderEvent`:
 
-```rust,no_run
+```rust
 use lighty_event::{Event, EventBus, LoaderEvent};
 
 let bus = EventBus::new(1000);
@@ -94,7 +94,7 @@ Full event catalogue in [`events.md`](./events.md).
 
 ## Instance size estimate
 
-```rust,no_run
+```rust
 use lighty_loaders::{Loader, LoaderExtensions, InstanceSize};
 use lighty_version::VersionBuilder;
 use lighty_launcher::launch::InstanceControl;
@@ -112,7 +112,7 @@ string.
 
 ## Errors
 
-```rust,no_run
+```rust
 use lighty_core::QueryError;
 # fn handle(err: QueryError) {
 match err {

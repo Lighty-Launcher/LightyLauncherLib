@@ -30,7 +30,7 @@ richer state machines on top — `lighty-java` itself emits the five
 
 ## Subscriber
 
-```rust,no_run
+```rust
 use lighty_core::AppState;
 use lighty_event::{Event, EventBus, JavaEvent};
 use lighty_java::{JavaDistribution, jre_downloader};

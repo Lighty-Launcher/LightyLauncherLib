@@ -7,7 +7,7 @@ in, the embedded refresh token enables a silent re-auth on subsequent
 launches so the device code prompt only appears once per ~90 days of
 inactivity.
 
-```rust,no_run
+```rust
 use lighty_auth::{microsoft::MicrosoftAuth, Authenticator};
 
 # async fn run() -> anyhow::Result<()> {
@@ -90,7 +90,7 @@ the next launch, hand it to
 [`MicrosoftAuth::authenticate_with_refresh_token`] to skip the prompt
 entirely.
 
-```rust,no_run
+```rust
 use lighty_auth::{
     microsoft::MicrosoftAuth, AuthProvider, Authenticator, SecretString,
 };
@@ -135,7 +135,7 @@ Opt-in: route the **Minecraft access token** into the OS keychain
 instead of keeping it as a `SecretString` in process memory. Gated by
 the `keyring` feature.
 
-```rust,no_run
+```rust
 use lighty_auth::{microsoft::MicrosoftAuth, Authenticator};
 use secrecy::ExposeSecret;
 
@@ -178,7 +178,7 @@ keychain on every launch.
 
 ## Error handling
 
-```rust,no_run
+```rust
 use lighty_auth::{AuthError, microsoft::MicrosoftAuth, Authenticator};
 
 # async fn run() -> anyhow::Result<()> {
@@ -204,7 +204,7 @@ match auth.authenticate(
 
 ## Resulting `UserProfile`
 
-```rust,ignore
+```rust
 UserProfile {
     id: None,
     username,                              // from /minecraft/profile

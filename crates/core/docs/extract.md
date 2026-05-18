@@ -5,7 +5,7 @@ path validation. Supported formats: **ZIP** and **TAR.GZ**.
 
 ## API
 
-```rust,ignore
+```rust
 // Without `events`
 pub async fn zip_extract<R>(archive: R, out_dir: &Path) -> ExtractResult<()>
 where R: AsyncRead + AsyncSeek + Unpin + AsyncBufRead;
@@ -37,7 +37,7 @@ The 256 KiB buffer keeps memory usage flat regardless of input size.
 
 ## Example: zip an instance's `mods/`
 
-```rust,no_run
+```rust
 use lighty_core::extract::zip_extract;
 use tokio::{fs::File, io::BufReader};
 use std::path::Path;
@@ -57,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
 
 ## Example: extract a JRE tarball
 
-```rust,no_run
+```rust
 use lighty_core::extract::tar_gz_extract;
 use tokio::{fs::File, io::BufReader};
 use std::path::Path;
@@ -77,7 +77,7 @@ async fn main() -> anyhow::Result<()> {
 
 ## Errors
 
-```rust,ignore
+```rust
 pub enum ExtractError {
     ZipEntryNotFound { index: usize },
     InvalidPath,

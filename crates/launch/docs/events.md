@@ -20,7 +20,7 @@ and re-exported as `lighty_launcher::event::*`.
 
 Defined in `crates/event/src/module/launch.rs`:
 
-```rust,ignore
+```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event")]
 pub enum LaunchEvent {
@@ -53,7 +53,7 @@ pub enum LaunchEvent {
 Defined in `crates/event/src/module/modloader.rs`. Emitted by the
 resolver, the modpack pipeline and the three mod-like buckets:
 
-```rust,ignore
+```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event")]
 pub enum ModloaderEvent {
@@ -84,7 +84,7 @@ pub enum ModloaderEvent {
 
 ## Listening
 
-```rust,no_run
+```rust
 # #[cfg(feature = "events")]
 # {
 use lighty_event::{Event, EventBus, LaunchEvent, ModloaderEvent};

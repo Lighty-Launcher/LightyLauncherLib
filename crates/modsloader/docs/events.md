@@ -50,7 +50,7 @@ mods_count` already covers that.
 
 ## Snippet
 
-```rust,no_run
+```rust
 use lighty_event::{Event, EventBus, ModloaderEvent};
 
 let bus = EventBus::new(1000);

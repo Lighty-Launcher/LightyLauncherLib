@@ -8,7 +8,7 @@ bus, examples) treats your provider exactly like the built-in ones.
 
 ## Signature
 
-```rust,no_run
+```rust
 use std::future::Future;
 use lighty_auth::{AuthError, AuthResult, UserProfile};
 #[cfg(feature = "events")]
@@ -56,7 +56,7 @@ A few rules worth keeping in mind:
 A thin HTTP-backed example — mirrors
 [`examples/auth/custom.rs`](../../../examples/auth/custom.rs):
 
-```rust,no_run
+```rust
 use lighty_auth::{
     AuthError, AuthProvider, AuthResult, Authenticator,
     SecretString, UserProfile,
@@ -163,7 +163,7 @@ behind `#[cfg(feature = "keyring")]`).
 
 Once `Authenticator` is implemented, the rest is mechanical:
 
-```rust,no_run
+```rust
 # use lighty_auth::Authenticator;
 # struct CustomAuth;
 # impl CustomAuth { fn new(_: &str, _: &str, _: &str) -> Self { Self } }

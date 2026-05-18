@@ -5,7 +5,7 @@ Java process.
 
 ## 1. Find or install a JRE
 
-```rust,no_run
+```rust
 use lighty_core::AppState;
 use lighty_java::{JavaDistribution, jre_downloader};
 
@@ -45,7 +45,7 @@ correlate the two.
 
 ## 2. Spawn a Java process
 
-```rust,no_run
+```rust
 use lighty_java::runtime::JavaRuntime;
 use tokio::sync::oneshot;
 use std::path::Path;
@@ -84,7 +84,7 @@ opaque context — pass anything you need to share (a logger, an
 
 ## 3. Subscribe to install events
 
-```rust,no_run
+```rust
 use lighty_event::{Event, EventBus, JavaEvent};
 use lighty_core::AppState;
 use lighty_java::{JavaDistribution, jre_downloader};

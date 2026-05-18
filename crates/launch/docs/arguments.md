@@ -7,7 +7,7 @@ options and game options — other launch docs cross-ref here.
 
 ## The `Arguments` trait
 
-```rust,ignore
+```rust
 pub trait Arguments {
     fn build_arguments(
         &self,
@@ -74,7 +74,7 @@ substitutes from a variable map. The full set:
 Every placeholder has a typed constant in `lighty_launch::arguments`
 to avoid stringly-typed code:
 
-```rust,no_run
+```rust
 use lighty_launch::arguments::{
     KEY_AUTH_PLAYER_NAME, KEY_AUTH_UUID, KEY_AUTH_ACCESS_TOKEN, KEY_AUTH_XUID,
     KEY_CLIENT_ID, KEY_USER_TYPE, KEY_USER_PROPERTIES,
@@ -194,7 +194,7 @@ See `AUTH_SECRETS.md` at the workspace root for the full threat model.
 java
   -Djava.library.path=/tmp/natives-xxxxx
   -Dminecraft.launcher.brand=MyLauncher
-  -Dminecraft.launcher.version=26.5.7
+  -Dminecraft.launcher.version=26.5.8
   -Xmx4G -Xms2G -XX:+UseG1GC
   -cp /path/lib1.jar:/path/lib2.jar:...
   net.minecraft.client.main.Main
@@ -210,7 +210,7 @@ java
 
 ## Putting it together
 
-```rust,no_run
+```rust
 # use lighty_auth::UserProfile;
 # use lighty_core::AppState;
 # use lighty_java::JavaDistribution;

@@ -4,7 +4,7 @@ One short example per feature. Pick what you need; everything composes.
 
 ## 1. AppState — initialise once
 
-```rust,no_run
+```rust
 use lighty_core::AppState;
 
 #[tokio::main]
@@ -25,7 +25,7 @@ Path layout per OS and the full API are in
 `download_file_untracked` for fire-and-forget, `download_file` when you
 need progress.
 
-```rust,no_run
+```rust
 use lighty_core::download::{download_file, download_file_untracked};
 
 #[tokio::main]
@@ -58,7 +58,7 @@ Both return `DownloadResult<_>`. The HTTP client is the shared
 `zip_extract` and `tar_gz_extract` enforce path-traversal protection
 and reject files above 2 GiB.
 
-```rust,no_run
+```rust
 use lighty_core::extract::zip_extract;
 use tokio::{fs::File, io::BufReader};
 use std::path::Path;
@@ -81,7 +81,7 @@ With the `events` feature on, pass `Some(&event_bus)` to emit
 
 ## 4. Verify a SHA1 hash
 
-```rust,no_run
+```rust
 use lighty_core::hash::{verify_file_sha1, verify_file_sha1_streaming};
 use std::path::Path;
 
@@ -108,7 +108,7 @@ exist for non-async contexts. `calculate_sha1_bytes` and
 
 ## 5. Detect OS / architecture at compile time
 
-```rust,no_run
+```rust
 use lighty_core::system::{OS, ARCHITECTURE, OperatingSystem};
 
 fn pick_archive_ext() -> &'static str {
@@ -130,7 +130,7 @@ per-vendor name maps.
 
 ## 6. Logging macros
 
-```rust,no_run
+```rust
 use lighty_core::{trace_debug, trace_info, trace_warn, trace_error};
 
 fn process(path: &str) {
@@ -149,7 +149,7 @@ hot paths without runtime cost. See [`macros.md`](./macros.md).
 
 ## 7. Directory helpers
 
-```rust,no_run
+```rust
 use lighty_core::{mkdir, join_and_mkdir, join_and_mkdir_vec};
 use std::path::Path;
 
@@ -165,7 +165,7 @@ async fn main() {
 
 ## Errors at a glance
 
-```rust,ignore
+```rust
 pub enum AppStateError   { AlreadyInitialized, NotInitialized, MissingPlatformDir(&'static str) }
 pub enum DownloadError   { Http(reqwest::Error), Io(io::Error) }
 pub enum ExtractError    { ZipEntryNotFound { .. }, AbsolutePath { .. }, PathTraversal { .. },

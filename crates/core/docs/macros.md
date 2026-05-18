@@ -8,7 +8,7 @@ lighty_core::*;` or directly by name (`use lighty_core::mkdir;`).
 All are async-aware: they use `tokio::fs::create_dir_all` under the
 hood.
 
-```rust,no_run
+```rust
 use lighty_core::{mkdir, try_mkdir, join_and_mkdir, join_and_mkdir_vec};
 use std::path::Path;
 
@@ -38,7 +38,7 @@ async fn main() -> std::io::Result<()> {
 
 ## Tracing macros
 
-```rust,no_run
+```rust
 use lighty_core::{trace_debug, trace_info, trace_warn, trace_error};
 
 fn process(path: &str) {
@@ -53,7 +53,7 @@ fn process(path: &str) {
 
 Structured fields work too (forwarded to `tracing::*!`):
 
-```rust,no_run
+```rust
 use lighty_core::trace_info;
 trace_info!(
     version  = "1.21.1",
@@ -69,7 +69,7 @@ expand to no-ops — no runtime cost.
 
 Logs the elapsed `Duration` of any expression at `DEBUG` level:
 
-```rust,no_run
+```rust
 use lighty_core::time_it;
 
 # fn expensive() -> i32 { 42 }
@@ -86,7 +86,7 @@ DEBUG label="expensive op" elapsed=12.3ms "Operation completed"
 
 The macros are exported at the crate root, so either of these works:
 
-```rust,no_run
+```rust
 use lighty_core::{mkdir, trace_info};
 // or
 use lighty_core::*;

@@ -5,7 +5,7 @@ file vs streaming) matrix. All hex comparisons are case-insensitive.
 
 ## API
 
-```rust,ignore
+```rust
 // Async — files
 pub async fn verify_file_sha1          (path: &Path, expected_sha1: &str) -> HashResult<bool>;
 pub async fn verify_file_sha1_streaming(path: &Path, expected_sha1: &str) -> HashResult<bool>;
@@ -38,7 +38,7 @@ on small files; pick it for anything you expect to grow.
 
 ### Verify a freshly downloaded library
 
-```rust,no_run
+```rust
 use lighty_core::{download::download_file_untracked, hash::verify_file_sha1};
 use std::path::Path;
 
@@ -57,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
 
 ### Stream a multi-GB JRE archive
 
-```rust,no_run
+```rust
 use lighty_core::hash::verify_file_sha1_streaming;
 use std::path::Path;
 
@@ -74,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
 
 ### Hash an offline username
 
-```rust,no_run
+```rust
 use lighty_core::hash::calculate_sha1_bytes;
 
 fn main() {
@@ -85,7 +85,7 @@ fn main() {
 
 ## Errors
 
-```rust,ignore
+```rust
 pub enum HashError {
     Io(std::io::Error),
     Mismatch { expected: String, actual: String },   // not currently returned by these helpers,

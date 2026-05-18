@@ -40,7 +40,7 @@ see [instance-control.md](./instance-control.md).
 
 Global singleton:
 
-```rust,ignore
+```rust
 pub(crate) static INSTANCE_MANAGER: Lazy<InstanceManager> = Lazy::new(InstanceManager::new);
 
 pub(crate) struct InstanceManager {

@@ -18,7 +18,7 @@ loader detects which install schema to use by reading the installer's
 
 ### Modern (≥ 1.13)
 
-```rust,no_run
+```rust
 use lighty_core::AppState;
 use lighty_loaders::Loader;
 use lighty_version::VersionBuilder;
@@ -38,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
 
 Same builder shape — only the loader version differs:
 
-```rust,no_run
+```rust
 use lighty_loaders::Loader;
 use lighty_version::VersionBuilder;
 
@@ -97,7 +97,7 @@ Step-by-step launch-side detail in
 
 ## Public helpers
 
-```rust,ignore
+```rust
 pub use lighty_loaders::forge::forge::{
     FORGE, ForgeQuery, ForgeRawData,
     extract_install_profile_libraries_modern,

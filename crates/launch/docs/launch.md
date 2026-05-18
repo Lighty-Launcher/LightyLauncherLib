@@ -21,7 +21,7 @@ argv, spawn the JVM, register the PID, stream stdio.
 
 Adds `.launch(...)` to any installable instance:
 
-```rust,ignore
+```rust
 pub trait Launch {
     fn launch<'a>(
         &'a mut self,
@@ -40,7 +40,7 @@ slice on vanilla instances, so it's free.
 
 ## `LaunchBuilder` API
 
-```rust,ignore
+```rust
 pub struct LaunchBuilder<'a, T> { /* … */ }
 
 impl<'a, T> LaunchBuilder<'a, T>
@@ -109,7 +109,7 @@ keeps the secret out of process memory) is documented there too.
 
 ### 6. Spawn JVM
 
-```rust,ignore
+```rust
 Command::new(java_path)
     .args(arguments)
     .current_dir(builder.game_dirs())
@@ -149,7 +149,7 @@ requirement).
 
 ## Complete example
 
-```rust,no_run
+```rust
 use lighty_auth::{offline::OfflineAuth, Authenticator};
 use lighty_core::AppState;
 use lighty_java::JavaDistribution;
@@ -195,7 +195,7 @@ async fn main() -> anyhow::Result<()> {
 
 ## Error handling
 
-```rust,ignore
+```rust
 pub enum InstallerError {
     DownloadFailed(String),
     VerificationFailed(String),

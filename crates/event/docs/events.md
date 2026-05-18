@@ -6,7 +6,7 @@ variants and link back here.
 
 The root enum (`crates/event/src/lib.rs`) is:
 
-```rust,ignore
+```rust
 pub enum Event {
     Auth(AuthEvent),
     Java(JavaEvent),

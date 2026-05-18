@@ -109,24 +109,6 @@ pub use lighty_modsloader::curseforge::modpack_metadata::{
 };
 ```
 
-## Where things moved (vs. the previous layout)
-
-| Old path | New path |
-|---|---|
-| `lighty_modsloader::mods::modrinth::modrinth::*` | `lighty_modsloader::modrinth::client::*` |
-| `lighty_modsloader::mods::modrinth::modrinth_metadata::*` | `lighty_modsloader::modrinth::client_metadata::*` |
-| `lighty_modsloader::mods::curseforge::curseforge::*` | `lighty_modsloader::curseforge::client::*` |
-| `lighty_modsloader::mods::curseforge::curseforge_metadata::*` | `lighty_modsloader::curseforge::client_metadata::*` |
-| `lighty_modsloader::modpack::modrinth::*` | `lighty_modsloader::modrinth::modpack::*` |
-| `lighty_modsloader::modpack::modrinth_metadata::*` | `lighty_modsloader::modrinth::modpack_metadata::*` |
-| `lighty_modsloader::modpack::curseforge::*` | `lighty_modsloader::curseforge::modpack::*` |
-| `lighty_modsloader::modpack::curseforge_metadata::*` | `lighty_modsloader::curseforge::modpack_metadata::*` |
-| `lighty_modsloader::modpack::source::ModpackSource` | `lighty_modsloader::modpack::ModpackSource` (flat file) |
-| `validate_modrinth_download_url` / `whitelist` | **removed** — no longer part of the public surface |
-
-The `mods/` sub-directory is gone — Modrinth and CurseForge are now
-top-level provider modules of the crate.
-
 ## Error types
 
 All errors flow through `lighty_core::QueryError` (shared with loaders

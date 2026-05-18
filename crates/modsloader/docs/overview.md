@@ -73,7 +73,7 @@ Arguments + Installer + WithMods` to build its launch pipeline.
 `WithMods` has a `&[]` default, so a vanilla instance that never
 calls `.with_mod()` pays nothing.
 
-```rust,ignore
+```rust
 pub trait WithMods {
     fn mod_requests(&self) -> &[ModRequest];
 

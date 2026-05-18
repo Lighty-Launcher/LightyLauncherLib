@@ -7,7 +7,7 @@ players in with the same email + password they use on the website,
 including 2FA, role / money / ban metadata, and token verification on
 subsequent launches.
 
-```rust,no_run
+```rust
 use lighty_auth::{azuriom::AzuriomAuth, Authenticator};
 
 # async fn run() -> anyhow::Result<()> {
@@ -40,7 +40,7 @@ The Azuriom API returns the `2fa` error reason when an account has TOTP
 enabled. The provider maps it to `AuthError::TwoFactorRequired` — set
 the code with `set_two_factor_code` and call `authenticate()` again:
 
-```rust,no_run
+```rust
 use lighty_auth::{azuriom::AzuriomAuth, AuthError, Authenticator};
 
 # async fn prompt() -> String { unimplemented!() }
@@ -71,7 +71,7 @@ loop {
 Both methods take the raw token string (call `secret.expose_secret()`
 right before passing it in):
 
-```rust,no_run
+```rust
 use lighty_auth::{azuriom::AzuriomAuth, AuthError, Authenticator};
 use secrecy::ExposeSecret;
 
@@ -100,7 +100,7 @@ Opt-in: route the session token into the OS keychain instead of
 keeping it as a `SecretString` in process memory. Gated by the
 `keyring` feature.
 
-```rust,no_run
+```rust
 use lighty_auth::{azuriom::AzuriomAuth, Authenticator};
 use secrecy::ExposeSecret;
 
@@ -148,7 +148,7 @@ payload) is also surfaced as `AccountBanned(username)`.
 
 ## Resulting `UserProfile`
 
-```rust,ignore
+```rust
 UserProfile {
     id: Some(u64),                       // Azuriom internal ID
     username,                            // display name

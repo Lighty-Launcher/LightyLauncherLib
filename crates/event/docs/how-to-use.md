@@ -7,7 +7,7 @@ case), or subscribe to the global `EVENT_BUS`.
 
 `lighty-launch` accepts a bus via `.with_event_bus(&bus)`:
 
-```rust,no_run
+```rust
 use lighty_event::{Event, EventBus, LaunchEvent, ConsoleStream};
 
 #[tokio::main]
@@ -43,7 +43,7 @@ Full event reference: [`events.md`](./events.md).
 Some crates emit through the global `EVENT_BUS` (extraction, modloader
 resolver). Subscribe the same way:
 
-```rust,no_run
+```rust
 use lighty_event::{EVENT_BUS, Event, CoreEvent};
 
 #[tokio::main]
@@ -65,7 +65,7 @@ next `next().await` returns
 
 ## 3. Fan out to several subscribers
 
-```rust,no_run
+```rust
 use lighty_event::EventBus;
 
 let bus = EventBus::new(1000);
@@ -84,7 +84,7 @@ Every subscriber gets every event. No filtering on the bus side —
 
 ## 4. Filter on a single variant
 
-```rust,no_run
+```rust
 use lighty_event::{EventBus, Event, JavaEvent};
 
 #[tokio::main]
@@ -104,7 +104,7 @@ async fn main() {
 
 ## 5. Stream console output
 
-```rust,no_run
+```rust
 use lighty_event::{Event, EventBus, ConsoleStream};
 
 #[tokio::main]
@@ -127,7 +127,7 @@ async fn main() {
 
 ## 6. Non-blocking peek
 
-```rust,no_run
+```rust
 use lighty_event::{EventBus, EventTryReceiveError};
 
 #[tokio::main]

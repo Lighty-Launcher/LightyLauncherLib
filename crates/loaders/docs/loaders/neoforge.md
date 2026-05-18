@@ -15,7 +15,7 @@ both supported transparently.
 
 ## Use it
 
-```rust,no_run
+```rust
 use lighty_core::AppState;
 use lighty_loaders::Loader;
 use lighty_version::VersionBuilder;

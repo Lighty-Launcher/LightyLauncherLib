@@ -6,7 +6,7 @@ either.
 
 ## API
 
-```rust,ignore
+```rust
 pub async fn download_file_untracked(
     url: &str,
     path: impl AsRef<Path>,
@@ -27,7 +27,7 @@ a `Vec<u8>`, calling `on_progress(current, total)` after each chunk.
 
 ### Save straight to disk
 
-```rust,no_run
+```rust
 use lighty_core::download::download_file_untracked;
 
 #[tokio::main]
@@ -42,7 +42,7 @@ async fn main() -> anyhow::Result<()> {
 
 ### Buffer in memory with a progress callback
 
-```rust,no_run
+```rust
 use lighty_core::download::download_file;
 
 #[tokio::main]
@@ -63,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
 
 ### Download + verify SHA1
 
-```rust,no_run
+```rust
 use lighty_core::{download::download_file_untracked, hash::verify_file_sha1};
 use std::path::Path;
 
@@ -82,7 +82,7 @@ async fn main() -> anyhow::Result<()> {
 
 ### Concurrent downloads
 
-```rust,no_run
+```rust
 use lighty_core::download::download_file_untracked;
 use futures::future::try_join_all;
 
@@ -100,7 +100,7 @@ async fn main() -> anyhow::Result<()> {
 
 ## Errors
 
-```rust,ignore
+```rust
 pub enum DownloadError {
     Http(reqwest::Error),   // network failure or non-2xx status
     Io(std::io::Error),     // write to disk failed

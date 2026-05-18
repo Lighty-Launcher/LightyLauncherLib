@@ -15,7 +15,7 @@ manifest).
 
 ## Use it
 
-```rust,no_run
+```rust
 use lighty_core::AppState;
 use lighty_loaders::{Loader, LoaderExtensions};
 use lighty_version::VersionBuilder;
@@ -38,7 +38,7 @@ matters.
 
 ## Queries
 
-```rust,ignore
+```rust
 pub enum VanillaQuery {
     VanillaBuilder,   // full metadata
     Libraries,        // just libraries

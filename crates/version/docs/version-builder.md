@@ -26,7 +26,7 @@ For the broader launch story (auth + Java + install + spawn) see
 
 ## Constructor
 
-```rust,no_run
+```rust
 use lighty_core::AppState;
 use lighty_loaders::types::Loader;
 use lighty_version::VersionBuilder;
@@ -59,7 +59,7 @@ Panics if [`AppState::init`](../../core/docs/app_state.md) wasn't called.
 `with_mod()` returns a `ModSourcesBuilder<L>`. Methods are gated on
 the `modrinth` / `curseforge` features.
 
-```rust,no_run
+```rust
 # use lighty_core::AppState;
 # use lighty_loaders::types::Loader;
 # use lighty_version::VersionBuilder;
@@ -98,7 +98,7 @@ available — `get_metadata`, `get_libraries`, `get_assets`, etc. See
 
 ## Typical launch
 
-```rust,no_run
+```rust
 use lighty_core::AppState;
 use lighty_loaders::types::Loader;
 use lighty_version::VersionBuilder;

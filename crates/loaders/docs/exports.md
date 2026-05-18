@@ -4,7 +4,7 @@ Public surface of `lighty-loaders`.
 
 ## Root re-exports
 
-```rust,ignore
+```rust
 pub use lighty_loaders::{
     // Types
     Loader, LoaderExtensions, VersionInfo, version_metadata,
@@ -25,7 +25,7 @@ pub use lighty_loaders::{
 
 ## `types`
 
-```rust,ignore
+```rust
 // Re-exported flat
 pub use lighty_loaders::types::{Loader, LoaderExtensions, VersionInfo, version_metadata};
 
@@ -35,7 +35,7 @@ pub use lighty_loaders::types::{InstanceSize, version_metadata};
 
 ### `Loader` enum
 
-```rust,ignore
+```rust
 pub enum Loader {
     Fabric,
     NeoForge,
@@ -51,7 +51,7 @@ pub enum Loader {
 
 Re-exported types (see `crates/loaders/src/types/version/version_metadata/`):
 
-```rust,ignore
+```rust
 pub use lighty_loaders::version_metadata::{
     Version, VersionMetaData,
     Library, Arguments, JavaVersion, AssetIndex, Downloads,
@@ -74,7 +74,7 @@ Each loader module exposes:
 
 Forge also exposes installer helpers:
 
-```rust,ignore
+```rust
 pub use lighty_loaders::forge::forge::{
     FORGE,
     ForgeQuery, ForgeRawData,
@@ -88,13 +88,13 @@ pub use lighty_loaders::forge::forge_legacy::{
 
 ## `utils`
 
-```rust,ignore
+```rust
 pub use lighty_loaders::utils::{cache, manifest, query};
 ```
 
 ### `utils::query`
 
-```rust,ignore
+```rust
 pub trait Query { /* see query.md */ }
 pub struct QueryKey<Q> { pub version: String, pub query: Q }
 pub type Result<T> = std::result::Result<T, lighty_core::QueryError>;
@@ -102,7 +102,7 @@ pub type Result<T> = std::result::Result<T, lighty_core::QueryError>;
 
 ### `utils::manifest`
 
-```rust,ignore
+```rust
 pub struct ManifestRepository<F: Query> { /* private */ }
 
 impl<F: Query> ManifestRepository<F> {
@@ -114,7 +114,7 @@ impl<F: Query> ManifestRepository<F> {
 
 ### `utils::cache`
 
-```rust,ignore
+```rust
 pub struct Cache<K, V> { /* private */ }
 
 impl<K, V> Cache<K, V> where K: Eq + Hash + Clone + Send + Sync + 'static,

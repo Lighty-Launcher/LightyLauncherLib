@@ -46,7 +46,7 @@ blanket-implemented for any `T: VersionInfo<LoaderType = Loader> + WithMods`.
 All four mod-like buckets share a single helper at
 `crates/launch/src/installer/ressources/asset_partition.rs`:
 
-```rust,ignore
+```rust
 pub(super) async fn collect<V: VersionInfo>(
     version: &V,
     mods: &[Mods],
@@ -133,7 +133,7 @@ JAR, assets and natives. The mod-like total is a single pre-summed
 `mod_like_bytes: u64` returned by the four bucket collectors —
 avoiding an O(N·M) re-scan of the `Mods` slice:
 
-```rust,ignore
+```rust
 let mod_like = mod_bytes
              + resourcepack_bytes
              + shaderpack_bytes
@@ -177,7 +177,7 @@ on the `ArgumentsBuilder` (relative override resolves under
 
 ## Standalone install
 
-```rust,no_run
+```rust
 # use lighty_core::AppState;
 # use lighty_launch::errors::InstallerResult;
 # use lighty_loaders::types::Loader;
@@ -197,7 +197,7 @@ if let VersionMetaData::Version(v) = metadata.as_ref() {
 
 ## Errors
 
-```rust,ignore
+```rust
 pub enum InstallerError {
     DownloadFailed(String),
     VerificationFailed(String),

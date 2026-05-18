@@ -7,7 +7,7 @@ patterns end-to-end.
 
 ## Add a few mods to an instance
 
-```rust,no_run
+```rust
 use lighty_core::AppState;
 use lighty_loaders::Loader;
 use lighty_version::VersionBuilder;
@@ -40,7 +40,7 @@ Per-source detail: [`mods.md`](./mods.md).
 
 ## Add a modpack
 
-```rust,no_run
+```rust
 use lighty_core::AppState;
 use lighty_loaders::Loader;
 use lighty_version::VersionBuilder;
@@ -68,7 +68,7 @@ override conflict policy in [`modpacks.md`](./modpacks.md).
 
 CurseForge requires an API key. Set it once before any launch:
 
-```rust,no_run
+```rust
 use std::env;
 
 # fn run() -> anyhow::Result<()> {
@@ -83,7 +83,7 @@ Get a key at <https://console.curseforge.com/?#/api-keys>.
 With the `events` feature on, the resolver and the launch-side
 modpack pipeline emit `ModloaderEvent`:
 
-```rust,no_run
+```rust
 use lighty_event::{Event, EventBus, ModloaderEvent};
 
 let bus = EventBus::new(1000);
@@ -122,7 +122,7 @@ specific by design (it filters by `(mc, loader)`).
 
 ## Errors at a glance
 
-```rust,ignore
+```rust
 QueryError::ModNotFound { provider, id }
 QueryError::ModIncompatible { provider, id, mc, loader }
 QueryError::ModDistributionForbidden { id }                // CurseForge download_url=null

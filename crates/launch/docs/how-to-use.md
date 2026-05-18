@@ -3,7 +3,7 @@
 The minimal flow is four steps: init `AppState`, build an instance,
 authenticate, call `.launch().run()`.
 
-```rust,no_run
+```rust
 use lighty_auth::{offline::OfflineAuth, Authenticator};
 use lighty_core::AppState;
 use lighty_java::JavaDistribution;
@@ -49,7 +49,7 @@ for `OfflineAuth` / `MicrosoftAuth` / `AzuriomAuth` see
 exposing two sub-builders. The full placeholder list and option
 catalogue live in [arguments.md](./arguments.md); the common knobs:
 
-```rust,no_run
+```rust
 # use lighty_auth::UserProfile;
 # use lighty_core::AppState;
 # use lighty_java::JavaDistribution;
@@ -91,7 +91,7 @@ Enable the `events` feature and pass an `EventBus` via
 buckets) — full catalogue and example listener in
 [events.md](./events.md).
 
-```rust,no_run
+```rust
 # #[cfg(feature = "events")]
 # {
 use lighty_event::{Event, EventBus, LaunchEvent};
@@ -130,7 +130,7 @@ instance.launch(&profile, JavaDistribution::Temurin)
 `InstanceControl` is auto-implemented for every `VersionInfo`. **You
 must import the trait** to use its methods:
 
-```rust,no_run
+```rust
 # use lighty_auth::UserProfile;
 # use lighty_core::AppState;
 # use lighty_java::JavaDistribution;
@@ -165,7 +165,7 @@ exposed by `instance.size_of_instance(&version)` — see
 `Installer` is also a standalone trait. The runner calls it for you,
 but you can drive it directly for "download now, play later" flows:
 
-```rust,no_run
+```rust
 # use lighty_core::AppState;
 # use lighty_launch::errors::InstallerResult;
 # use lighty_loaders::types::version_metadata::VersionMetaData;
@@ -191,7 +191,7 @@ Two error types — `InstallerError` for everything install / launch
 pipeline related, `InstanceError` for manager-level operations
 (`close`, `delete`):
 
-```rust,no_run
+```rust
 use lighty_launch::errors::{InstallerError, InstanceError};
 # use lighty_auth::UserProfile;
 # use lighty_core::AppState;

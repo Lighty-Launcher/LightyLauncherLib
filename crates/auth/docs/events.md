@@ -21,7 +21,7 @@ token).
 
 ## Variants
 
-```rust,no_run
+```rust
 # use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event")]
@@ -94,7 +94,7 @@ AuthenticationFailed    { provider: "Azuriom", error }
 
 ## Listening
 
-```rust,no_run
+```rust
 # #[cfg(feature = "events")]
 # {
 use lighty_auth::{offline::OfflineAuth, Authenticator};

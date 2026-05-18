@@ -28,7 +28,7 @@ Differences vs. [`VersionBuilder`](./version-builder.md):
 
 ## Constructor
 
-```rust,no_run
+```rust
 use lighty_core::AppState;
 use lighty_version::LightyVersionBuilder;
 
@@ -58,7 +58,7 @@ There are no fluent setters for `loader` / `minecraft_version` /
 `with_mod()` returns a `LightyModSourcesBuilder`. The two methods are
 feature-gated.
 
-```rust,no_run
+```rust
 # use lighty_core::AppState;
 # use lighty_version::LightyVersionBuilder;
 # AppState::init("MyLauncher").unwrap();
@@ -91,7 +91,7 @@ for the rationale (loader/MC conflict).
 
 ## Typical launch
 
-```rust,no_run
+```rust
 use lighty_core::AppState;
 use lighty_version::LightyVersionBuilder;
 use lighty_auth::{microsoft::MicrosoftAuth, Authenticator};

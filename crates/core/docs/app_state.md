@@ -9,7 +9,7 @@ resulting OS paths. Other docs cross-link here.
 
 ## Initialise once
 
-```rust,no_run
+```rust
 use lighty_core::AppState;
 
 #[tokio::main]
@@ -46,7 +46,7 @@ directory is visible. Windows uses `APPDATA` for both `data` and
 
 ## API surface
 
-```rust,ignore
+```rust
 pub struct AppState;
 
 impl AppState {
@@ -96,7 +96,7 @@ has succeeded.
 
 ## Errors
 
-```rust,ignore
+```rust
 pub enum AppStateError {
     AlreadyInitialized,
     NotInitialized,

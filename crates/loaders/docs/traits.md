@@ -6,7 +6,7 @@ auto-implemented async fetch API on top of it.
 
 ## `VersionInfo`
 
-```rust,ignore
+```rust
 pub trait VersionInfo: Clone + Send + Sync {
     type LoaderType: Clone + Send + Sync + std::fmt::Debug;
 
@@ -45,7 +45,7 @@ instance opens its `instance/` sub-dir).
 
 ### Custom impl
 
-```rust,no_run
+```rust
 use lighty_loaders::{Loader, VersionInfo};
 use lighty_core::AppState;
 use std::path::Path;
@@ -72,7 +72,7 @@ impl below.
 
 Auto-implemented for any `V: VersionInfo<LoaderType = Loader>`.
 
-```rust,ignore
+```rust
 #[async_trait]
 pub trait LoaderExtensions {
     async fn get_metadata(&self)     -> QueryResult<Arc<VersionMetaData>>;   // full
@@ -107,7 +107,7 @@ Loaders not compiled in raise `QueryError::UnsupportedLoader`.
 
 ## Usage
 
-```rust,no_run
+```rust
 use lighty_core::AppState;
 use lighty_loaders::{Loader, LoaderExtensions};
 use lighty_version::VersionBuilder;

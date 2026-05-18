@@ -5,7 +5,7 @@
 
 ## API
 
-```rust,ignore
+```rust
 // With `events`
 pub async fn jre_download<F>(
     runtimes_folder: &Path,
@@ -96,7 +96,7 @@ before returning.
 
 ## Example
 
-```rust,no_run
+```rust
 use lighty_core::AppState;
 use lighty_java::{JavaDistribution, jre_downloader};
 
@@ -129,7 +129,7 @@ Pass `Some(&bus)` to receive the eight `JavaEvent` variants. See
 
 ## Errors
 
-```rust,ignore
+```rust
 pub enum JreError {
     NotFound { path: PathBuf },
     InvalidStructure,
