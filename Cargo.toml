@@ -12,7 +12,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "26.5.1"
+version = "26.5.2"
 edition = "2024"
 authors = ["Hamadi <dev.hamadipro@gmail.com>"]
 license = "MIT"
@@ -35,6 +35,9 @@ description = "A modern minecraft launcher library supporting multiple mod loade
 readme = "README.md"
 keywords = ["minecraft", "launcher", "fabric", "forge", "neoforge"]
 categories = ["command-line-utilities", "development-tools", "games", "api-bindings"]
+# Exclude the demo video — embedded in the README via GitHub
+# user-attachments URL, no need to ship it inside the crate.
+exclude = ["assets/exemple_launcher_with_lightylauncherlib.mp4"]
 
 [lib]
 name = "lighty_launcher"
@@ -46,14 +49,14 @@ path = "src/lib.rs"
 
 [workspace.dependencies]
 # Internal crates
-lighty-core = { version = "26.5.1", path = "crates/core" }
-lighty-auth = { version = "26.5.1", path = "crates/auth" }
-lighty-event = { version = "26.5.1", path = "crates/event" }
-lighty-java = { version = "26.5.1", path = "crates/java" }
-lighty-launch = { version = "26.5.1", path = "crates/launch" }
-lighty-loaders = { version = "26.5.1", path = "crates/loaders" }
-lighty-modsloader = { version = "26.5.1", path = "crates/modsloader" }
-lighty-version = { version = "26.5.1", path = "crates/version" }
+lighty-core = { version = "26.5.2", path = "crates/core" }
+lighty-auth = { version = "26.5.2", path = "crates/auth" }
+lighty-event = { version = "26.5.2", path = "crates/event" }
+lighty-java = { version = "26.5.2", path = "crates/java" }
+lighty-launch = { version = "26.5.2", path = "crates/launch" }
+lighty-loaders = { version = "26.5.2", path = "crates/loaders" }
+lighty-modsloader = { version = "26.5.2", path = "crates/modsloader" }
+lighty-version = { version = "26.5.2", path = "crates/version" }
 
 # ---- Async Runtime ----
 tokio = { version = "1.52", features = [
