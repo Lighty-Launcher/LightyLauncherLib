@@ -1,53 +1,109 @@
-# Arguments System
+# Arguments
 
-## Overview
+The argument system builds the final argv (`[JVM args] + [main class]
++ [game args] + [raw args]`) from a resolved `Version` plus per-launch
+overrides. This page is the canonical reference for placeholders, JVM
+options and game options — other launch docs cross-ref here.
 
-The arguments system builds the complete command-line arguments for launching Minecraft. It handles JVM arguments, game arguments, and variable substitution.
+## The `Arguments` trait
 
-## Placeholders (Variable Substitution)
+```rust,ignore
+pub trait Arguments {
+    fn build_arguments(
+        &self,
+        builder: &Version,
+        profile: Option<&UserProfile>,
+        arg_overrides:  &HashMap<String, String>,
+        arg_removals:   &HashSet<String>,
+        jvm_overrides:  &HashMap<String, String>,
+        jvm_removals:   &HashSet<String>,
+        raw_args:       &[String],
+    ) -> Vec<String>;
+}
+```
 
-The launch system uses placeholders that are replaced with actual values at launch time.
+Blanket-implemented for every `VersionInfo` — you almost never call
+it directly; `LaunchBuilder::run` does. `profile = None` keeps the
+hardcoded defaults (`access_token = "0"`, `user_type = "legacy"`),
+useful for dry-run inspection.
 
-### Authentication Placeholders
+## Standard placeholders
 
-| Placeholder | Description | Example Value |
-|-------------|-------------|---------------|
+The loader metadata uses `${name}` placeholders that the builder
+substitutes from a variable map. The full set:
+
+### Authentication
+
+| Placeholder | Description | Example |
+|---|---|---|
 | `${auth_player_name}` | Player username | `"Player123"` |
 | `${auth_uuid}` | Player UUID | `"550e8400-e29b-41d4-a716-446655440000"` |
-| `${auth_access_token}` | Access token | `"eyJhbGc..."` or `"0"` (offline) |
-| `${auth_xuid}` | Xbox User ID | `"2535405290..."` or `"0"` |
+| `${auth_access_token}` | Access token | `"eyJhbGc…"` or `"0"` offline |
+| `${auth_xuid}` | Xbox User ID | `"2535405290…"` or `"0"` |
 | `${clientid}` | Client ID | `"{client-id}"` |
-| `${user_type}` | User type | `"legacy"` or `"msa"` |
+| `${user_type}` | User type | `"msa"`, `"mojang"` or `"legacy"` |
 | `${user_properties}` | User properties JSON | `"{}"` |
 
-### Directory Placeholders
+`${user_type}` is derived from `profile.provider`:
+`Microsoft → "msa"`, `Azuriom → "mojang"`,
+`Offline / Custom → "legacy"`.
 
-| Placeholder | Description | Example Path |
-|-------------|-------------|--------------|
-| `${game_directory}` | Game instance directory | `/home/user/.local/share/MyLauncher/instance` |
-| `${assets_root}` | Assets root directory | `/home/user/.local/share/MyLauncher/assets` |
-| `${natives_directory}` | Native libraries directory | `/tmp/natives-xxxxx` |
-| `${library_directory}` | Libraries directory | `/home/user/.local/share/MyLauncher/libraries` |
-| `${classpath}` | Java classpath | `/path/lib1.jar:/path/lib2.jar:...` |
-| `${classpath_separator}` | Platform separator | `:` (Linux/macOS) or `;` (Windows) |
+### Directories
 
-### Version Placeholders
+| Placeholder | Description |
+|---|---|
+| `${game_directory}` | Per-instance runtime dir (honours `KEY_GAME_DIRECTORY` override) |
+| `${assets_root}` | Shared assets dir |
+| `${natives_directory}` | Extracted natives, temp dir per launch |
+| `${library_directory}` | Shared libraries dir |
+| `${classpath}` | Java classpath |
+| `${classpath_separator}` | `:` (Linux / macOS) or `;` (Windows) |
 
-| Placeholder | Description | Example Value |
-|-------------|-------------|---------------|
-| `${version_name}` | Minecraft version | `"1.21.1"` |
-| `${version_type}` | Version type | `"release"` or `"snapshot"` |
-| `${assets_index_name}` | Asset index ID | `"16"` |
-| `${launcher_name}` | Launcher name | `"MyLauncher"` |
-| `${launcher_version}` | Launcher version | `"26.5.1"` |
+### Version / launcher
 
-## JVM Arguments
+| Placeholder | Description |
+|---|---|
+| `${version_name}` | Minecraft version |
+| `${version_type}` | `"release"`, `"snapshot"`, … |
+| `${assets_index_name}` | Asset index ID |
+| `${launcher_name}` | Launcher name (defaults to `AppState::name()`) |
+| `${launcher_version}` | Launcher version |
 
-### Default JVM Arguments
+## Placeholder key constants
 
-When no JVM arguments are specified in version metadata, these defaults are used:
+Every placeholder has a typed constant in `lighty_launch::arguments`
+to avoid stringly-typed code:
 
+```rust,no_run
+use lighty_launch::arguments::{
+    KEY_AUTH_PLAYER_NAME, KEY_AUTH_UUID, KEY_AUTH_ACCESS_TOKEN, KEY_AUTH_XUID,
+    KEY_CLIENT_ID, KEY_USER_TYPE, KEY_USER_PROPERTIES,
+    KEY_VERSION_NAME, KEY_VERSION_TYPE, KEY_ASSETS_INDEX_NAME,
+    KEY_GAME_DIRECTORY, KEY_ASSETS_ROOT, KEY_NATIVES_DIRECTORY, KEY_LIBRARY_DIRECTORY,
+    KEY_LAUNCHER_NAME, KEY_LAUNCHER_VERSION,
+    KEY_CLASSPATH, KEY_CLASSPATH_SEPARATOR,
+};
 ```
+
+`.set(KEY_LAUNCHER_NAME, "MyApp")` overrides the placeholder value.
+Anything else is appended as a `--key value` (or `--flag` for empty
+value) game argument.
+
+## JVM options
+
+`with_jvm_options()` returns a builder where `.set(key, value)` writes
+to a `HashMap<String, String>`. The `-` prefix is added automatically
+based on the key shape:
+
+| Input | Becomes |
+|---|---|
+| `set("Xmx", "4G")` | `-Xmx4G` |
+| `set("XX:+UseG1GC", "")` | `-XX:+UseG1GC` |
+| `set("Djava.library.path", "/p")` | `-Djava.library.path=/p` |
+
+The defaults (used when the loader metadata supplies no JVM section):
+
+```text
 -Djava.library.path=${natives_directory}
 -Dminecraft.launcher.brand=${launcher_name}
 -Dminecraft.launcher.version=${launcher_version}
@@ -61,363 +117,133 @@ When no JVM arguments are specified in version metadata, these defaults are used
 -cp ${classpath}
 ```
 
-### Custom JVM Arguments
+A handful of JVM args are **always present** even if the loader
+metadata omits them — the builder injects them at the top of the
+list:
 
-You can customize JVM arguments using the `with_jvm_options()` builder:
+- `-Djava.library.path=${natives_directory}` (LWJGL natives)
+- `-Dminecraft.launcher.brand=${launcher_name}`
+- `-Dminecraft.launcher.version=${launcher_version}`
+- `-XstartOnFirstThread` on macOS (LWJGL / GLFW requirement)
+- `-cp ${classpath}` — always the last JVM arg before the main class
 
-```rust
-use lighty_launch::InstanceControl;
+Common knobs:
 
-instance.launch(&profile, JavaDistribution::Temurin)
-    .with_jvm_options()
-        .set("Xmx", "4G")                          // Maximum heap
-        .set("Xms", "2G")                          // Initial heap
-        .set("XX:+UseG1GC", "")                    // G1 garbage collector
-        .set("XX:MaxGCPauseMillis", "50")          // Max GC pause
-        .set("Dfile.encoding", "UTF-8")            // File encoding
-        .done()
-    .run()
-    .await?;
-```
-
-**Common JVM Options**:
-
-| Option | Description | Example |
-|--------|-------------|---------|
-| `-Xmx` | Maximum heap size | `"4G"`, `"8G"` |
-| `-Xms` | Initial heap size | `"2G"`, `"4G"` |
-| `-XX:+UseG1GC` | Use G1 garbage collector | `""` |
-| `-XX:+UseZGC` | Use Z garbage collector (Java 15+) | `""` |
-| `-XX:MaxGCPauseMillis` | Target max GC pause time (ms) | `"50"`, `"100"` |
-| `-XX:G1HeapRegionSize` | G1 heap region size | `"32M"`, `"16M"` |
+| Option | Purpose | Example |
+|---|---|---|
+| `-Xmx` | Max heap | `"4G"`, `"8G"` |
+| `-Xms` | Initial heap | `"2G"` |
+| `-XX:+UseG1GC` / `-XX:+UseZGC` | GC choice | `""` |
+| `-XX:MaxGCPauseMillis` | GC pause target (ms) | `"50"` |
+| `-XX:G1HeapRegionSize` | G1 region size | `"32M"` |
 | `-Dfile.encoding` | File encoding | `"UTF-8"` |
 | `-Djava.net.preferIPv4Stack` | Prefer IPv4 | `"true"` |
 
-### Critical JVM Arguments (Always Present)
+## Game options
 
-These arguments are automatically added if not present:
+`with_arguments()` exposes the same `.set` / `.remove` shape but for
+game args. Two cases:
 
-1. **`-Djava.library.path=${natives_directory}`**
-   - Required for LWJGL native libraries
-   - Automatically set to temporary natives directory
+1. **Known launch placeholder constant** (`KEY_LAUNCHER_NAME`, etc.)
+   — substitutes the variable in the existing argv.
+2. **Anything else** — appended as a fresh argument (`--key value`,
+   or `--key` for empty value).
 
-2. **`-Dminecraft.launcher.brand=${launcher_name}`**
-   - Identifies the launcher
-   - Set from AppState organization name
+Common knobs:
 
-3. **`-Dminecraft.launcher.version=${launcher_version}`**
-   - Launcher version
-   - Set from package version
+| Option | Purpose |
+|---|---|
+| `--width`, `--height` | Window size |
+| `--fullscreen` | Fullscreen mode |
+| `--quickPlayPath` | Quick play server file |
+| `--quickPlaySingleplayer` | Quick play world |
+| `--quickPlayMultiplayer` | Quick play server |
+| `--quickPlayRealms` | Quick play realm |
+| `--demo` | Demo mode |
+| `--server` / `--port` | Auto-connect server / port |
 
-4. **`-cp ${classpath}`**
-   - Java classpath with all libraries
-   - Must be the last JVM argument before main class
+## Access-token routing
 
-## Game Arguments
+The `--accessToken` value is the most sensitive piece of data the
+launch pipeline touches, so the resolution is narrow. At
+`crates/launch/src/arguments/arguments.rs` the variable-map builder
+does:
 
-### Standard Game Arguments
+1. If `profile.token_handle` is `Some` **and** the `keyring` feature
+   is active on `lighty-launch`, read the token from the OS keychain
+   via `TokenHandle::read()` — the token never sat in `UserProfile`
+   heap memory between authentication and launch.
+2. Otherwise, clone the in-memory `SecretString` stored in
+   `profile.access_token`.
+3. `ExposeSecret::expose_secret(&secret)` is called **exactly once**,
+   at the moment the value is inserted into the placeholder map. No
+   copy of the plaintext is kept past that call.
+4. When `profile = None` (offline / dry-run callers), the hardcoded
+   default `"0"` is used.
 
-Game arguments are provided by the version metadata:
-
-```
---username ${auth_player_name}
---version ${version_name}
---gameDir ${game_directory}
---assetsDir ${assets_root}
---assetIndex ${assets_index_name}
---uuid ${auth_uuid}
---accessToken ${auth_access_token}
---clientId ${clientid}
---xuid ${auth_xuid}
---userType ${user_type}
---versionType ${version_type}
-```
-
-### Custom Game Arguments
-
-You can add or override game arguments:
-
-```rust
-instance.launch(&profile, JavaDistribution::Temurin)
-    .with_game_options()
-        .set("width", "1920")
-        .set("height", "1080")
-        .set("fullscreen", "true")
-        .set("quickPlayPath", "servers.dat")
-        .done()
-    .run()
-    .await?;
+```toml
+[dependencies]
+lighty-launch = { version = "...", features = ["events", "keyring"] }
 ```
 
-**Common Game Options**:
+See `AUTH_SECRETS.md` at the workspace root for the full threat model.
 
-| Option | Description | Example |
-|--------|-------------|---------|
-| `--width` | Window width | `"1920"`, `"2560"` |
-| `--height` | Window height | `"1080"`, `"1440"` |
-| `--fullscreen` | Fullscreen mode | `"true"`, `"false"` |
-| `--quickPlayPath` | Quick play server file | `"servers.dat"` |
-| `--quickPlaySingleplayer` | Quick play world | `"New World"` |
-| `--quickPlayMultiplayer` | Quick play server | `"mc.hypixel.net"` |
-| `--quickPlayRealms` | Quick play realm | `"realm-name"` |
-| `--demo` | Demo mode | `"true"` |
-| `--server` | Auto-connect server | `"play.example.com"` |
-| `--port` | Server port | `"25565"` |
+## Final assembly example
 
-## Complete Argument Flow
-
-### 1. Variable Map Creation
-
-All placeholders are populated with actual values:
-
-```rust
-let mut variables = HashMap::new();
-variables.insert("auth_player_name", "Player123");
-variables.insert("auth_uuid", "550e8400-...");
-variables.insert("game_directory", "/home/user/.local/share/MyLauncher/instance");
-// ... etc
+```text
+java
+  -Djava.library.path=/tmp/natives-xxxxx
+  -Dminecraft.launcher.brand=MyLauncher
+  -Dminecraft.launcher.version=26.5.1
+  -Xmx4G -Xms2G -XX:+UseG1GC
+  -cp /path/lib1.jar:/path/lib2.jar:...
+  net.minecraft.client.main.Main
+  --username Player123
+  --version 1.21.1
+  --gameDir   /home/user/.local/share/MyLauncher/instance
+  --assetsDir /home/user/.local/share/MyLauncher/assets
+  --assetIndex 16
+  --uuid 550e8400-…
+  --accessToken 0
+  --width 1920 --height 1080
 ```
 
-### 2. Argument Overrides Applied
+## Putting it together
 
-Custom options override default variables:
+```rust,no_run
+# use lighty_auth::UserProfile;
+# use lighty_core::AppState;
+# use lighty_java::JavaDistribution;
+# use lighty_launch::errors::InstallerResult;
+# use lighty_launch::launch::Launch;
+# use lighty_loaders::types::Loader;
+# use lighty_version::VersionBuilder;
+use lighty_launch::arguments::KEY_LAUNCHER_NAME;
+# async fn run() -> InstallerResult<()> {
+# AppState::init("MyLauncher").ok();
+# let profile = UserProfile::offline("Player", "");
+# let mut instance = VersionBuilder::new("inst", Loader::Fabric, "0.16.9", "1.21.1");
 
-```rust
-// User sets custom resolution
-with_game_options()
-    .set("width", "1920")
-    .set("height", "1080")
-
-// Overrides applied to variables map
-variables.insert("width", "1920");
-variables.insert("height", "1080");
-```
-
-### 3. Variable Substitution
-
-Placeholders in arguments are replaced:
-
-```
-Before: --username ${auth_player_name}
-After:  --username Player123
-
-Before: --gameDir ${game_directory}
-After:  --gameDir /home/user/.local/share/MyLauncher/instance
-```
-
-### 4. JVM Arguments Processing
-
-```rust
-// 1. Start with version metadata JVM args (or defaults)
-let mut jvm_args = builder.arguments.jvm;
-
-// 2. Apply custom JVM options
-with_jvm_options().set("Xmx", "4G") // → -Xmx4G
-
-// 3. Ensure critical args are present
-if !has("-Djava.library.path=") {
-    jvm_args.insert(0, "-Djava.library.path=/tmp/natives-xxxxx");
-}
-
-// 4. Add classpath (must be last)
-jvm_args.push("-cp");
-jvm_args.push("/path/lib1.jar:/path/lib2.jar:...");
-```
-
-### 5. Final Command Assembly
-
-```
-[JVM args] + [Main class] + [Game args] + [Raw args]
-```
-
-**Example**:
-```bash
-java \
-  -Djava.library.path=/tmp/natives-xxxxx \
-  -Dminecraft.launcher.brand=MyLauncher \
-  -Dminecraft.launcher.version=26.5.1 \
-  -Xmx4G \
-  -Xms2G \
-  -XX:+UseG1GC \
-  -cp /path/lib1.jar:/path/lib2.jar:... \
-  net.minecraft.client.main.Main \
-  --username Player123 \
-  --version 1.21.1 \
-  --gameDir /home/user/.local/share/MyLauncher/instance \
-  --assetsDir /home/user/.local/share/MyLauncher/assets \
-  --assetIndex 16 \
-  --uuid 550e8400-e29b-41d4-a716-446655440000 \
-  --accessToken 0 \
-  --width 1920 \
-  --height 1080
-```
-
-## Argument Removal
-
-You can remove specific arguments:
-
-```rust
 instance.launch(&profile, JavaDistribution::Temurin)
     .with_jvm_options()
-        .remove("XX:+UnlockExperimentalVMOptions")  // Remove this JVM arg
+        .set("Xmx", "6G")
+        .set("XX:+UseG1GC", "")
+        .set("XX:+AlwaysPreTouch", "")
+        .set("Dfile.encoding", "UTF-8")
         .done()
-    .with_game_options()
-        .remove("demo")  // Remove demo mode arg
-        .done()
-    .run()
-    .await?;
-```
-
-## Platform-Specific Arguments
-
-### Classpath Separator
-
-Automatically set based on platform:
-- **Windows**: `;` (semicolon)
-- **Linux/macOS**: `:` (colon)
-
-### Natives Directory
-
-Platform-specific native libraries:
-- **Windows**: `lwjgl-3.3.3-natives-windows.jar`
-- **Linux**: `lwjgl-3.3.3-natives-linux.jar`
-- **macOS**: `lwjgl-3.3.3-natives-macos.jar`
-
-## Argument Constants
-
-Available in `lighty_launch::arguments`:
-
-```rust
-use lighty_launch::arguments::{
-    // Authentication
-    KEY_AUTH_PLAYER_NAME,
-    KEY_AUTH_UUID,
-    KEY_AUTH_ACCESS_TOKEN,
-    KEY_AUTH_XUID,
-    KEY_CLIENT_ID,
-    KEY_USER_TYPE,
-    KEY_USER_PROPERTIES,
-
-    // Version
-    KEY_VERSION_NAME,
-    KEY_VERSION_TYPE,
-
-    // Directories
-    KEY_GAME_DIRECTORY,
-    KEY_ASSETS_ROOT,
-    KEY_NATIVES_DIRECTORY,
-    KEY_LIBRARY_DIRECTORY,
-    KEY_ASSETS_INDEX_NAME,
-
-    // Launcher
-    KEY_LAUNCHER_NAME,
-    KEY_LAUNCHER_VERSION,
-
-    // Classpath
-    KEY_CLASSPATH,
-    KEY_CLASSPATH_SEPARATOR,
-};
-```
-
-### Constant to Placeholder Mapping
-
-| Constant | Placeholder | Value |
-|----------|-------------|-------|
-| `KEY_AUTH_PLAYER_NAME` | `${auth_player_name}` | `"auth_player_name"` |
-| `KEY_AUTH_UUID` | `${auth_uuid}` | `"auth_uuid"` |
-| `KEY_AUTH_ACCESS_TOKEN` | `${auth_access_token}` | `"auth_access_token"` |
-| `KEY_AUTH_XUID` | `${auth_xuid}` | `"auth_xuid"` |
-| `KEY_CLIENT_ID` | `${clientid}` | `"clientid"` |
-| `KEY_USER_TYPE` | `${user_type}` | `"user_type"` |
-| `KEY_USER_PROPERTIES` | `${user_properties}` | `"user_properties"` |
-| `KEY_VERSION_NAME` | `${version_name}` | `"version_name"` |
-| `KEY_VERSION_TYPE` | `${version_type}` | `"version_type"` |
-| `KEY_GAME_DIRECTORY` | `${game_directory}` | `"game_directory"` |
-| `KEY_ASSETS_ROOT` | `${assets_root}` | `"assets_root"` |
-| `KEY_NATIVES_DIRECTORY` | `${natives_directory}` | `"natives_directory"` |
-| `KEY_LIBRARY_DIRECTORY` | `${library_directory}` | `"library_directory"` |
-| `KEY_ASSETS_INDEX_NAME` | `${assets_index_name}` | `"assets_index_name"` |
-| `KEY_LAUNCHER_NAME` | `${launcher_name}` | `"launcher_name"` |
-| `KEY_LAUNCHER_VERSION` | `${launcher_version}` | `"launcher_version"` |
-| `KEY_CLASSPATH` | `${classpath}` | `"classpath"` |
-| `KEY_CLASSPATH_SEPARATOR` | `${classpath_separator}` | `"classpath_separator"` |
-
-**Usage example**:
-
-```rust
-use lighty_launch::arguments::{KEY_LAUNCHER_NAME, KEY_WIDTH, KEY_HEIGHT};
-
-instance.launch(&profile, JavaDistribution::Temurin)
     .with_arguments()
-        .set(KEY_LAUNCHER_NAME, "MyCustomLauncher")  // Override ${launcher_name}
-        .set("width", "1920")                        // Adds --width 1920
-        .set("height", "1080")                       // Adds --height 1080
+        .set(KEY_LAUNCHER_NAME, "MyCustomLauncher")
+        .set("width",  "1920")
+        .set("height", "1080")
         .done()
     .run()
     .await?;
+# Ok(()) }
 ```
 
-## Complete Example
+## Related
 
-```rust
-use lighty_core::AppState;
-use lighty_launcher::prelude::*;
-use lighty_java::JavaDistribution;
-use lighty_launch::InstanceControl;
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    AppState::init("MyLauncher")?;
-
-    let mut instance = VersionBuilder::new(
-        "optimized-1.21",
-        Loader::Fabric,
-        "0.16.9",
-        "1.21.1",
-    );
-
-    let mut auth = OfflineAuth::new("Player123");
-
-    #[cfg(not(feature = "events"))]
-    let profile = auth.authenticate().await?;
-
-    // Launch with custom arguments
-    instance.launch(&profile, JavaDistribution::Temurin)
-        .with_jvm_options()
-            // Memory settings
-            .set("Xmx", "6G")
-            .set("Xms", "2G")
-
-            // Garbage collection
-            .set("XX:+UseG1GC", "")
-            .set("XX:MaxGCPauseMillis", "50")
-            .set("XX:G1HeapRegionSize", "32M")
-
-            // Performance
-            .set("XX:+UnlockExperimentalVMOptions", "")
-            .set("XX:+AlwaysPreTouch", "")
-
-            // System properties
-            .set("Dfile.encoding", "UTF-8")
-            .set("Djava.net.preferIPv4Stack", "true")
-            .done()
-        .with_game_options()
-            // Window settings
-            .set("width", "1920")
-            .set("height", "1080")
-            .set("fullscreen", "false")
-            .done()
-        .run()
-        .await?;
-
-    println!("Game launched!");
-
-    Ok(())
-}
-```
-
-## Related Documentation
-
-- [How to Use](./how-to-use.md) - Practical examples
-- [Launch Process](./launch.md) - Complete launch workflow
-- [Instance Control](./instance-control.md) - Process management
+- [How to use](./how-to-use.md) — short usage snippets
+- [Launch](./launch.md) — pipeline detail, builder API
+- [Installation](./installation.md) — what gets built into the classpath
+- [Exports](./exports.md)

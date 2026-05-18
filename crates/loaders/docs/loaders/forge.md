@@ -1,150 +1,135 @@
-# Forge Loader
+# Forge
 
-Traditional mod loader with extensive mod support and long history.
+The original Minecraft mod loader. The `forge` feature flag covers
+**both legacy (1.5.2 → 1.12.2) and modern (≥ 1.13) Forge** — the
+loader detects which install schema to use by reading the installer's
+`install_profile.json`. No separate `forge_legacy` feature exists.
 
-## Overview
+| Field | Value |
+|---|---|
+| Status | stable |
+| MC versions | 1.5.2 → latest |
+| Feature flag | `forge` |
+| Provider | MinecraftForge Maven |
+| Module | `lighty_loaders::forge` |
+| Repository singleton | `forge::FORGE` |
 
-**Status**: Stable
-**MC Versions**: 1.5.2+ (legacy 1.5.2 → 1.12.2 and modern 1.13+ both supported)
-**Feature Flag**: `forge` (single flag — the dispatcher picks legacy vs modern from the installer schema)
-**API**: MinecraftForge Maven
+## Use it
 
-Forge is the original and most widely used Minecraft mod loader with the largest mod ecosystem.
+### Modern (≥ 1.13)
 
-## Current Status
-
-Both legacy (1.5.2 → 1.12.2) and modern (≥ 1.13) installer schemas are
-fully implemented and ship in the same `forge` feature flag — the
-loader detects the right pipeline by reading the installer's
-`install_profile.json`. Microsoft auth (`UserProfile.provider =
-AuthProvider::Microsoft { .. }`) plus the launch placeholders
-(`${auth_xuid}`, `${clientid}`, `${user_type} = "msa"`) all land in the
-JVM args automatically through `build_arguments()`.
-
-## Usage
-
-### Modern Forge (≥ 1.13)
-
-```rust
-use lighty_launcher::prelude::*;
+```rust,no_run
+use lighty_core::AppState;
+use lighty_loaders::Loader;
+use lighty_version::VersionBuilder;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    AppState::init("MyLauncher")?;
+    AppState::init("LightyLauncher")?;
 
-    let mut auth = OfflineAuth::new("Player");
-    let profile = auth.authenticate(None).await?;
-
-    // VersionBuilder::new(name, Loader::Forge, loader_version, mc_version)
-    let mut forge = VersionBuilder::new(
-        "forge-1.21.8",
-        Loader::Forge,
-        "58.1.0",   // Forge version (without the MC prefix)
-        "1.21.8",   // Minecraft version
-    );
-
-    forge
-        .launch(&profile, JavaDistribution::Temurin)
-        .run()
-        .await?;
+    let v = VersionBuilder::new("forge-1.21.8", Loader::Forge, "58.1.0", "1.21.8");
+    // hand `v` to lighty-launch — installer downloads + runs processors automatically
+    let _ = v;
     Ok(())
 }
 ```
 
-### Legacy Forge (1.5.2 → 1.12.2)
+### Legacy (1.5.2 → 1.12.2)
 
-Same `forge` feature flag, same API — only the loader version differs:
+Same builder shape — only the loader version differs:
 
-```rust
-let mut forge = VersionBuilder::new(
-    "forge-1.12.2",
-    Loader::Forge,
-    "14.23.5.2860",   // Legacy loader version
-    "1.12.2",
-);
+```rust,no_run
+use lighty_loaders::Loader;
+use lighty_version::VersionBuilder;
+
+let v = VersionBuilder::new("forge-1.12.2", Loader::Forge, "14.23.5.2860", "1.12.2");
+let _ = v;
 ```
 
-The runtime dispatches to the legacy `forge_legacy` pipeline (no
-processors, embedded `versionInfo`, universal JAR extracted from the
-installer) when it sees the legacy `install_profile.json` schema.
+`Query::extract` reads the installer's `install_profile.json` and
+dispatches to the legacy pipeline (no processors, embedded
+`versionInfo`, universal JAR extracted from the installer) when it
+recognises the old schema.
 
-## Exports
+## Microsoft auth + placeholders
 
-**In lighty_loaders**: `lighty_loaders::loaders::forge`
-**In lighty_launcher**: `lighty_launcher::loaders::forge`
+Microsoft auth (`UserProfile.provider = AuthProvider::Microsoft { .. }`)
+plus the launch placeholders `${auth_xuid}`, `${clientid}` and
+`${user_type} = "msa"` are wired through `UserProfile` exactly like
+on the other loaders — nothing Forge-specific to do.
 
-## API Endpoints
+## API endpoints
 
-### Promotions (recommended / latest)
 ```
 GET https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json
-```
-
-### Per-MC index
-```
 GET https://files.minecraftforge.net/net/minecraftforge/forge/index_{mc}.html
-```
-
-### Installer
-```
 GET https://maven.minecraftforge.net/net/minecraftforge/forge/{mc}-{loader}/forge-{mc}-{loader}-installer.jar
 ```
 
-## Version Format
+Maven coordinates are always `{mc}-{loader}` (e.g. `1.21.8-58.1.0`,
+`1.12.2-14.23.5.2860`).
 
-The maven coordinates for the installer are always `{mc}-{loader}`:
+## Install pipeline
 
-| Era | Example coordinate |
-|-----|--------------------|
-| Modern (≥ 1.13) | `1.21.8-58.1.0` |
-| Legacy (1.5.2 → 1.12.2) | `1.12.2-14.23.5.2860` |
+Modern:
 
-## Installation Process
+1. Download the installer JAR (cached under `<instance>/.forge/`).
+2. Read `install_profile.json` + `version.json` from the JAR.
+3. Merge vanilla + Forge libraries, deduplicating by
+   `group:artifact[:classifier]` (the `:classifier` part is required —
+   `forge:universal` and `forge:client` must both stay on the
+   classpath).
+4. Download all libraries in parallel.
+5. Run the client-side processors from `install_profile.json`
+   (typically `binarypatcher`). Server-side processors are filtered
+   out.
+6. Build launch args with `UserProfile`-derived placeholders.
 
-### Modern (≥ 1.13)
+Legacy:
 
-1. Download installer JAR (cached under `<instance>/.forge/`)
-2. Read `install_profile.json` and `version.json` directly from the JAR
-3. Merge vanilla `version.json` + Forge `version.json` libraries
-   (dedup by `group:artifact[:classifier]` — the classifier is required
-   to keep `forge:universal` and `forge:client` side-by-side, both must
-   be on the classpath or FML crashes with *"Failed to find system mod:
-   forge"*)
-4. Download all libraries in parallel (vanilla + Forge)
-5. Run client-side processors from `install_profile.json` (typically
-   `binarypatcher` for the patched client JAR; server-side processors
-   are filtered out)
-6. Build launch args from `Arguments` (game + jvm) with the
-   `UserProfile`-derived placeholders
+1. Download the installer (ZIP for the oldest, JAR otherwise).
+2. Parse the legacy `install_profile.json` schema.
+3. Extract the universal JAR to the libraries tree.
+4. No processors — the universal JAR ships ready to run.
 
-### Legacy (1.5.2 → 1.12.2)
+Step-by-step launch-side detail in
+[`../../../launch/docs/installation.md`](../../../launch/docs/installation.md).
 
-1. Download installer ZIP (older versions use `.zip` instead of `.jar`)
-2. Parse the embedded `install_profile.json` legacy schema
-3. Extract the universal JAR to the libraries tree
-4. No processors — the universal JAR ships ready to run
+## Public helpers
 
-## Mod Ecosystem
+```rust,ignore
+pub use lighty_loaders::forge::forge::{
+    FORGE, ForgeQuery, ForgeRawData,
+    extract_install_profile_libraries_modern,
+    build_installer_url,
+    installer_cache_path,
+};
+pub use lighty_loaders::forge::forge_legacy::{
+    is_legacy_forge,
+    legacy_installer_path,
+    InstallProfileKind,
+};
+```
 
-Forge has the **largest mod ecosystem** in Minecraft:
-- Thousands of mods available
-- CurseForge/Modrinth support (see [`mods`](../../mods/) docs and the
-  `examples/mods/` examples)
-- Long history (2011+)
+`is_legacy_forge(mc: &str) -> bool` is the runtime branch the
+dispatcher uses to pick the legacy vs modern path.
 
-## Comparison with Other Loaders
+## Events
 
-| Feature | Forge | NeoForge | Fabric |
-|---------|-------|----------|--------|
-| Mod count | Highest | Growing | High |
-| Performance | Good | Better | Best |
-| MC support | 1.5.2+ | 1.20.1+ | 1.14+ |
-| Complexity | High | Medium | Low |
-| Load time | Slower | Medium | Fast |
+Standard set — see [`../events.md`](../events.md).
 
-## Related Documentation
+## Mod ecosystem
 
-- [NeoForge](./neoforge.md) — Modern Forge fork
-- [Vanilla](./vanilla.md) — Base Minecraft
-- [How to Use](../how-to-use.md) — General usage
-- [`examples/forge.rs`](../../../../examples/forge.rs) — Runnable example
+Largest Minecraft mod ecosystem (2011+). Auto-pull mods through
+Modrinth / CurseForge — see
+[`../../../modsloader/docs/mods.md`](../../../modsloader/docs/mods.md).
+
+## See also
+
+- [`vanilla.md`](./vanilla.md) — base manifest source
+- [`neoforge.md`](./neoforge.md) — modern Forge fork
+- [`../../../launch/docs/installation.md`](../../../launch/docs/installation.md)
+  — installer pipeline detail (processors, classifier dedup)
+- [`../../../modsloader/docs/mods.md`](../../../modsloader/docs/mods.md)
+  — auto-pull mods
+- Runnable example: `examples/forge.rs`

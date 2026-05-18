@@ -1,75 +1,51 @@
 # LightyUpdater
 
-Custom loader system for modpack management with server-defined metadata.
+Custom-server loader for modpack-style distribution. The launcher
+fetches its `(libraries, args, base-loader)` payload from a URL you
+control, then merges it on top of a real base loader (Vanilla /
+Fabric / Quilt / NeoForge / Forge).
 
-## Overview
+| Field | Value |
+|---|---|
+| Status | stable |
+| MC versions | server-defined |
+| Feature flag | `lighty_updater` (pulls in `fabric`, `quilt`, `neoforge`, `forge` automatically) |
+| Provider | your server |
+| Module | `lighty_loaders::lighty_updater` |
+| Builder | `lighty_version::LightyVersionBuilder` |
 
-**Status**: Stable
-**MC Versions**: Any (server-defined)
-**Feature Flag**: `lighty_updater`
-**API**: Custom server (user-defined)
+## Use it
 
-LightyUpdater allows you to define custom version metadata on your own server, perfect for modpacks and custom distributions.
-
-## Usage
-
-### With LightyVersionBuilder
-
-```rust
-use lighty_launcher::prelude::*;
+```rust,no_run
+use lighty_core::AppState;
+use lighty_loaders::LoaderExtensions;
+use lighty_version::LightyVersionBuilder;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    AppState::init("MyLauncher")?;
+    AppState::init("LightyLauncher")?;
 
-    // LightyVersionBuilder for custom servers
-    let instance = LightyVersionBuilder::new(
-        "my-modpack",                    // Instance name
-        "https://myserver.com/api",      // Server URL
+    let v = LightyVersionBuilder::new(
+        "my-modpack",                  // instance name
+        "https://myserver.com/api",    // base URL of your endpoint
     );
 
-    let metadata = instance.get_metadata().await?;
-
-    println!("Custom modpack loaded: {}", metadata.id);
-
+    let meta = v.get_metadata().await?;
+    println!("{} libs", meta.libraries.len());
     Ok(())
 }
 ```
 
-### With VersionBuilder
+`LightyVersionBuilder` is documented in
+[`../../../version/docs/how-to-use.md`](../../../version/docs/how-to-use.md).
 
-```rust
-let instance = VersionBuilder::new(
-    "my-modpack",
-    Loader::LightyUpdater,
-    "https://myserver.com/api",  // Server URL in loader_version field
-    "1.21.1",
-);
-```
-
-## Exports
-
-**In lighty_loaders**: `lighty_loaders::loaders::lighty_updater`
-**In lighty_launcher**: `lighty_launcher::loaders::lighty_updater`
-
-**Builder**: `lighty_version::LightyVersionBuilder`
-**Re-export**: `lighty_launcher::version::LightyVersionBuilder`
-
-## Server API Requirements
-
-Your server must provide metadata at the specified URL.
-
-### Endpoint
+## Server contract
 
 ```
 GET {server_url}/metadata?mc_version={minecraft_version}
 ```
 
-Example: `https://myserver.com/api/metadata?mc_version=1.21.1`
-
-### Response Format
-
-Return `VersionMetaData` compatible JSON:
+Response — `VersionMetaData`-compatible JSON, e.g.:
 
 ```json
 {
@@ -79,102 +55,54 @@ Return `VersionMetaData` compatible JSON:
   "libraries": [
     {
       "name": "com.example:my-mod:1.0.0",
-      "url": "https://myserver.com/mods/my-mod-1.0.0.jar",
-      "sha1": "abc123...",
+      "url":  "https://myserver.com/mods/my-mod-1.0.0.jar",
+      "sha1": "abc...",
       "size": 1234567
     }
   ],
-  "arguments": {
-    "jvm": ["-Xmx4G"],
-    "game": ["--username", "${auth_player_name}"]
-  },
-  "assetIndex": {
-    "id": "16",
-    "url": "https://piston-data.mojang.com/...",
-    "totalSize": 500000000
-  }
+  "arguments": { "jvm": ["-Xmx4G"], "game": ["--username", "${auth_player_name}"] },
+  "assetIndex": { "id": "16", "url": "https://piston-data.mojang.com/...", "totalSize": 500000000 }
 }
 ```
 
-## Merging with a base loader
+## Picking a base loader
 
-LightyUpdater merges its server-side metadata with a base loader's
-metadata. The base loader is selected by the `loader` string returned
-in the server's `ServerInfo` payload. Supported values:
+The server's payload includes a `loader` string in its `ServerInfo`
+block. The launcher resolves it to a real `Loader` variant:
 
-| `loader` value | Resolved to        |
-|----------------|--------------------|
-| `"vanilla"`    | `Loader::Vanilla`  |
-| `"fabric"`     | `Loader::Fabric`   |
-| `"quilt"`      | `Loader::Quilt`    |
-| `"neoforge"`   | `Loader::NeoForge` |
-| `"forge"`      | `Loader::Forge`    |
+| `loader` value | Resolved to |
+|---|---|
+| `"vanilla"` | `Loader::Vanilla` |
+| `"fabric"` | `Loader::Fabric` |
+| `"quilt"` | `Loader::Quilt` |
+| `"neoforge"` | `Loader::NeoForge` |
+| `"forge"` | `Loader::Forge` |
 
-`"forge"` was added on top of the original four: when the server
-returns `"forge"`, the merger fetches the Forge loader metadata
+Unknown values raise `QueryError::UnsupportedLoader("Unknown loader
+'...'")`.
+
+`"forge"` was added on top of the original four — when the server
+returns `"forge"` the merger fetches the Forge loader metadata
 (installer + processors honoured by `lighty-launch`) and folds the
-server's extra libraries / args on top. The `lighty_updater` feature
-already activates `forge` at the workspace level, so no extra feature
-flag is needed.
+server's extra libraries / args on top. No extra feature flag needed
+— `lighty_updater` activates `forge` at the workspace level.
 
-Unknown values short-circuit with
-`QueryError::UnsupportedLoader("Unknown loader '...'")`.
+## Security notes
 
-This is configured server-side; clients don't pick the base loader.
+- Serve over HTTPS.
+- Always populate `sha1` so the launcher can verify each library.
+- Consider rate limiting + API key headers if your endpoint is public.
 
-## Use Cases
+## Reference
 
-- **Custom modpacks**: Centralized modpack management
-- **Private servers**: Internal launcher with custom mods
-- **Testing environments**: Development versions
-- **Curated experiences**: Specific mod combinations
+Full server-side documentation, deployment recipes and reference
+implementation:
 
-## Complete Documentation
+- [LightyUpdater GitHub repository](https://github.com/Lighty-Launcher/LightyUpdater)
 
-For detailed server implementation and advanced features, see:
+## See also
 
-📚 **[LightyUpdater Repository](https://github.com/Lighty-Launcher/LightyUpdater)**
-
-## Example Server Implementation
-
-Minimal server example (pseudo-code):
-
-```javascript
-// Express.js example
-app.get('/metadata', async (req, res) => {
-  const mcVersion = req.query.mc_version;
-
-  const metadata = {
-    id: mcVersion,
-    mainClass: "net.minecraft.client.main.Main",
-    libraries: [
-      // Your custom mods
-      {
-        name: "com.mymodpack:core:1.0.0",
-        url: "https://myserver.com/mods/core-1.0.0.jar",
-        sha1: await calculateSha1("core-1.0.0.jar"),
-        size: getFileSize("core-1.0.0.jar")
-      }
-    ],
-    arguments: {
-      jvm: ["-Xmx4G", "-Xms2G"],
-      game: []
-    }
-  };
-
-  res.json(metadata);
-});
-```
-
-## Security Considerations
-
-- **HTTPS required**: Use HTTPS for your server
-- **SHA1 verification**: Always provide SHA1 hashes
-- **Authentication**: Consider adding API keys
-- **Rate limiting**: Protect against abuse
-
-## Related Documentation
-
-- [How to Use](../how-to-use.md) - Usage guide
-- [Query System](../query.md) - Custom implementation
-- [LightyUpdater GitHub](https://github.com/Lighty-Launcher/LightyUpdater) - Full docs
+- [`../../../version/docs/how-to-use.md`](../../../version/docs/how-to-use.md)
+  — `LightyVersionBuilder` reference
+- [`../traits.md`](../traits.md) — `VersionInfo` requirements
+- [`../query.md`](../query.md) — implementing a server-side loader

@@ -68,10 +68,12 @@ async fn main() {
 
 | Guide | Description |
 |-------|-------------|
-| [Architecture](./docs/architecture.md) | Event bus design and data flow |
+| [Overview](./docs/overview.md) | What this crate does |
+| [How to use](./docs/how-to-use.md) | Subscribe / filter / fan-out patterns |
 | [Event Reference](./docs/events.md) | Complete event catalog |
+| [Architecture](./docs/architecture.md) | Event bus design and data flow |
 | [Module System](./docs/modules.md) | Event module organization |
-| [Examples](./docs/examples.md) | Practical usage patterns |
+| [Exports](./docs/exports.md) | Public API surface |
 
 ## License
 

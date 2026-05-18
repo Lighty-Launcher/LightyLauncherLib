@@ -1,82 +1,76 @@
-# System Detection
+# system — OS + architecture detection
 
-## Overview
+Compile-time platform probe used by every downloader / extractor /
+launcher path resolver in the workspace.
 
-Cross-platform detection for operating systems and architectures at runtime.
+## Constants
 
-## Quick Example
-
-```rust
-use lighty_core::{get_os, get_architecture};
+```rust,no_run
+use lighty_core::system::{OS, ARCHITECTURE, OperatingSystem, Architecture};
 
 fn main() {
-    let os = get_os();
-    let arch = get_architecture();
+    println!("os: {OS}");
+    println!("arch: {ARCHITECTURE}");
 
-    println!("OS: {:?}, Arch: {:?}", os, arch);
-    // Output: OS: Windows, Arch: X86_64
-}
-```
-
-## API Reference
-
-### `get_os() -> OS`
-
-Returns the current operating system.
-
-**Returns:**
-```rust
-pub enum OS {
-    Windows,
-    MacOS,
-    Linux,
-    Unknown,
-}
-```
-
-### `get_architecture() -> Architecture`
-
-Returns the CPU architecture.
-
-**Returns:**
-```rust
-pub enum Architecture {
-    X86_64,  // 64-bit Intel/AMD
-    X86,     // 32-bit Intel/AMD
-    Aarch64, // 64-bit ARM (Apple Silicon, etc.)
-    Arm,     // 32-bit ARM
-    Unknown,
-}
-```
-
-## Use Cases
-
-### Platform-Specific Downloads
-```rust
-use lighty_core::{get_os, get_architecture, OS, Architecture};
-
-fn get_download_url() -> &'static str {
-    match (get_os(), get_architecture()) {
-        (OS::Windows, Architecture::X86_64) => "https://example.com/win-x64.zip",
-        (OS::MacOS, Architecture::Aarch64) => "https://example.com/mac-arm64.zip",
-        (OS::Linux, Architecture::X86_64) => "https://example.com/linux-x64.tar.gz",
-        _ => panic!("Unsupported platform"),
+    if matches!(OS, OperatingSystem::WINDOWS) {
+        println!("running on Windows");
     }
 }
 ```
 
-### Java Distribution Selection
-```rust
-fn select_java_dist() -> &'static str {
-    match get_architecture() {
-        Architecture::Aarch64 => "temurin-aarch64",
-        Architecture::X86_64 => "temurin-x64",
-        _ => "temurin-default",
-    }
+Both `OS` and `ARCHITECTURE` are `const`: resolved at build time via
+`cfg!(target_os = …)` / `cfg!(target_arch = …)` — no runtime cost.
+
+## Enums
+
+```rust,ignore
+pub enum OperatingSystem { WINDOWS, LINUX, OSX, UNKNOWN }
+pub enum Architecture    { X86, X64, ARM, AARCH64, UNKNOWN }
+```
+
+`Display` is implemented for both (lowercase canonical name).
+
+## Per-vendor name maps
+
+Different download providers spell platforms differently. Each
+fallible accessor returns `SystemResult<&'static str>` and surfaces
+`SystemError::UnsupportedOS` / `UnsupportedArchitecture` on `UNKNOWN`.
+
+### `OperatingSystem`
+
+| Method | Windows | Linux | macOS | Used for |
+|---|---|---|---|---|
+| `get_vanilla_os` | `"windows"` | `"linux"` | `"osx"` | Mojang version manifest |
+| `get_adoptium_name` | `"windows"` | `"linux"` | `"mac"` | Adoptium / Temurin API |
+| `get_graal_name` | `"windows"` | `"linux"` | `"macos"` | Oracle GraalVM URLs |
+| `get_zulu_name` | `"windows"` | `"linux"` | `"macos"` | Azul Zulu / Foojay APIs |
+| `get_zulu_ext` | `"zip"` | `"tar.gz"` | `"tar.gz"` | Azul archive extension |
+| `get_archive_type` | `"zip"` | `"tar.gz"` | `"tar.gz"` | Generic JRE archive extension |
+
+### `Architecture`
+
+| Method | x86 | x64 | arm | aarch64 | Used for |
+|---|---|---|---|---|---|
+| `get_simple_name` | `"x86"` | `"x64"` | `"arm"` | `"aarch64"` | Generic display |
+| `get_vanilla_arch` | `"-x86"` | `""` | `"-arm"` | `"-arm64"` | Mojang native classifier suffix |
+| `get_arch_bits` | `"32"` | `"64"` | `"32"` | `"64"` | `${arch}` placeholder in native classifier names |
+| `get_zulu_arch` | `"i686"` | `"x64"` | `"arm"` | `"aarch64"` | Azul Zulu API |
+
+## Errors
+
+```rust,ignore
+pub enum SystemError {
+    UnsupportedOS,
+    UnsupportedArchitecture,
+    Io(std::io::Error),
 }
 ```
 
-## See Also
+Most callers convert into the broader `QueryError` / `DownloadError`
+chains used by the launch pipeline.
 
-- [Overview](./overview.md)
-- [Examples](./examples.md)
+## See also
+
+- [`how-to-use.md`](./how-to-use.md) — usage section *Detect OS / architecture*
+- [`../../java/docs/distributions.md`](../../java/docs/distributions.md)
+  — how each Java distribution consumes these names

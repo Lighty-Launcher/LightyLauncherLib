@@ -1,31 +1,26 @@
 # Events
 
-## Overview
-
 `lighty-launch` emits two event families through the bus exposed by
-`lighty-event`:
+`lighty-event`. Enable the `events` feature on `lighty-launch`
+(and pass `.with_event_bus(&bus)` on the builder) to opt in.
 
-- **`LaunchEvent`** — install lifecycle + global byte progress +
-  process spawning / exit. Owned by the launch crate.
-- **`ModloaderEvent`** — dependency resolution, modpack pipeline and
-  the per-bucket install summaries for resource packs, shader packs
-  and datapacks. **The `ModResolve*` and `Modpack*` variants used to
-  live under `LaunchEvent` — they have moved to `ModloaderEvent`.**
+The full cross-module catalogue lives in
+[`crates/event/docs/events.md`](../../event/docs/events.md). This page
+documents only the variants emitted by the launch pipeline.
 
-**Feature**: Requires the `events` feature flag.
+| Family | Owner | What it covers |
+|---|---|---|
+| `LaunchEvent` | this crate (definition in `lighty-event`) | Install lifecycle + global byte progress + process spawn / stdio / exit |
+| `ModloaderEvent` | mod resolution + modpack pipeline + per-bucket finishers (resource packs, shader packs, datapacks) |
 
-**Exports**:
-- `lighty_event::LaunchEvent`
-- `lighty_event::ModloaderEvent`
-- Re-exported under `lighty_launcher::event::{LaunchEvent, ModloaderEvent}`.
+Both are exported under `lighty_event::{LaunchEvent, ModloaderEvent}`
+and re-exported as `lighty_launcher::event::*`.
 
-## LaunchEvent Variants
+## `LaunchEvent` variants
 
-After the refacto, `LaunchEvent` only carries install/launch lifecycle
-and process I/O. Every variant currently defined in
-`crates/event/src/module/launch.rs`:
+Defined in `crates/event/src/module/launch.rs`:
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event")]
 pub enum LaunchEvent {
@@ -41,37 +36,24 @@ pub enum LaunchEvent {
 }
 ```
 
-### IsInstalled
+| Variant | When |
+|---|---|
+| `IsInstalled` | Every file already passed SHA1 — install short-circuits (natives are still re-extracted) |
+| `InstallStarted` | First chunk about to be downloaded. `total_bytes` is the sum across all 8 buckets |
+| `InstallProgress` | Per-chunk byte delta from the shared downloader. Sum client-side against `total_bytes` to drive a progress bar |
+| `InstallCompleted` | All 8 buckets finished |
+| `Launching` | About to spawn the JVM |
+| `Launched` | Process spawned, carries the OS `pid` |
+| `NotLaunched` | Spawn failed before the process started — `error` is human-readable |
+| `ProcessOutput` | One line of stdout/stderr (`stream = "stdout" | "stderr"`) |
+| `ProcessExited` | Process terminated; carries the final exit code |
 
-Emitted when the verifier finds every file already valid on disk. The
-installer skips the download phase entirely (only natives are
-re-extracted, since they're cleaned on each run).
-
-### InstallStarted / InstallProgress / InstallCompleted
-
-Wrap the parallel download phase. `total_bytes` is the sum of every
-missing/outdated file across the 8 buckets (libraries, client, assets,
-mods, resourcepacks, shaderpacks, datapacks, natives). `InstallProgress`
-is emitted by the shared downloader for each byte chunk written to disk —
-sum the `bytes` field client-side to drive a progress bar.
-
-### Launching / Launched / NotLaunched
-
-Lifecycle around the Java process spawn. `Launched` carries the OS
-`pid`; `NotLaunched` carries the error message when spawning failed
-before the process started.
-
-### ProcessOutput / ProcessExited
-
-Per-line stdout/stderr stream (`stream = "stdout" | "stderr"`) and the
-final exit code once the process terminates.
-
-## ModloaderEvent Variants
+## `ModloaderEvent` variants
 
 Defined in `crates/event/src/module/modloader.rs`. Emitted by the
-resolver, the modpack pipeline and the three new mod-like buckets:
+resolver, the modpack pipeline and the three mod-like buckets:
 
-```rust
+```rust,ignore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event")]
 pub enum ModloaderEvent {
@@ -91,123 +73,70 @@ pub enum ModloaderEvent {
 }
 ```
 
-### Resolve* (dependency resolution)
+- `Resolve*` — fired during the BFS over Modrinth / CurseForge mod
+  requests in `lighty_modsloader::resolver::resolve`.
+- `Modpack*` — fired in order by the optional modpack pre-step:
+  resolve → archive downloaded → overrides extracted → install
+  complete.
+- `{ResourcePacks,ShaderPacks,Datapacks}Installed` — per-bucket
+  summaries fired once each bucket's parallel download finishes.
+  `count` excludes files that were already valid on disk.
 
-Emitted by `lighty_modsloader::resolver::resolve` during the BFS over
-Modrinth/CurseForge mod requests. `ResolveStarted` fires once with the
-number of user-supplied requests; `ResolveFetching` fires per HTTP
-fetch; `ResolveDependency` fires whenever a parent mod pulls a new
-required dependency; `ResolveCompleted` fires once with the final mod
-count after dedup.
+## Listening
 
-### Modpack* (archive pipeline)
+```rust,no_run
+# #[cfg(feature = "events")]
+# {
+use lighty_event::{Event, EventBus, LaunchEvent, ModloaderEvent};
+use lighty_launch::launch::Launch;
+# use lighty_auth::UserProfile;
+# use lighty_core::AppState;
+# use lighty_java::JavaDistribution;
+# use lighty_launch::errors::InstallerResult;
+# use lighty_loaders::types::Loader;
+# use lighty_version::VersionBuilder;
+# async fn run() -> InstallerResult<()> {
+# AppState::init("MyLauncher").ok();
+# let profile = UserProfile::offline("Player", "");
+# let mut instance = VersionBuilder::new("inst", Loader::Vanilla, "", "1.21.1");
 
-Emitted by the optional modpack stage (cf.
-[`installation.md`](./installation.md)). Fires in order: resolve start
-→ archive downloaded → overrides extracted → install complete.
+let bus = EventBus::new(1000);
+let mut rx = bus.subscribe();
 
-### ResourcePacksInstalled / ShaderPacksInstalled / DatapacksInstalled
-
-Per-bucket install summaries fired by the respective wrappers in
-`crates/launch/src/installer/ressources/{resourcepacks,shaderpacks,datapacks}.rs`
-once their `asset_partition::download` step finishes. `count` is the
-number of files actually downloaded by this bucket (entries that
-already passed SHA1 verification are excluded), `bytes` is the matching
-byte total.
-
-## Where the old variants went
-
-| Removed from `LaunchEvent` | Now lives in |
-|----------------------------|--------------|
-| `ModResolveStarted`        | `ModloaderEvent::ResolveStarted` |
-| `ModResolveFetching`       | `ModloaderEvent::ResolveFetching` |
-| `ModResolveDependency`     | `ModloaderEvent::ResolveDependency` |
-| `ModResolveCompleted`      | `ModloaderEvent::ResolveCompleted` |
-| `ModpackResolveStart`      | `ModloaderEvent::ModpackResolveStart` |
-| `ModpackArchiveDownloaded` | `ModloaderEvent::ModpackArchiveDownloaded` |
-| `ModpackOverridesExtracted`| `ModloaderEvent::ModpackOverridesExtracted` |
-| `ModpackInstalled`         | `ModloaderEvent::ModpackInstalled` |
-
-Update callers that matched on `Event::Launch(LaunchEvent::ModResolve*)`
-or `Event::Launch(LaunchEvent::Modpack*)` to match on
-`Event::Modloader(ModloaderEvent::…)` instead.
-
-## Complete Example
-
-```rust
-use lighty_event::{EventBus, Event, LaunchEvent, ModloaderEvent};
-use lighty_launch::InstanceControl;
-use lighty_core::AppState;
-use lighty_launcher::prelude::*;
-use lighty_java::JavaDistribution;
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    AppState::init("MyLauncher")?;
-
-    let event_bus = EventBus::new(1000);
-    let mut receiver = event_bus.subscribe();
-
-    tokio::spawn(async move {
-        while let Ok(event) = receiver.next().await {
-            match event {
-                Event::Launch(LaunchEvent::InstallStarted { version, total_bytes }) => {
-                    println!("Installing {} ({} bytes)", version, total_bytes);
-                }
-                Event::Launch(LaunchEvent::InstallProgress { bytes }) => {
-                    println!("+{} bytes", bytes);
-                }
-                Event::Launch(LaunchEvent::InstallCompleted { version, .. }) => {
-                    println!("Installed {}", version);
-                }
-                Event::Launch(LaunchEvent::Launched { version, pid }) => {
-                    println!("Launched {} (PID: {})", version, pid);
-                }
-                Event::Launch(LaunchEvent::ProcessOutput { pid, stream, line }) => {
-                    println!("[{} {}] {}", pid, stream, line);
-                }
-                Event::Launch(LaunchEvent::ProcessExited { pid, exit_code }) => {
-                    println!("PID {} exited with code {}", pid, exit_code);
-                }
-
-                Event::Modloader(ModloaderEvent::ResolveCompleted { total_mods }) => {
-                    println!("Resolved {} mods", total_mods);
-                }
-                Event::Modloader(ModloaderEvent::ResourcePacksInstalled { count, bytes }) => {
-                    println!("ResourcePacks: {} files / {} bytes", count, bytes);
-                }
-                Event::Modloader(ModloaderEvent::ShaderPacksInstalled { count, bytes }) => {
-                    println!("ShaderPacks: {} files / {} bytes", count, bytes);
-                }
-                Event::Modloader(ModloaderEvent::DatapacksInstalled { count, bytes }) => {
-                    println!("Datapacks: {} files / {} bytes", count, bytes);
-                }
-                _ => {}
-            }
+tokio::spawn(async move {
+    while let Ok(event) = rx.next().await {
+        match event {
+            Event::Launch(LaunchEvent::InstallStarted { version, total_bytes }) =>
+                println!("install {version} ({total_bytes} bytes)"),
+            Event::Launch(LaunchEvent::InstallProgress { bytes }) =>
+                println!("  +{bytes}"),
+            Event::Launch(LaunchEvent::Launched { pid, .. }) =>
+                println!("PID {pid}"),
+            Event::Launch(LaunchEvent::ProcessOutput { pid, line, .. }) =>
+                print!("[{pid}] {line}"),
+            Event::Launch(LaunchEvent::ProcessExited { pid, exit_code }) =>
+                println!("PID {pid} exited {exit_code}"),
+            Event::Modloader(ModloaderEvent::ResolveCompleted { total_mods }) =>
+                println!("resolved {total_mods} mods"),
+            Event::Modloader(ModloaderEvent::ResourcePacksInstalled { count, bytes }) =>
+                println!("resourcepacks: {count} / {bytes}"),
+            _ => {}
         }
-    });
+    }
+});
 
-    let mut instance = VersionBuilder::new(
-        "fabric-1.21",
-        Loader::Fabric,
-        "0.16.9",
-        "1.21.1",
-    );
-
-    let mut auth = OfflineAuth::new("Player");
-    let profile = auth.authenticate().await?;
-
-    instance.launch(&profile, JavaDistribution::Temurin)
-        .with_event_bus(&event_bus)
-        .run()
-        .await?;
-
-    Ok(())
-}
+instance.launch(&profile, JavaDistribution::Temurin)
+    .with_event_bus(&bus)
+    .run()
+    .await?;
+# Ok(()) }
+# }
 ```
 
-## Related Documentation
+## Related
 
-- [How to Use](./how-to-use.md) - Practical examples with events
-- [Exports](./exports.md) - Complete export reference
-- [lighty-event Events](../../event/docs/events.md) - All event types
+- [How to use](./how-to-use.md) — `with_event_bus` pattern
+- [Installation](./installation.md) — where each event fires in the pipeline
+- [Instance lifecycle](./instance-lifecycle.md) — `Launched` / `Exited` plumbing
+- [Event catalogue](../../event/docs/events.md) — all modules
+- [Auth events](../../auth/docs/events.md) — `AuthEvent` family

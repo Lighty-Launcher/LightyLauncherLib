@@ -1,241 +1,115 @@
-# Application State
+# AppState — global launcher paths
 
-## Overview
+`AppState` resolves and caches the per-launcher data / config / cache
+directories at startup. Every other crate in the workspace reads from
+the global accessors instead of re-deriving paths.
 
-`AppState` manages global application configuration, including directory paths and metadata. It must be initialized once at application startup before using any LightyLauncher functionality.
+This file is the **canonical** reference for `AppState::init` and the
+resulting OS paths. Other docs cross-link here.
 
-## Initialization
+## Initialise once
 
-```rust
+```rust,no_run
 use lighty_core::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Initialize with your application name
-    AppState::init("MyLauncher")?;
+    AppState::init("LightyLauncher")?;
 
-    // Now you can use other LightyLauncher functions
+    println!("data:   {}", AppState::data_dir().display());
+    println!("config: {}", AppState::config_dir().display());
+    println!("cache:  {}", AppState::cache_dir().display());
     Ok(())
 }
 ```
 
-## Architecture
+`init` is meant to be called **once** at process start. A second call
+returns `AppStateError::AlreadyInitialized` and leaves the original
+paths in place. The accessors below panic with a clear message if you
+forget to initialise — it's a programmer error, not a runtime one.
 
-```mermaid
-flowchart TD
-    A[AppState::init] --> B{OnceCell Initialized?}
-    B -->|No| C[Resolve platform dirs via dirs crate]
-    B -->|Yes| D[Return AlreadyInitialized]
+## Resulting paths
 
-    C --> E[Store name]
-    E --> F[Store data_dir]
-    F --> G[Store config_dir]
-    G --> H[Store cache_dir]
-    H --> I[Return Ok]
+The launcher name passed to `init` becomes a sub-directory under the
+OS-standard bases (resolved via the `dirs` crate). With
+`AppState::init("LightyLauncher")` you get:
 
-    J[data_dir / config_dir / cache_dir] --> L[Return &Path]
+| OS      | `data_dir()`                                    | `config_dir()`                                  | `cache_dir()`                       |
+|---------|-------------------------------------------------|-------------------------------------------------|-------------------------------------|
+| Linux   | `~/.local/share/LightyLauncher/`                | `~/.config/LightyLauncher/`                     | `~/.cache/LightyLauncher/`          |
+| macOS   | `~/Library/Application Support/LightyLauncher/` | `~/Library/Application Support/LightyLauncher/` | `~/Library/Caches/LightyLauncher/`  |
+| Windows | `%APPDATA%\LightyLauncher\`                     | `%APPDATA%\LightyLauncher\`                     | `%LOCALAPPDATA%\LightyLauncher\`    |
 
-    M[name] --> P[Return application name]
-```
+On Linux/macOS the launcher name is **not** prefixed with a dot — the
+directory is visible. Windows uses `APPDATA` for both `data` and
+`config` because the platform doesn't separate the two.
 
-## API Reference
+## API surface
 
-### Initialization
+```rust,ignore
+pub struct AppState;
 
-#### `AppState::init(name)`
+impl AppState {
+    pub fn init(name: impl Into<String>) -> AppStateResult<()>;
 
-Initializes the global application state.
+    pub fn paths()       -> &'static LauncherPaths;
+    pub fn name()        -> &'static str;
+    pub fn data_dir()    -> &'static Path;
+    pub fn config_dir()  -> &'static Path;
+    pub fn cache_dir()   -> &'static Path;
+    pub fn app_version() -> &'static str;     // env!("CARGO_PKG_VERSION")
+    pub fn client_id()   -> &'static str;     // RFC 4122 v4, persisted
+}
 
-**Parameters:**
-- `name`: Application/launcher name (e.g., `"MyLauncher"`)
-
-**Returns:** `AppStateResult<()>`
-
-**Errors:**
-- `AppStateError::AlreadyInitialized` - AppState already initialized
-- `AppStateError::MissingDir(&'static str)` - Platform directory unavailable
-
-**Example:**
-```rust
-AppState::init("MyLauncher")?;
-```
-
-### Directory Access
-
-#### `AppState::data_dir() -> &Path`
-
-Returns the platform-specific data directory.
-
-#### `AppState::config_dir() -> &Path`
-
-Returns the platform-specific configuration directory.
-
-#### `AppState::cache_dir() -> &Path`
-
-Returns the platform-specific cache directory.
-
-**Example:**
-```rust
-println!("Data dir: {:?}", AppState::data_dir());
-println!("Config dir: {:?}", AppState::config_dir());
-println!("Cache dir: {:?}", AppState::cache_dir());
-```
-
-### Metadata Access
-
-#### `AppState::name() -> &str`
-
-Returns the application name passed to `init()`.
-
-**Example:**
-```rust
-let name = AppState::name();
-// AppState::init("MyLauncher") → Returns: "MyLauncher"
-```
-
-#### `AppState::app_version() -> &str`
-
-Returns the crate version from `Cargo.toml`.
-
-**Example:**
-```rust
-let version = AppState::app_version();
-println!("Version: {}", version); // e.g., "26.5.1"
-```
-
-## Platform-Specific Paths
-
-### Windows
-```
-%APPDATA%\<name>\
-```
-
-### macOS
-```
-~/Library/Application Support/<name>/
-```
-
-### Linux
-```
-~/.local/share/<name>/
-```
-
-## Thread Safety
-
-`AppState` uses `OnceCell` for thread-safe initialization:
-
-```rust
-use lighty_core::AppState;
-use std::thread;
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // Initialize in main thread
-    AppState::init("MyLauncher")?;
-
-    // Safe to access from multiple threads
-    let handles: Vec<_> = (0..4).map(|_| {
-        thread::spawn(|| {
-            println!("{:?}", AppState::data_dir());
-        })
-    }).collect();
-
-    for handle in handles {
-        handle.join().unwrap();
-    }
-
-    Ok(())
+pub struct LauncherPaths {
+    pub name:       String,
+    pub data_dir:   PathBuf,
+    pub config_dir: PathBuf,
+    pub cache_dir:  PathBuf,
 }
 ```
 
-## Best Practices
+`client_id()` is the per-install launcher id surfaced as `${clientid}`
+in the JVM args. It's persisted at `<config_dir>/client_id` so crash
+reports and Mojang telemetry stay correlated across sessions. First
+call mints a fresh UUID v4 and writes it back; subsequent calls in the
+same process hit an in-memory `OnceCell`.
 
-### 1. Initialize Early
-```rust
-use lighty_core::AppState;
+## What goes where
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // Initialize FIRST, before any other LightyLauncher calls
-    AppState::init("MyLauncher")?;
+Conventions used across the workspace:
 
-    // Now safe to use other functions
-    let version = VersionBuilder::new(/*...*/);
-    Ok(())
-}
-```
+| Directory | Lives under  | Holds                                                                |
+|-----------|--------------|----------------------------------------------------------------------|
+| `data`    | `data_dir()` | Instances (`instances/<name>/`), shared `libraries/`, `assets/`      |
+| `config`  | `config_dir()` | `client_id`, user-editable settings                                |
+| `cache`   | `cache_dir()` | Bundled JREs (`java/<distribution>_<version>/`), modpack archive cache |
 
-### 2. Handle Initialization Errors
-```rust
-use lighty_core::{AppState, errors::AppStateError};
+The launch crate writes Forge / NeoForge installer caches under each
+instance's `.forge/` directory inside `data_dir()`, not in `cache_dir()`.
 
-match AppState::init("MyLauncher") {
-    Ok(()) => println!("AppState initialized"),
-    Err(AppStateError::AlreadyInitialized) => {
-        eprintln!("AppState already initialized");
-    }
-    Err(e) => {
-        eprintln!("Failed to initialize AppState: {:?}", e);
-    }
-}
-```
+## Thread safety
 
-### 3. Naming Convention
-```rust
-use lighty_core::AppState;
+Paths are stored in a `OnceCell`, accessors return `&'static`
+references — safe to call from any thread or async task once `init`
+has succeeded.
 
-// Name is used directly (no leading dot)
-AppState::init("LightyLauncher")?;
+## Errors
 
-let name = AppState::name();
-assert_eq!(name, "LightyLauncher");
-```
-
-## Integration with Other Crates
-
-### lighty-version
-```rust
-use lighty_core::AppState;
-use lighty_version::VersionBuilder;
-
-AppState::init("MyLauncher")?;
-
-let version = VersionBuilder::new(
-    "my-instance",
-    Loader::Fabric,
-    "0.16.9",
-    "1.21",
-);
-```
-
-### lighty-launch
-```rust
-use lighty_core::AppState;
-
-AppState::init("MyLauncher")?;
-
-// Launch arguments automatically use app name and version
-version.launch(&profile, JavaDistribution::Temurin)
-    .run()
-    .await?;
-```
-
-## Error Reference
-
-```rust
+```rust,ignore
 pub enum AppStateError {
-    /// AppState has not been initialized
-    NotInitialized,
-
-    /// AppState was already initialized
     AlreadyInitialized,
-
-    /// Platform directory could not be determined (e.g. no $HOME)
-    MissingDir(&'static str),
+    NotInitialized,
+    MissingPlatformDir(&'static str),   // "data" | "config" | "cache"
 }
 ```
 
-## See Also
+`MissingPlatformDir` fires only on exotic targets where the `dirs`
+crate can't resolve a base directory (no `$HOME`, no `%APPDATA%`, …).
 
-- [Overview](./overview.md) - Architecture overview
-- [Examples](./examples.md) - Complete usage examples
+## See also
+
+- [`overview.md`](./overview.md) — what `lighty-core` is for
+- [`how-to-use.md`](./how-to-use.md) — full crate walkthrough
+- [`../../version/docs/how-to-use.md`](../../version/docs/how-to-use.md)
+  — `VersionBuilder` reads `AppState` for its default paths

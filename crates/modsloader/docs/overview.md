@@ -1,9 +1,10 @@
 # lighty-modsloader
 
-User-attached mods + modpacks for `lighty-launcher`. Lives next to
-`lighty-loaders` in the workspace; it deals with **what to install on
-top of a vanilla/Fabric/Forge/NeoForge/Quilt instance**, not with the
-loaders themselves.
+Mods + modpacks for LightyLauncher. Sits next to
+[`lighty-loaders`](../../loaders/docs/overview.md): the loaders crate
+resolves how the **game** runs (vanilla / Fabric / Forge / …), this
+crate resolves **what to install on top** — individual mods,
+resourcepacks, shaderpacks, datapacks, full modpacks.
 
 ## What it provides
 
@@ -30,55 +31,49 @@ lighty-modsloader = { version = "...", default-features = false, features = [
 ] }
 ```
 
-There is no separate `modpack` feature — enabling either provider
-activates its modpack format parser (which lives **inside** the
-provider's module, not as a sibling). The top-level `lighty-launcher`
-crate forwards these as `modrinth`, `curseforge`, `all-mods` features.
+There's no separate `modpack` feature — enabling either provider
+activates its modpack format parser. The top-level `lighty-launcher`
+crate forwards these as `modrinth`, `curseforge`, `all-mods`.
 
-## Where the pipeline lives
+## File layout
 
 ```
-crates/
-├── modsloader/                       this crate
-│   ├── request.rs                    ModRequest / ModSource / ModKey
-│   ├── with_mods.rs                  WithMods trait (implemented by VersionBuilder)
-│   ├── instance_cache.rs             InstanceCache helper trait
-│   ├── resolver.rs                   BFS over user requests + transitive deps
-│   ├── modpack.rs                    flat file — ModpackSource enum + From impls
-│   ├── modrinth/                     Modrinth provider
-│   │   ├── api.rs                    BASE_URL, USER_AGENT, PROVIDER, url_encode
-│   │   ├── client.rs                 fetch + MODRINTH_CACHE + PROJECT_TYPE_CACHE
-│   │   ├── client_metadata.rs        Labrinth wire types (ModrinthVersion, …)
-│   │   ├── modpack.rs                .mrpack URL resolver + manifest parser
-│   │   └── modpack_metadata.rs       .mrpack wire types (MrpackManifest, …)
-│   └── curseforge/                   CurseForge provider
-│       ├── api.rs                    BASE_URL, PROVIDER, set_api_key, read_api_key, url_encode
-│       ├── client.rs                 fetch, fetch_pinned_file, install_subdir_for
-│       ├── client_metadata.rs        Core-API wire types + CLASS_* / MOD_LOADER_* / DEP_*
-│       ├── modpack.rs                CurseForge .zip URL resolver + manifest parser
-│       └── modpack_metadata.rs       CF modpack wire types (CfModpackManifest, …)
-└── launch/
-    └── src/installer/ressources/
-        ├── mods.rs                   consumes Mods.path verbatim (qualified by sub-folder)
-        └── modpack/                  downloads archive, extracts, merges overrides
+crates/modsloader/src/
+├── request.rs               ModRequest / ModSource / ModKey
+├── with_mods.rs             WithMods trait (implemented by VersionBuilder)
+├── instance_cache.rs        InstanceCache helper trait
+├── resolver.rs              BFS over user requests + transitive deps
+├── modpack.rs               flat file — ModpackSource enum + From impls
+├── modrinth/                Modrinth provider
+│   ├── api.rs               BASE_URL, USER_AGENT, PROVIDER, url_encode
+│   ├── client.rs            fetch + MODRINTH_CACHE + PROJECT_TYPE_CACHE
+│   ├── client_metadata.rs   Labrinth wire types
+│   ├── modpack.rs           .mrpack URL resolver + manifest parser
+│   └── modpack_metadata.rs  .mrpack wire types
+└── curseforge/              CurseForge provider
+    ├── api.rs               BASE_URL, PROVIDER, set_api_key, read_api_key, url_encode
+    ├── client.rs            fetch, fetch_pinned_file, install_subdir_for
+    ├── client_metadata.rs   Core-API wire types + constants
+    ├── modpack.rs           CF .zip URL resolver + manifest parser
+    └── modpack_metadata.rs  CF modpack wire types
 ```
 
-The split is intentional:
+The split with the launch crate is intentional:
 
-- **Parsing / API clients / asset-routing** are pure functions / async
-  fetches — they belong in modsloader.
+- **Parsing / API clients / asset routing** are pure functions /
+  async fetches — they belong here.
 - **Download + extract + overrides + cache idempotence** touch the
-  runtime directory and emit events — they belong in
-  `lighty-launch::installer::ressources::modpack`.
+  runtime directory and emit events — they live in
+  `crates/launch/src/installer/ressources/modpack/`.
 
-## Trait bridge: `WithMods`
+## Bridge trait
 
-`lighty-launch` requires `T: VersionInfo + LoaderExtensions + Arguments
-+ Installer + WithMods` to spin up its launch pipeline. The `WithMods`
-default returns `&[]`, so vanilla instances that never call
-`.with_mod()` pay nothing.
+`lighty-launch` requires `T: VersionInfo + LoaderExtensions +
+Arguments + Installer + WithMods` to build its launch pipeline.
+`WithMods` has a `&[]` default, so a vanilla instance that never
+calls `.with_mod()` pays nothing.
 
-```rust
+```rust,ignore
 pub trait WithMods {
     fn mod_requests(&self) -> &[ModRequest];
 
@@ -89,14 +84,11 @@ pub trait WithMods {
 
 ## See also
 
-- [`mods.md`](./mods.md) — pinning Modrinth `version_id` / CurseForge
-  `file_id`, the asset-routing contract (mods / resourcepacks /
-  shaderpacks / datapacks), how the BFS resolver walks `required` deps.
-- [`modpacks.md`](./modpacks.md) — format of `.mrpack` and CurseForge
-  `.zip`, conflict policy for overrides.
-- [`events.md`](./events.md) — the eleven `ModloaderEvent` variants.
-- [`exports.md`](./exports.md) — public types exported by the crate.
+- [`how-to-use.md`](./how-to-use.md) — wiring `.with_mod()` to a builder
+- [`mods.md`](./mods.md) — pinning, asset routing, dependency BFS
+- [`modpacks.md`](./modpacks.md) — `.mrpack` / CurseForge `.zip` format,
+  conflict policy
+- [`events.md`](./events.md) — `ModloaderEvent` variants
+- [`exports.md`](./exports.md) — public API surface
 - [`../../launch/docs/installation.md`](../../launch/docs/installation.md)
-  — the launch-side pipeline that consumes `WithMods`.
-- [`../../../ASSETS_ROUTING.md`](../../../ASSETS_ROUTING.md) — design
-  doc for the asset-kind routing refactor.
+  — what the launch pipeline does with the resolved request list

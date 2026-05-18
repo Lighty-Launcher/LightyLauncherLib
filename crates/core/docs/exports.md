@@ -1,428 +1,133 @@
 # Exports
 
-## Overview
+Public surface of `lighty-core`.
 
-This document provides a complete reference of all exports from `lighty-core` and their re-exports in `lighty-launcher`.
+## Root re-exports
 
-## In `lighty_core`
-
-### App State
-
-```rust
-use lighty_core::AppState;
-use lighty_core::app_state::AppState; // Full path
-```
-
-### System Detection
-
-```rust
-use lighty_core::system::{
-    // Constants
-    OS,           // Current OS at compile-time
-    ARCHITECTURE, // Current architecture at compile-time
-
-    // Types
-    OperatingSystem,
-    Architecture,
-};
-```
-
-### Download System
-
-```rust
-use lighty_core::download::{
-    download_file,           // Download with progress callback
-    download_file_untracked, // Download without tracking
-};
-```
-
-### Extract System
-
-```rust
-use lighty_core::extract::{
-    zip_extract,     // Extract ZIP archives
-    tar_extract,     // Extract TAR archives
-    tar_gz_extract,  // Extract TAR.GZ archives
-};
-```
-
-### Hash Utilities
-
-```rust
-use lighty_core::hash::{
-    // Async
-    verify_file_sha1,           // Verify SHA1 (small files)
-    verify_file_sha1_streaming, // Verify SHA1 (large files, streaming)
-
-    // Sync
-    calculate_file_sha1_sync,   // Calculate SHA1 (sync)
-    verify_file_sha1_sync,      // Verify SHA1 (sync)
-
-    // Bytes
-    calculate_sha1_bytes,       // Calculate SHA1 of bytes → hex string
-    calculate_sha1_bytes_raw,   // Calculate SHA1 of bytes → raw bytes
-};
-```
-
-### HTTP Client
-
-```rust
-use lighty_core::hosts::HTTP_CLIENT; // Shared reqwest::Client
-```
-
-### Error Types
-
-```rust
-use lighty_core::errors::{
-    // System
-    SystemError,
-    SystemResult,
-
-    // Download
-    DownloadError,
-    DownloadResult,
-
-    // Extract
-    ExtractError,
-    ExtractResult,
-
-    // Hash
-    HashError,
-    HashResult,
-
-    // AppState
-    AppStateError,
-    AppStateResult,
-};
-
-// AppStateError variants:
-// - NotInitialized
-// - AlreadyInitialized
-// - MissingDir(&'static str)
-```
-
-**Or use direct paths**:
-```rust
-use lighty_core::{
-    SystemError, SystemResult,
-    DownloadError, DownloadResult,
-    ExtractError, ExtractResult,
-    HashError, HashResult,
-    AppStateError, AppStateResult,
-};
-```
-
-### Macros
-
-All macros are automatically available when using `lighty_core`:
-
-```rust
-use lighty_core::{
-    // File macros
-    mkdir,              // Create directory if not exists
-    join_and_mkdir,     // Join path and create directory
-    join_and_mkdir_vec, // Join multiple paths and create directories
-
-    // Logging macros (requires `tracing` feature)
-    trace_debug,        // Debug log
-    trace_info,         // Info log
-    trace_warn,         // Warning log
-    trace_error,        // Error log
-
-    // Performance macro (requires `tracing` feature)
-    time_it,            // Time an operation
-};
-```
-
-## In `lighty_launcher` (Re-exports)
-
-### From Main Crate
-
-```rust
-use lighty_launcher::core::{
-    // App State
+```rust,ignore
+pub use lighty_core::{
     AppState,
-
-    // System
-    system::{OS, ARCHITECTURE, OperatingSystem, Architecture},
-
-    // Download
-    download::{download_file, download_file_untracked},
-
-    // Extract
-    extract::{zip_extract, tar_extract, tar_gz_extract},
-
-    // Hash
-    hash::{
-        verify_file_sha1, verify_file_sha1_streaming,
-        calculate_file_sha1_sync, verify_file_sha1_sync,
-        calculate_sha1_bytes, calculate_sha1_bytes_raw,
-    },
-
-    // HTTP Client
-    hosts::HTTP_CLIENT,
-
     // Errors
-    errors::{
-        SystemError, SystemResult,
-        DownloadError, DownloadResult,
-        ExtractError, ExtractResult,
-        HashError, HashResult,
-        AppStateError, AppStateResult,
-    },
+    AppStateError, AppStateResult,
+    DownloadError, DownloadResult,
+    ExtractError,  ExtractResult,
+    HashError,     HashResult,
+    SystemError,   SystemResult,
+    QueryError,    QueryResult,
+    // SHA1 (re-exported flat for convenience)
+    verify_file_sha1, verify_file_sha1_streaming,
+    calculate_file_sha1_sync, verify_file_sha1_sync,
+    calculate_sha1_bytes, calculate_sha1_bytes_raw,
 };
 ```
 
-## Usage Patterns
+## Module-by-module
 
-### Pattern 1: Direct Crate Import
+### `app_state`
 
-```rust
-use lighty_core::{
-    AppState,
-    system::{OS, ARCHITECTURE},
-    download::download_file,
-    hash::verify_file_sha1,
-};
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    AppState::init("MyLauncher")?;
-
-    println!("OS: {:?}, Arch: {:?}", OS, ARCHITECTURE);
-
-    Ok(())
-}
+```rust,ignore
+pub struct AppState;
+pub struct LauncherPaths { pub name: String, pub data_dir: PathBuf,
+                           pub config_dir: PathBuf, pub cache_dir: PathBuf }
 ```
 
-### Pattern 2: Via Main Launcher Crate
+Methods: `init`, `paths`, `name`, `data_dir`, `config_dir`,
+`cache_dir`, `app_version`, `client_id`. Detail in
+[`app_state.md`](./app_state.md).
 
-```rust
-use lighty_launcher::core::{
-    AppState,
-    system::{OS, ARCHITECTURE},
-};
+### `download`
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    AppState::init("MyLauncher")?;
-
-    Ok(())
-}
+```rust,ignore
+pub async fn download_file_untracked(url: &str, path: impl AsRef<Path>) -> DownloadResult<()>;
+pub async fn download_file<F: Fn(u64, u64)>(url: &str, on_progress: F) -> DownloadResult<Vec<u8>>;
 ```
 
-### Pattern 3: Prelude (if available)
+### `extract`
 
-```rust
-// Note: lighty-core doesn't have a prelude, but lighty-launcher might
-use lighty_launcher::prelude::*;
+```rust,ignore
+// Without `events`
+pub async fn zip_extract<R>(archive: R, out_dir: &Path) -> ExtractResult<()>
+where R: AsyncRead + AsyncSeek + Unpin + AsyncBufRead;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    AppState::init("MyLauncher")?;
+pub async fn tar_gz_extract<R>(archive: R, out_dir: &Path) -> ExtractResult<()>
+where R: AsyncRead + Unpin;
 
-    Ok(())
-}
+// With `events`
+pub async fn zip_extract<R>(archive: R, out_dir: &Path,
+                            event_bus: Option<&EventBus>) -> ExtractResult<()>;
+pub async fn tar_gz_extract<R>(archive: R, out_dir: &Path,
+                               event_bus: Option<&EventBus>) -> ExtractResult<()>;
 ```
 
-## Error Handling
+### `hash`
 
-### System Errors
-
-```rust
-use lighty_core::errors::{SystemError, SystemResult};
-use lighty_core::system::OS;
-
-fn get_platform_name() -> SystemResult<&'static str> {
-    OS.get_vanilla_os()
-}
-
-match get_platform_name() {
-    Ok(name) => println!("Platform: {}", name),
-    Err(SystemError::UnsupportedOS) => {
-        eprintln!("Unsupported operating system");
-    }
-    Err(SystemError::UnsupportedArchitecture) => {
-        eprintln!("Unsupported architecture");
-    }
-}
+```rust,ignore
+pub async fn verify_file_sha1          (path: &Path, expected_sha1: &str) -> HashResult<bool>;
+pub async fn verify_file_sha1_streaming(path: &Path, expected_sha1: &str) -> HashResult<bool>;
+pub fn       calculate_file_sha1_sync  (path: &Path) -> HashResult<String>;
+pub fn       verify_file_sha1_sync     (path: &Path, expected_sha1: &str) -> HashResult<bool>;
+pub fn       calculate_sha1_bytes      (data: &[u8]) -> String;       // 40-char hex
+pub fn       calculate_sha1_bytes_raw  (data: &[u8]) -> [u8; 20];     // raw bytes
 ```
 
-### Download Errors
+### `system`
 
-```rust
-use lighty_core::download::download_file_untracked;
-use lighty_core::errors::DownloadError;
+```rust,ignore
+pub const OS:           OperatingSystem;
+pub const ARCHITECTURE: Architecture;
 
-match download_file_untracked("https://example.com/file", "output").await {
-    Ok(_) => println!("Downloaded"),
-    Err(e) => {
-        eprintln!("Download failed: {}", e);
-        // DownloadError implements Display
-    }
-}
+pub enum OperatingSystem { WINDOWS, LINUX, OSX, UNKNOWN }
+pub enum Architecture    { X86, X64, ARM, AARCH64, UNKNOWN }
 ```
 
-### Extract Errors
+OS methods: `get_vanilla_os`, `get_adoptium_name`, `get_graal_name`,
+`get_zulu_name`, `get_zulu_ext`, `get_archive_type`.
 
-```rust
-use lighty_core::extract::zip_extract;
-use lighty_core::errors::ExtractError;
-use tokio::fs::File;
-use tokio::io::BufReader;
+Arch methods: `get_simple_name`, `get_vanilla_arch`, `get_arch_bits`,
+`get_zulu_arch`.
 
-let file = File::open("archive.zip").await?;
-let reader = BufReader::new(file);
+### `hosts`
 
-match zip_extract(reader, "output", None).await {
-    Ok(_) => println!("Extracted"),
-    Err(ExtractError::UnsupportedFormat(fmt)) => {
-        eprintln!("Unsupported format: {}", fmt);
-    }
-    Err(ExtractError::IOError(e)) => {
-        eprintln!("IO error: {}", e);
-    }
-    Err(ExtractError::PathTraversal { path }) => {
-        eprintln!("Path traversal detected: {}", path);
-    }
-    Err(e) => {
-        eprintln!("Extraction error: {}", e);
-    }
-}
+```rust,ignore
+pub static HTTP_CLIENT: Lazy<reqwest::Client>;
 ```
 
-### Hash Errors
+Single shared client — use this instead of building your own.
 
-```rust
-use lighty_core::hash::verify_file_sha1;
-use lighty_core::errors::HashError;
-use std::path::Path;
+### `macros` (auto-imported from the crate root)
 
-match verify_file_sha1(Path::new("file.jar"), "expected-sha1").await {
-    Ok(true) => println!("Hash valid"),
-    Ok(false) => println!("Hash invalid"),
-    Err(HashError::Io(e)) => {
-        eprintln!("IO error: {}", e);
-    }
-    Err(HashError::Mismatch { expected, actual }) => {
-        eprintln!("Hash mismatch:");
-        eprintln!("  Expected: {}", expected);
-        eprintln!("  Got:      {}", actual);
-    }
-}
+```rust,ignore
+mkdir!($path)                       // async create_dir_all, swallows errors
+try_mkdir!($path)                   // async create_dir_all, returns io::Result
+mkdir_blocking!($path)              // spawn_blocking variant
+join_and_mkdir!($path, $join)       // join + mkdir, returns PathBuf
+join_and_mkdir_vec!($path, $joins)  // join sequence + mkdir, returns PathBuf
+
+trace_debug!(...)  trace_info!(...) trace_warn!(...) trace_error!(...)
+time_it!($label, $expr)             // debug-logs elapsed Duration
 ```
 
-### AppState Errors
+The `trace_*!` and `time_it!` macros expand to no-ops without the
+`tracing` feature.
 
-```rust
-use lighty_core::AppState;
-use lighty_core::errors::AppStateError;
+### `errors`
 
-match AppState::init("MyOrg") {
-    Ok(()) => println!("Initialized"),
-    Err(AppStateError::AlreadyInitialized) => {
-        eprintln!("AppState already initialized");
-    }
-    Err(e) => {
-        eprintln!("Failed to initialize: {:?}", e);
-    }
-}
-```
+All error / result aliases live here. They're re-exported flat at the
+crate root (see [Root re-exports](#root-re-exports)).
 
-## Feature-Gated Exports
-
-### Events Feature
+## Cargo features
 
 ```toml
 [dependencies]
-lighty-core = { version = "26.5.1", features = ["events"] }
+lighty-core = { version = "...", features = ["events", "tracing"] }
 ```
 
-When `events` feature is enabled:
-- Extract functions accept `Option<&EventBus>` parameter
-- `CoreEvent` types are used (from `lighty-event`)
+| Feature   | Effect                                                                   |
+|-----------|--------------------------------------------------------------------------|
+| `events`  | Adds the `Option<&EventBus>` arg to `zip_extract` / `tar_gz_extract`.    |
+| `tracing` | Routes the `trace_*!` macros to `tracing::*` (otherwise no-ops).         |
 
-```rust
-#[cfg(feature = "events")]
-use lighty_event::{EventBus, Event, CoreEvent};
-use lighty_core::extract::zip_extract;
+## See also
 
-#[cfg(feature = "events")]
-let event_bus = EventBus::new(1000);
-
-#[cfg(feature = "events")]
-zip_extract(reader, output, Some(&event_bus)).await?;
-
-#[cfg(not(feature = "events"))]
-zip_extract(reader, output).await?;
-```
-
-### Tracing Feature
-
-```toml
-[dependencies]
-lighty-core = { version = "26.5.1", features = ["tracing"] }
-```
-
-When `tracing` feature is enabled:
-- `trace_debug!`, `trace_info!`, `trace_warn!`, `trace_error!` macros emit logs
-- `time_it!` macro emits performance metrics
-
-When disabled:
-- All macros compile to no-ops
-
-## Module Structure
-
-```
-lighty_core
-├── app_state
-│   └── AppState
-├── system
-│   ├── OS
-│   ├── ARCHITECTURE
-│   ├── OperatingSystem
-│   └── Architecture
-├── download
-│   ├── download_file
-│   └── download_file_untracked
-├── extract
-│   ├── zip_extract
-│   ├── tar_extract
-│   └── tar_gz_extract
-├── hash
-│   ├── verify_file_sha1
-│   ├── verify_file_sha1_streaming
-│   ├── calculate_file_sha1_sync
-│   ├── verify_file_sha1_sync
-│   ├── calculate_sha1_bytes
-│   └── calculate_sha1_bytes_raw
-├── hosts
-│   └── HTTP_CLIENT
-├── macros
-│   ├── mkdir!
-│   ├── join_and_mkdir!
-│   ├── join_and_mkdir_vec!
-│   ├── trace_debug!
-│   ├── trace_info!
-│   ├── trace_warn!
-│   ├── trace_error!
-│   └── time_it!
-└── errors
-    ├── SystemError / SystemResult
-    ├── DownloadError / DownloadResult
-    ├── ExtractError / ExtractResult
-    ├── HashError / HashResult
-    └── AppStateError / AppStateResult
-```
-
-## Related Documentation
-
-- [How to Use](./how-to-use.md) - Practical usage examples
-- [Overview](./overview.md) - Architecture and design
-- [Events](./events.md) - CoreEvent types
-- [AppState](./app_state.md) - Application state guide
-- [Download](./download.md) - Download system
-- [Extract](./extract.md) - Extraction system
-- [Hash](./hash.md) - Hash verification
-- [System](./system.md) - Platform detection
-- [Macros](./macros.md) - Macro usage
+- [`how-to-use.md`](./how-to-use.md) — one example per module
+- [`events.md`](./events.md) — the three `CoreEvent` variants

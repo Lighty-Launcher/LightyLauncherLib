@@ -1,189 +1,116 @@
-# Download System
+# download — async file downloads
 
-## Overview
+Two helpers built on the shared `hosts::HTTP_CLIENT`. No retry logic,
+no SHA1 verification — pair with [`hash`](./hash.md) when you need
+either.
 
-The download system provides async file downloads with SHA1 verification, retry logic, and proper error handling.
+## API
 
-## Quick Example
+```rust,ignore
+pub async fn download_file_untracked(
+    url: &str,
+    path: impl AsRef<Path>,
+) -> DownloadResult<()>;
 
-```rust
-use lighty_core::download_file;
+pub async fn download_file<F: Fn(u64, u64)>(
+    url: &str,
+    on_progress: F,
+) -> DownloadResult<Vec<u8>>;
+```
+
+`download_file_untracked` writes directly to disk and discards the
+response body. `download_file` streams the response chunk by chunk into
+a `Vec<u8>`, calling `on_progress(current, total)` after each chunk.
+`total` is `0` when the server omits `Content-Length`.
+
+## Examples
+
+### Save straight to disk
+
+```rust,no_run
+use lighty_core::download::download_file_untracked;
 
 #[tokio::main]
-async fn main()  {
-    // Download with SHA1 verification
-    let path = download_file(
-        "https://example.com/file.zip",
-        "/tmp/file.zip",
-        Some("expected-sha1-hash")
+async fn main() -> anyhow::Result<()> {
+    download_file_untracked(
+        "https://example.com/file.bin",
+        "/tmp/file.bin",
     ).await?;
-
-    println!("Downloaded to: {:?}", path);
     Ok(())
 }
 ```
 
-## Flow Diagram
+### Buffer in memory with a progress callback
 
-```mermaid
-sequenceDiagram
-    participant App
-    participant Download
-    participant HTTP
-    participant FS
-    participant Hash
+```rust,no_run
+use lighty_core::download::download_file;
 
-    App->>Download: download_file(url, dest, sha1)
-    Download->>FS: Create parent directories
-
-    Download->>HTTP: GET request with retry
-    HTTP-->>Download: Response stream
-
-    loop Stream chunks
-        Download->>FS: Write chunk
-    end
-
-    alt SHA1 provided
-        Download->>Hash: calculate_sha1(file)
-        Hash-->>Download: Actual hash
-
-        alt Hash mismatch
-            Download->>FS: Delete file
-            Download-->>App: VerificationFailed error
-        end
-    end
-
-    Download-->>App: Success (PathBuf)
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let bytes = download_file(
+        "https://example.com/file.bin",
+        |current, total| {
+            if total > 0 {
+                let pct = current as f64 * 100.0 / total as f64;
+                println!("{:.1}%", pct);
+            }
+        },
+    ).await?;
+    tokio::fs::write("/tmp/file.bin", &bytes).await?;
+    Ok(())
+}
 ```
 
-## API Reference
+### Download + verify SHA1
 
-### `download_file(url, destination, expected_sha1)`
+```rust,no_run
+use lighty_core::{download::download_file_untracked, hash::verify_file_sha1};
+use std::path::Path;
 
-Downloads a file from a URL to the specified destination.
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let path = Path::new("/tmp/library.jar");
+    download_file_untracked("https://example.com/library.jar", path).await?;
 
-**Parameters:**
-- `url: &str` - URL to download from
-- `destination: impl AsRef<Path>` - Local file path
-- `expected_sha1: Option<&str>` - Optional SHA1 hash for verification
-
-**Returns:** `Result<PathBuf, DownloadError>`
-
-**Features:**
-- Automatic retry on network errors
-- Parent directory creation
-- SHA1 verification
-- Async streaming for memory efficiency
-
-```rust
-// Without verification
-download_file(
-    "https://example.com/file.zip",
-    "/tmp/file.zip",
-    None
-).await?;
-
-// With verification
-download_file(
-    "https://example.com/file.zip",
-    "/tmp/file.zip",
-    Some("abc123...")
-).await?;
+    if !verify_file_sha1(path, "expected-sha1").await? {
+        tokio::fs::remove_file(path).await?;
+        anyhow::bail!("library SHA1 mismatch");
+    }
+    Ok(())
+}
 ```
 
-## Error Handling
+### Concurrent downloads
 
-```rust
+```rust,no_run
+use lighty_core::download::download_file_untracked;
+use futures::future::try_join_all;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let jobs = vec![
+        ("https://example.com/a", "/tmp/a"),
+        ("https://example.com/b", "/tmp/b"),
+        ("https://example.com/c", "/tmp/c"),
+    ];
+    try_join_all(jobs.into_iter().map(|(u, p)| download_file_untracked(u, p))).await?;
+    Ok(())
+}
+```
+
+## Errors
+
+```rust,ignore
 pub enum DownloadError {
-    /// Network error during download
-    NetworkError(reqwest::Error),
-
-    /// File system error
-    IOError(std::io::Error),
-
-    /// SHA1 verification failed
-    VerificationFailed {
-        expected: String,
-        actual: String,
-    },
+    Http(reqwest::Error),   // network failure or non-2xx status
+    Io(std::io::Error),     // write to disk failed
 }
 ```
 
-**Example:**
-```rust
-match download_file(url, dest, sha1).await {
-    Ok(path) => println!("Downloaded: {:?}", path),
-    Err(DownloadError::VerificationFailed { expected, actual }) => {
-        eprintln!("Hash mismatch! Expected: {}, Got: {}", expected, actual);
-    }
-    Err(e) => eprintln!("Download failed: {:?}", e),
-}
-```
+`error_for_status()` is called on the response, so 4xx/5xx surface as
+`Http(_)`.
 
-## Best Practices
+## See also
 
-### 1. Always Verify Critical Files
-```rust
-// Good: Verify integrity of Minecraft client
-download_file(
-    client_url,
-    client_path,
-    Some(&client.sha1)  // Always include SHA1
-).await?;
-```
-
-### 2. Handle Retries Gracefully
-```rust
-// Retry is automatic, but handle final failure
-match download_file(url, dest, sha1).await {
-    Ok(_) => println!("Success"),
-    Err(DownloadError::NetworkError(_)) => {
-        eprintln!("Network unavailable, try again later");
-    }
-    Err(e) => eprintln!("Fatal error: {:?}", e),
-}
-```
-
-### 3. Use Absolute Paths
-```rust
-use std::path::PathBuf;
-
-let dest = PathBuf::from("/absolute/path/to/file.zip");
-download_file(url, &dest, None).await?;
-```
-
-## Advanced Usage
-
-### Concurrent Downloads
-```rust
-use futures::future::join_all;
-
-let downloads = vec![
-    download_file(url1, dest1, sha1_1),
-    download_file(url2, dest2, sha1_2),
-    download_file(url3, dest3, sha1_3),
-];
-
-let results = join_all(downloads).await;
-```
-
-### Progress Tracking
-
-Currently not directly supported. Use the `indicatif` crate wrapper:
-
-```rust
-use indicatif::{ProgressBar, ProgressStyle};
-
-let pb = ProgressBar::new(100);
-pb.set_style(ProgressStyle::default_bar()
-    .template("{msg} [{bar:40}] {percent}%")?);
-
-// Download (progress not yet integrated)
-download_file(url, dest, sha1).await?;
-pb.finish_with_message("Downloaded");
-```
-
-## See Also
-
-- [Hash Verification](./system.md#hash-verification)
-- [Error Handling](./overview.md#error-handling-strategy)
+- [`hash.md`](./hash.md) — verify what you downloaded
+- [`how-to-use.md`](./how-to-use.md) — top-level walkthrough

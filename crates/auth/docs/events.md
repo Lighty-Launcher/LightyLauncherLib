@@ -1,171 +1,133 @@
 # Events
 
-## Overview
+`lighty-auth` emits the `AuthEvent` family through the bus exposed by
+`lighty-event`. Enable the `events` feature on `lighty-auth` to opt
+in.
 
-`lighty-auth` emits `AuthEvent` types through the event bus system provided by `lighty-event`. These events track authentication flow progress.
+The full event catalogue across all modules (Launch, Loader, Java,
+Auth, Console, …) lives in
+[`crates/event/docs/events.md`](../../event/docs/events.md). This page
+only documents what **auth** specifically emits.
 
-**Feature**: Requires `events` feature flag
+**Export**: `lighty_event::AuthEvent`, also re-exported as
+`lighty_launcher::event::AuthEvent`.
 
-**Export**:
-- Event types: `lighty_event::AuthEvent`
-- Re-export: `lighty_launcher::event::AuthEvent`
+A note on the `provider` field: every variant carries
+`provider: String` (`"Microsoft"`, `"Azuriom"`, `"Offline"`, or
+whatever label your custom provider passes) — **not** the
+`AuthProvider` enum. The enum is reserved for the `UserProfile` return
+value, where it carries provider-specific data (e.g. the MS refresh
+token).
 
-The `provider` field on every variant is a plain `String`
-(`"Microsoft"`, `"Azuriom"`, `"Offline"`, or whatever label a custom
-authenticator emits) — **not** the `AuthProvider` enum. The enum is
-reserved for the `UserProfile` return value where it carries
-provider-specific data (e.g. the secret-wrapped MS refresh token).
+## Variants
 
-## AuthEvent Types
-
-### AuthenticationStarted
-
-Emitted at the very start of an `authenticate()` call.
-
-**Fields**:
-- `provider: String` — provider label
-
-```rust
-use lighty_event::{EventBus, Event, AuthEvent};
-use lighty_auth::{offline::OfflineAuth, Authenticator};
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let event_bus = EventBus::new(1000);
-    let mut receiver = event_bus.subscribe();
-
-    tokio::spawn(async move {
-        while let Ok(event) = receiver.next().await {
-            if let Event::Auth(AuthEvent::AuthenticationStarted { provider }) = event {
-                println!("Starting authentication with: {}", provider);
-            }
-        }
-    });
-
-    let mut auth = OfflineAuth::new("Player");
-    auth.authenticate(Some(&event_bus)).await?;
-
-    Ok(())
+```rust,no_run
+# use serde::{Deserialize, Serialize};
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "event")]
+pub enum AuthEvent {
+    AuthenticationStarted    { provider: String },
+    AuthenticationInProgress { provider: String, step: String },
+    AuthenticationSuccess    { provider: String, username: String, uuid: String },
+    AuthenticationFailed     { provider: String, error: String },
+    AlreadyAuthenticated     { provider: String, username: String },
 }
 ```
 
-### AuthenticationInProgress
+| Variant | When |
+|---|---|
+| `AuthenticationStarted` | At the very start of every `authenticate()` |
+| `AuthenticationInProgress` | Between stages of a multi-step flow (see sequences below) |
+| `AuthenticationSuccess` | Right before `authenticate()` returns `Ok` |
+| `AuthenticationFailed` | When the flow errors out (`error` = human-readable) |
+| `AlreadyAuthenticated` | Emitted by higher-level callers (silent-refresh helpers, session reuse) — not by built-in providers |
 
-Emitted between stages of a multi-step flow (Microsoft device-code /
-Xbox / XSTS / Minecraft / Profile, Azuriom request, etc.).
+`AuthenticationSuccess` carries the user's `username` and `uuid`
+— **never** the access token. Secret material stays in the returned
+`UserProfile` (`SecretString`) or in the OS keychain when
+`with_keyring(...)` is active.
 
-**Fields**:
-- `provider: String`
-- `step: String` — short human-readable label of the current stage
+The Microsoft device code itself is delivered through the
+`MicrosoftAuth::set_device_code_callback(|code, url| { … })` callback,
+not through events — the consumer needs the raw values.
 
-```rust
-if let Event::Auth(AuthEvent::AuthenticationInProgress { provider, step }) = event {
-    println!("[{provider}] {step}");
-}
-```
-
-For Microsoft, the device code itself is delivered through the
-`MicrosoftAuth::set_device_code_callback(|code, url| { … })` callback —
-not through an event — because the consumer needs the raw values
-(callback signature `Fn(&str, &str) + Send + Sync`).
-
-### AuthenticationSuccess
-
-Emitted right after the provider has produced a valid `UserProfile`,
-just before `authenticate()` returns.
-
-**Fields**:
-- `provider: String`
-- `username: String`
-- `uuid: String`
-
-```rust
-if let Event::Auth(AuthEvent::AuthenticationSuccess { provider, username, uuid }) = event {
-    println!("Logged in as {username} ({uuid}) via {provider}");
-}
-```
-
-Note the event carries the user's `username` / `uuid` but **never** the
-access token — secret material stays in the returned `UserProfile`
-(secret-wrapped via [`SecretString`](https://docs.rs/secrecy/)) or in
-the OS keychain when `with_keyring(...)` is active.
-
-### AuthenticationFailed
-
-Emitted when the flow errors out.
-
-**Fields**:
-- `provider: String`
-- `error: String`
-
-```rust
-if let Event::Auth(AuthEvent::AuthenticationFailed { provider, error }) = event {
-    eprintln!("Auth failed for {provider}: {error}");
-}
-```
-
-### AlreadyAuthenticated
-
-Emitted by higher-level callers (e.g. silent-refresh helpers) that
-short-circuit when a still-valid session is reused.
-
-**Fields**:
-- `provider: String`
-- `username: String`
-
-## Complete Event Flow
+## Sequences
 
 ### Offline
 
-```
-AuthenticationStarted
-    ↓
-AuthenticationSuccess
-```
-
-### Microsoft (device-code, success)
-
-```
-AuthenticationStarted              { provider: "Microsoft" }
-AuthenticationInProgress           { step: "Requesting device code" }
-AuthenticationInProgress           { step: "Waiting for user authorization" }
-AuthenticationInProgress           { step: "Exchanging for Xbox Live token" }
-AuthenticationInProgress           { step: "Exchanging for XSTS token" }
-AuthenticationInProgress           { step: "Exchanging for Minecraft token" }
-AuthenticationInProgress           { step: "Fetching Minecraft profile" }
-AuthenticationSuccess              { username, uuid }
+```text
+AuthenticationStarted   { provider: "Offline" }
+AuthenticationSuccess   { provider: "Offline", username, uuid }
 ```
 
-### Microsoft (silent refresh)
+### Microsoft — device code (success)
 
+```text
+AuthenticationStarted    { provider: "Microsoft" }
+AuthenticationInProgress { step: "Requesting device code" }
+AuthenticationInProgress { step: "Waiting for user authorization" }
+AuthenticationInProgress { step: "Exchanging for Xbox Live token" }
+AuthenticationInProgress { step: "Exchanging for XSTS token" }
+AuthenticationInProgress { step: "Exchanging for Minecraft token" }
+AuthenticationInProgress { step: "Fetching Minecraft profile" }
+AuthenticationSuccess    { username, uuid }
 ```
-AuthenticationStarted              { provider: "Microsoft" }
-AuthenticationInProgress           { step: "Refreshing Microsoft token" }
-AuthenticationInProgress           { step: "Exchanging for Xbox Live token" }
+
+### Microsoft — silent refresh
+
+```text
+AuthenticationStarted    { provider: "Microsoft" }
+AuthenticationInProgress { step: "Refreshing Microsoft token" }
+AuthenticationInProgress { step: "Exchanging for Xbox Live token" }
 …
-AuthenticationSuccess              { username, uuid }
-```
-
-### Microsoft (failure)
-
-```
-AuthenticationStarted
-    ↓
-AuthenticationInProgress (any step)
-    ↓
-AuthenticationFailed
+AuthenticationSuccess    { username, uuid }
 ```
 
 ### Azuriom
 
-```
-AuthenticationStarted
-    ↓
-AuthenticationSuccess  or  AuthenticationFailed
+```text
+AuthenticationStarted   { provider: "Azuriom" }
+AuthenticationSuccess   { provider: "Azuriom", username, uuid }
+# or on error:
+AuthenticationFailed    { provider: "Azuriom", error }
 ```
 
-## Related Documentation
+## Listening
 
-- [How to Use](./how-to-use.md) - Practical authentication examples with events
-- [Exports](./exports.md) - Complete export reference
-- [lighty-event Events](../../event/docs/events.md) - All event types
+```rust,no_run
+# #[cfg(feature = "events")]
+# {
+use lighty_auth::{offline::OfflineAuth, Authenticator};
+use lighty_event::{AuthEvent, Event, EventBus};
+
+# async fn run() -> anyhow::Result<()> {
+let bus = EventBus::new(1000);
+let mut rx = bus.subscribe();
+
+tokio::spawn(async move {
+    while let Ok(event) = rx.next().await {
+        if let Event::Auth(auth_event) = event {
+            match auth_event {
+                AuthEvent::AuthenticationStarted    { provider }              => println!("[{provider}] start"),
+                AuthEvent::AuthenticationInProgress { provider, step }        => println!("[{provider}] {step}"),
+                AuthEvent::AuthenticationSuccess    { provider, username, .. }=> println!("[{provider}] OK {username}"),
+                AuthEvent::AuthenticationFailed     { provider, error }       => eprintln!("[{provider}] {error}"),
+                AuthEvent::AlreadyAuthenticated     { provider, username }    => println!("[{provider}] reused {username}"),
+            }
+        }
+    }
+});
+
+let mut auth = OfflineAuth::new("Player");
+let _profile = auth.authenticate(Some(&bus)).await?;
+# Ok(()) }
+# }
+```
+
+## Related
+
+- [How to use](./how-to-use.md) — `with_event_bus` patterns
+- [Exports](./exports.md) — feature gate details
+- [Event catalogue](../../event/docs/events.md) — all modules
+- [Launch events](../../launch/docs/events.md) — `LaunchEvent` /
+  `ModloaderEvent` emitted by the launch pipeline

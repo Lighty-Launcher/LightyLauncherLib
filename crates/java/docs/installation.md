@@ -1,369 +1,149 @@
-# Installation Guide
+# Installation
 
-## Download Process
+`jre_downloader` is the pair of helpers that turn a
+`(distribution, version)` into a path to a working `java` binary.
 
-### Basic Download
+## API
 
-```rust
-use lighty_java::{JavaDistribution, jre_downloader};
-use std::path::Path;
+```rust,ignore
+// With `events`
+pub async fn jre_download<F>(
+    runtimes_folder: &Path,
+    distribution: &JavaDistribution,
+    version: &u8,
+    on_progress: F,
+    event_bus: Option<&EventBus>,
+) -> JreResult<PathBuf>
+where F: Fn(u64, u64);
 
-#[tokio::main]
-async fn main() {
-    let runtime_dir = Path::new("./runtimes");
+// Without `events`
+pub async fn jre_download<F>(
+    runtimes_folder: &Path,
+    distribution: &JavaDistribution,
+    version: &u8,
+    on_progress: F,
+) -> JreResult<PathBuf>
+where F: Fn(u64, u64);
 
-    let java_path = jre_downloader::jre_download(
-        runtime_dir,
-        &JavaDistribution::Temurin,
-        &21,
-        |current, total| {
-            let percent = (current * 100) / total;
-            println!("Download: {}%", percent);
-        }
-    ).await.unwrap();
-
-    println!("Java installed at: {}", java_path.display());
-}
+// Available regardless of feature
+pub async fn find_java_binary(
+    runtimes_folder: &Path,
+    distribution: &JavaDistribution,
+    version: &u8,
+) -> JreResult<PathBuf>;
 ```
 
-### With Progress Tracking
+Both helpers apply `JavaDistribution::get_fallback(version)`
+internally, so calling them with a `(distribution, version)` that
+isn't published on the current platform still returns a working
+binary path (from the fallback). The same logic lets `find_java_binary`
+locate an install made by `jre_download` with no extra bookkeeping.
 
-```rust
-use lighty_java::{JavaDistribution, jre_downloader};
-
-let java_path = jre_downloader::jre_download(
-    runtime_dir,
-    &JavaDistribution::Temurin,
-    &17,
-    |current, total| {
-        let percent = (current * 100) / total;
-        let current_mb = current / 1_000_000;
-        let total_mb = total / 1_000_000;
-        print!("\rDownloading: {} / {} MB ({}%)", current_mb, total_mb, percent);
-    }
-).await?;
-
-println!("\nInstalled: {}", java_path.display());
-```
-
-### With Event System
-
-```rust
-use lighty_java::{JavaDistribution, jre_downloader};
-use lighty_event::{EventBus, Event, JavaEvent};
-
-let event_bus = EventBus::new(1000);
-let mut receiver = event_bus.subscribe();
-
-// Spawn event listener
-tokio::spawn(async move {
-    while let Ok(event) = receiver.next().await {
-        if let Event::Java(java_event) = event {
-            match java_event {
-                JavaEvent::JavaDownloadStarted { distribution, version, total_bytes } => {
-                    println!("Downloading {} {} ({} MB)", distribution, version, total_bytes / 1_000_000);
-                }
-                JavaEvent::JavaDownloadProgress { bytes } => {
-                    print!("\r{} MB", bytes / 1_000_000);
-                }
-                JavaEvent::JavaDownloadCompleted { .. } => {
-                    println!("\nDownload complete");
-                }
-                JavaEvent::JavaExtractionStarted { .. } => {
-                    println!("Extracting...");
-                }
-                JavaEvent::JavaExtractionCompleted { binary_path, .. } => {
-                    println!("Ready: {}", binary_path);
-                }
-                _ => {}
-            }
-        }
-    }
-});
-
-let java_path = jre_downloader::jre_download(
-    runtime_dir,
-    &JavaDistribution::Temurin,
-    &21,
-    |_, _| {},
-    Some(&event_bus)
-).await?;
-```
-
-## Installation Flow
+## Pipeline
 
 ```mermaid
 sequenceDiagram
     participant App
-    participant Downloader
-    participant API
+    participant Downloader as jre_download
     participant FS
-    participant Extract
+    participant API as Provider API
+    participant Core as lighty_core
 
-    App->>Downloader: jre_download()
-    Downloader->>FS: Check if already installed
-
-    alt Already installed
-        FS-->>Downloader: Binary path found
-        Downloader-->>App: Return path (instant)
-    else Need to download
-        Downloader->>API: Request download URL
-        API-->>Downloader: Download URL
-
-        Downloader->>API: Stream download
-        loop Progress
-            API->>Downloader: Chunk
-            Downloader->>App: Progress callback
-        end
-
-        Downloader->>FS: Write archive
-        Downloader->>Extract: Extract archive
-
-        loop Extraction
-            Extract->>FS: Extract file
-            Extract->>App: Progress event
-        end
-
-        Downloader->>FS: Locate binary
-        FS-->>Downloader: Binary path
-
-        Downloader-->>App: Return path
-    end
+    App->>Downloader: jre_download(dir, dist, 21, cb)
+    Downloader->>FS: clear / create dir
+    Downloader->>API: get_download_url(21)
+    API-->>Downloader: URL
+    Downloader->>Core: download_file(URL, cb)
+    Core-->>Downloader: archive bytes (Vec<u8>)
+    Downloader->>Core: zip_extract / tar_gz_extract
+    Downloader->>FS: locate java binary
+    Downloader-->>App: PathBuf
 ```
 
-## Directory Structure
-
-### Before Installation
+## Disk layout
 
 ```
-runtimes/
-└── (empty)
+<runtimes_folder>/
+└── <distribution>_<version>/
+    └── <jre_root>/                    # whatever the archive ships
+        ├── bin/java[.exe]             # Linux / Windows / Liberica macOS
+        └── Contents/Home/bin/java     # macOS bundles (Temurin, Zulu)
 ```
 
-### After Installation
+Example after `jre_download(<cache>/java, &Temurin, &21, …)`:
 
 ```
-runtimes/
-└── temurin_21/
-    └── jdk-21.0.1+12/
-        ├── bin/
-        │   ├── java         (or java.exe on Windows)
-        │   ├── javac
-        │   └── ...
-        ├── lib/
-        │   ├── modules
-        │   └── ...
-        └── conf/
-            └── ...
+~/.cache/LightyLauncher/java/temurin_21/jdk-21.0.4+7-jre/bin/java
 ```
 
-## Finding Existing Installation
+`prepare_installation_directory` wipes the target dir before each
+install — installs are atomic from the caller's point of view.
 
-Check if Java is already installed before downloading:
+## Locating the binary
 
-```rust
+`locate_binary_in_directory` handles three macOS layouts:
+
+| Layout | Distribution | Path |
+|---|---|---|
+| `Contents/Home/bin/java` | Temurin | `<jre_root>/Contents/Home/bin/java` |
+| `*.jre/Contents/Home/bin/java` | Zulu Java 8 on macOS | nested bundle |
+| `bin/java` (flat) | Liberica tar.gz | `<jre_root>/bin/java` |
+
+Linux uses `bin/java`; Windows uses `bin/java.exe`.
+
+On Unix, `ensure_executable_permissions` `chmod`s the binary to `0o755`
+before returning.
+
+## Example
+
+```rust,no_run
+use lighty_core::AppState;
 use lighty_java::{JavaDistribution, jre_downloader};
 
-let java_path = match jre_downloader::find_java_binary(
-    runtime_dir,
-    &JavaDistribution::Temurin,
-    &21
-).await {
-    Ok(path) => {
-        println!("Using existing installation: {}", path.display());
-        path
-    }
-    Err(_) => {
-        println!("Downloading Java 21...");
-        jre_downloader::jre_download(
-            runtime_dir,
-            &JavaDistribution::Temurin,
-            &21,
-            |current, total| {
-                print!("\r{}%", (current * 100) / total);
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    AppState::init("LightyLauncher")?;
+    let runtimes = AppState::cache_dir().join("java");
+
+    let java = jre_downloader::jre_download(
+        &runtimes,
+        &JavaDistribution::Temurin,
+        &21,
+        |cur, tot| {
+            if tot > 0 {
+                println!("{:.1}%", cur as f64 * 100.0 / tot as f64);
             }
-        ).await?
-    }
-};
-```
+        },
+        #[cfg(feature = "events")] None,
+    ).await?;
 
-## Installation Naming
-
-Runtime directories follow this pattern:
-
-```
-{distribution}_{version}/
-```
-
-Examples:
-- `temurin_8/` - Temurin Java 8
-- `graalvm_21/` - GraalVM Java 21
-- `zulu_17/` - Zulu Java 17
-- `liberica_11/` - Liberica Java 11
-
-## Archive Extraction
-
-### Windows (ZIP)
-
-```rust
-// Extracts to: runtimes/temurin_21/
-zip_extract(archive, destination).await?;
-```
-
-### Linux/macOS (TAR.GZ)
-
-```rust
-// Extracts to: runtimes/temurin_21/
-tar_gz_extract(archive, destination).await?;
-```
-
-## Binary Location
-
-After extraction, the Java binary is located at:
-
-**Windows**:
-```
-runtimes/temurin_21/jdk-21.0.1+12/bin/java.exe
-```
-
-**macOS**:
-```
-runtimes/temurin_21/jdk-21.0.1+12/Contents/Home/bin/java
-```
-
-**Linux**:
-```
-runtimes/temurin_21/jdk-21.0.1+12/bin/java
-```
-
-## Permissions (Unix)
-
-On Linux and macOS, the binary needs execution permissions:
-
-```rust
-// Automatically handled by find_java_binary()
-#[cfg(unix)]
-{
-    use std::os::unix::fs::PermissionsExt;
-
-    let metadata = fs::metadata(&java_path).await?;
-    let mut permissions = metadata.permissions();
-    permissions.set_mode(0o755);  // rwxr-xr-x
-    fs::set_permissions(&java_path, permissions).await?;
+    println!("java: {}", java.display());
+    Ok(())
 }
 ```
 
-## Error Handling
+## With events
 
-### Download Errors
+Pass `Some(&bus)` to receive the eight `JavaEvent` variants. See
+[`events.md`](./events.md).
 
-```rust
-use lighty_java::JreError;
+## Errors
 
-match jre_downloader::jre_download(dir, &dist, &version, |_,_| {}).await {
-    Ok(path) => println!("Success: {}", path.display()),
-
-    Err(JreError::Download(msg)) => {
-        eprintln!("Download failed: {}", msg);
-        // Possible causes:
-        // - Network connectivity issues
-        // - Invalid distribution/version combination
-        // - API rate limiting
-    }
-
-    Err(JreError::Extraction(msg)) => {
-        eprintln!("Extraction failed: {}", msg);
-        // Possible causes:
-        // - Corrupted archive
-        // - Insufficient disk space
-        // - Permission issues
-    }
-
-    Err(JreError::NotFound { path }) => {
-        eprintln!("Binary not found: {}", path.display());
-        // Possible causes:
-        // - Unexpected archive structure
-        // - Platform detection error
-    }
-
-    Err(JreError::UnsupportedOS) => {
-        eprintln!("Your operating system is not supported");
-    }
-
-    Err(JreError::UnsupportedVersion { version, distribution }) => {
-        eprintln!("{} doesn't support Java {}", distribution, version);
-        // GraalVM only supports Java 17+
-    }
-
-    Err(e) => {
-        eprintln!("Unexpected error: {}", e);
-    }
+```rust,ignore
+pub enum JreError {
+    NotFound { path: PathBuf },
+    InvalidStructure,
+    Download(String),       // wraps provider URL fetch + download_file
+    UnsupportedOS,
+    Io(std::io::Error),
+    Extraction(String),     // wraps zip_extract / tar_gz_extract
 }
 ```
 
-### Network Retry
+## See also
 
-The download system automatically retries on network errors:
-
-```rust
-// Automatic retry with exponential backoff
-// - Retry 1: Wait 1 second
-// - Retry 2: Wait 2 seconds
-// - Retry 3: Wait 4 seconds
-// Max retries: 3
-```
-
-## Disk Space Requirements
-
-Ensure sufficient disk space before downloading:
-
-| Distribution | Java 8 | Java 11 | Java 17 | Java 21 |
-|--------------|--------|---------|---------|---------|
-| Temurin | ~120 MB | ~250 MB | ~275 MB | ~300 MB |
-| GraalVM | N/A | N/A | ~450 MB | ~475 MB |
-| Zulu | ~125 MB | ~260 MB | ~290 MB | ~315 MB |
-| Liberica | ~100 MB | ~240 MB | ~265 MB | ~290 MB |
-
-Space includes:
-- Downloaded archive
-- Extracted files
-- 10% buffer for safety
-
-## Cleanup
-
-Remove old Java installations:
-
-```rust
-use tokio::fs;
-
-// Remove specific version
-fs::remove_dir_all("runtimes/temurin_8").await?;
-
-// Remove all runtimes
-fs::remove_dir_all("runtimes").await?;
-```
-
-## Concurrent Downloads
-
-Multiple Java versions can be downloaded concurrently:
-
-```rust
-use tokio::try_join;
-
-let (java8, java17, java21) = try_join!(
-    jre_downloader::jre_download(dir, &JavaDistribution::Temurin, &8, |_,_| {}),
-    jre_downloader::jre_download(dir, &JavaDistribution::Temurin, &17, |_,_| {}),
-    jre_downloader::jre_download(dir, &JavaDistribution::Temurin, &21, |_,_| {})
-)?;
-
-println!("Java 8: {}", java8.display());
-println!("Java 17: {}", java17.display());
-println!("Java 21: {}", java21.display());
-```
-
-## See Also
-
-- [Overview](./overview.md) - Architecture overview
-- [Distributions](./distributions.md) - Distribution comparison
-- [Runtime](./runtime.md) - Executing Java processes
-- [Examples](./examples.md) - Complete examples
+- [`overview.md`](./overview.md) — crate scope
+- [`distributions.md`](./distributions.md) — provider matrix
+- [`runtime.md`](./runtime.md) — spawn `java` after install
+- [`../../core/docs/extract.md`](../../core/docs/extract.md) — archive
+  extraction internals

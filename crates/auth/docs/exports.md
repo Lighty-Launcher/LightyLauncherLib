@@ -1,254 +1,13 @@
 # Exports
 
-## Overview
+Public surface of the `lighty-auth` crate.
 
-Complete reference of all exports from `lighty-auth` and their re-exports in `lighty-launcher`.
-
-## In `lighty_auth`
-
-### Core Trait
-
-```rust
-use lighty_auth::Authenticator;
-```
-
-### Types
-
-```rust
-use lighty_auth::{
-    UserProfile,     // Authenticated user data
-    UserRole,        // User role/rank information
-    AuthProvider,    // Provider type enum
-    AuthResult,      // Result type alias: Result<T, AuthError>
-};
-```
-
-### Secrets
-
-Re-exported from the [`secrecy`](https://docs.rs/secrecy/) crate so
-callers don't have to add it manually:
-
-```rust
-use lighty_auth::{SecretString, ExposeSecret};
-
-// Read a token at launch time, right before injecting it into argv:
-let token = profile.access_token
-    .as_ref()
-    .map(|s| s.expose_secret().to_owned());
-```
-
-### OS Keychain (feature `keyring`)
-
-```rust
-#[cfg(feature = "keyring")]
-use lighty_auth::TokenHandle;
-```
-
-`TokenHandle` is the opt-in pointer to a token stored in the OS
-keychain. Created internally by `MicrosoftAuth::with_keyring(...)` /
-`AzuriomAuth::with_keyring(...)`; not constructible directly. Public
-methods:
-
-- `read() -> AuthResult<SecretString>` — fetches the token from the keychain
-- `revoke() -> AuthResult<()>` — deletes the entry (idempotent)
-
-### Helper Functions
-
-```rust
-use lighty_auth::generate_offline_uuid;
-```
-
-### Authentication Providers
-
-```rust
-use lighty_auth::{
-    offline::OfflineAuth,
-    microsoft::MicrosoftAuth,
-    azuriom::AzuriomAuth,
-};
-```
-
-### Errors
-
-```rust
-use lighty_auth::AuthError;
-```
-
-Adds variant `AuthError::Keyring(keyring::Error)` when the `keyring`
-feature is enabled.
-
-## In `lighty_launcher` (Re-exports)
-
-```rust
-use lighty_launcher::auth::{
-    // Trait
-    Authenticator,
-
-    // Types
-    UserProfile,
-    UserRole,
-    AuthProvider,
-    AuthResult,
-
-    // Secrets
-    SecretString,
-    ExposeSecret,
-
-    // OS keychain (feature "keyring")
-    #[cfg(feature = "keyring")]
-    TokenHandle,
-
-    // Helper
-    generate_offline_uuid,
-
-    // Providers
-    offline::OfflineAuth,
-    microsoft::MicrosoftAuth,
-    azuriom::AzuriomAuth,
-
-    // Errors
-    AuthError,
-};
-```
-
-## Usage Patterns
-
-### Pattern 1: Direct Crate Import
-
-```rust
-use lighty_auth::{Authenticator, offline::OfflineAuth};
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let mut auth = OfflineAuth::new("Player");
-
-    #[cfg(not(feature = "events"))]
-    let profile = auth.authenticate().await?;
-
-    println!("{}", profile.username);
-    Ok(())
-}
-```
-
-### Pattern 2: Via Main Launcher Crate
-
-```rust
-use lighty_launcher::auth::{Authenticator, microsoft::MicrosoftAuth};
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let mut auth = MicrosoftAuth::new("client-id");
-
-    #[cfg(not(feature = "events"))]
-    let profile = auth.authenticate().await?;
-
-    Ok(())
-}
-```
-
-## Type Details
-
-### UserProfile
-
-```rust
-pub struct UserProfile {
-    pub id: Option<u64>,                     // Server-side user ID (Azuriom only)
-    pub username: String,
-    pub uuid: String,                        // Minecraft UUID, with dashes
-    pub access_token: Option<SecretString>,  // Session / MC token (secret-wrapped)
-    #[cfg(feature = "keyring")]
-    pub token_handle: Option<TokenHandle>,   // Opt-in OS-keychain handle
-    pub xuid: Option<String>,                // Xbox User ID (Microsoft only)
-    pub email: Option<String>,
-    pub email_verified: bool,
-    pub money: Option<f64>,
-    pub role: Option<UserRole>,
-    pub banned: bool,
-    pub provider: AuthProvider,              // Which authenticator produced this profile
-}
-
-impl UserProfile {
-    pub fn offline(username: impl Into<String>, uuid: impl Into<String>) -> Self;
-}
-```
-
-`UserProfile` is **not** `Serialize` / `Deserialize` — dumping a profile
-in plain JSON would leak the session token. For "remember me", either:
-
-- enable the `keyring` feature and call
-  `MicrosoftAuth::with_keyring(...)` / `AzuriomAuth::with_keyring(...)`
-  to route the token into the OS keychain automatically; or
-- persist only the MS `refresh_token` (a `SecretString`) yourself via
-  the `keyring` crate's `Entry::set_password`.
-
-See [`AUTH_SECRETS.md`](../../../AUTH_SECRETS.md) for the rationale.
-
-### UserRole
-
-```rust
-pub struct UserRole {
-    pub name: String,
-    pub color: Option<String>,        // Hex format: #RRGGBB
-}
-```
-
-### AuthProvider
-
-```rust
-pub enum AuthProvider {
-    Offline,
-    Azuriom {
-        base_url: String,
-    },
-    Microsoft {
-        client_id: String,
-        /// MS refresh token (~90 days, rotates per RFC 6749).
-        /// Wrapped in `SecretString` and consumed by
-        /// `MicrosoftAuth::authenticate_with_refresh_token` to skip
-        /// the device-code prompt on subsequent launches.
-        refresh_token: Option<SecretString>,
-    },
-    Custom {
-        base_url: String,
-    },
-}
-```
-
-`AuthProvider` is **not** `Serialize` / `Deserialize` (the secret-wrapped
-`refresh_token` would defeat the purpose).
-
-The variant drives the `${user_type}` launch placeholder at JVM start:
-`Microsoft` → `"msa"`, `Azuriom` → `"mojang"`, `Offline`/`Custom` →
-`"legacy"`.
-
-### AuthError
-
-```rust
-pub enum AuthError {
-    InvalidCredentials,
-    TwoFactorRequired,
-    Invalid2FACode,
-    AccountBanned(String),
-    EmailNotVerified,
-    Network(reqwest::Error),
-    InvalidResponse(String),
-    InvalidToken,
-    Cancelled,
-    DeviceCodeExpired,
-    Timeout,
-    Serialization(serde_json::Error),
-    Io(std::io::Error),
-    #[cfg(feature = "keyring")]
-    Keyring(keyring::Error),
-    Custom(String),
-}
-```
-
-## Module Structure
+## Module layout
 
 ```
 lighty_auth
-├── auth
+├── auth                         (private internals)
+│   re-exported as crate root:
 │   ├── Authenticator (trait)
 │   ├── UserProfile (+ ::offline constructor)
 │   ├── UserRole
@@ -258,31 +17,159 @@ lighty_auth
 ├── offline
 │   └── OfflineAuth
 ├── microsoft
-│   └── MicrosoftAuth (+ with_keyring under "keyring")
+│   └── MicrosoftAuth     (+ with_keyring under "keyring")
 ├── azuriom
-│   └── AzuriomAuth   (+ with_keyring under "keyring")
-├── keyring          (feature "keyring")
+│   └── AzuriomAuth       (+ with_keyring under "keyring")
+├── keyring               (feature "keyring")
 │   └── TokenHandle
-└── errors
-    └── AuthError
+└── errors                (private internals)
+    └── AuthError (re-exported as crate root)
 ```
 
-## Cargo Features
+## Crate root
 
-| Feature   | Adds                                                        |
-|-----------|-------------------------------------------------------------|
-| `events`  | `AuthEvent` emission through `lighty-event`                 |
-| `tracing` | `tracing` logs at the provider level                        |
+```rust,no_run
+use lighty_auth::{
+    // Trait
+    Authenticator,
+
+    // Types
+    UserProfile,
+    UserRole,
+    AuthProvider,
+    AuthResult,
+
+    // Secrets (re-exported from `secrecy`)
+    SecretString,
+    ExposeSecret,
+
+    // Helper
+    generate_offline_uuid,
+
+    // Errors
+    AuthError,
+};
+```
+
+Provider types live in submodules:
+
+```rust,no_run
+use lighty_auth::{
+    offline::OfflineAuth,
+    microsoft::MicrosoftAuth,
+    azuriom::AzuriomAuth,
+};
+```
+
+## OS keychain (feature `keyring`)
+
+```rust,no_run
+# #[cfg(feature = "keyring")]
+use lighty_auth::TokenHandle;
+```
+
+`TokenHandle` is the opt-in pointer to a token stored in the OS
+keychain. Not constructible directly — created by
+`MicrosoftAuth::with_keyring(...)` and `AzuriomAuth::with_keyring(...)`.
+Public methods:
+
+| Method | Returns | Notes |
+|---|---|---|
+| `read()` | `AuthResult<SecretString>` | Fetches the token from the keychain |
+| `revoke()` | `AuthResult<()>` | Deletes the entry (idempotent — `NoEntry` is treated as success) |
+
+Enabling the feature also adds a variant
+`AuthError::Keyring(keyring::Error)`.
+
+## Type details
+
+### `UserProfile`
+
+```rust,ignore
+pub struct UserProfile {
+    pub id: Option<u64>,                     // Server-side user ID (Azuriom only)
+    pub username: String,
+    pub uuid: String,                        // dashed Minecraft UUID
+    pub access_token: Option<SecretString>,  // secret-wrapped session / MC token
+    #[cfg(feature = "keyring")]
+    pub token_handle: Option<TokenHandle>,   // Opt-in OS-keychain handle
+    pub xuid: Option<String>,                // Xbox User ID (Microsoft only)
+    pub email: Option<String>,
+    pub email_verified: bool,
+    pub money: Option<f64>,
+    pub role: Option<UserRole>,
+    pub banned: bool,
+    pub provider: AuthProvider,
+}
+
+impl UserProfile {
+    pub fn offline(username: impl Into<String>, uuid: impl Into<String>) -> Self;
+}
+```
+
+`UserProfile` is **not** `Serialize` / `Deserialize`. For "remember me"
+persistence: enable `keyring` and call `with_keyring(...)`, or persist
+only the MS refresh token yourself via the `keyring` crate. Pattern:
+[microsoft.md → Silent re-auth](./microsoft.md#silent-re-auth).
+
+### `UserRole`
+
+```rust,ignore
+pub struct UserRole {
+    pub name: String,
+    pub color: Option<String>,   // hex string, e.g. "#FFD700"
+}
+```
+
+### `AuthProvider`
+
+```rust,ignore
+pub enum AuthProvider {
+    Offline,
+    Azuriom    { base_url: String },
+    Microsoft  { client_id: String, refresh_token: Option<SecretString> },
+    Custom     { base_url: String },
+}
+```
+
+Also **not** `Serialize` / `Deserialize` (the secret-wrapped
+`refresh_token` would defeat the purpose). The variant drives the
+`${user_type}` launch placeholder: `Microsoft` → `"msa"`, `Azuriom` →
+`"mojang"`, `Offline` / `Custom` → `"legacy"`.
+
+### `AuthError`
+
+```rust,ignore
+pub enum AuthError {
+    InvalidCredentials, TwoFactorRequired, Invalid2FACode,
+    AccountBanned(String), EmailNotVerified,
+    Network(reqwest::Error), InvalidResponse(String), InvalidToken,
+    Cancelled, DeviceCodeExpired, Timeout,
+    Serialization(serde_json::Error), Io(std::io::Error),
+    #[cfg(feature = "keyring")] Keyring(keyring::Error),
+    Custom(String),
+}
+```
+
+### `Authenticator` trait
+
+Full signature and implementation pattern: [trait.md](./trait.md).
+
+## Cargo features
+
+| Feature | Adds |
+|---|---|
+| `events` | `AuthEvent` emission through [`lighty-event`](../../event/docs/events.md) |
+| `tracing` | `tracing` logs at the provider level |
 | `keyring` | `TokenHandle`, `with_keyring(...)` on Microsoft / Azuriom, `AuthError::Keyring` |
 
-`keyring` is forwarded from the root crate as
+`keyring` is forwarded from the umbrella crate as
 `lighty-launcher/keyring` → `lighty-auth/keyring`
 (`lighty-launch/keyring` also enables the matching path in the launch
 crate for `--accessToken` injection).
 
-## Related Documentation
+## Related
 
-- [How to Use](./how-to-use.md) - Practical usage examples
-- [Events](./events.md) - AuthEvent types
-- [Trait](./trait.md) - Implementing custom authenticators
-- [Overview](./overview.md) - Architecture overview
+- [Overview](./overview.md), [How to use](./how-to-use.md)
+- [Trait](./trait.md) — custom authenticator skeleton
+- [Events](./events.md) — `AuthEvent` lifecycle

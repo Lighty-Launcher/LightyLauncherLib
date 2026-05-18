@@ -1,227 +1,19 @@
-# How to Use lighty-launch
+# How to use `lighty-launch`
 
-## Basic Usage
+The minimal flow is four steps: init `AppState`, build an instance,
+authenticate, call `.launch().run()`.
 
-### Step 1: Initialize AppState
-
-```rust
-use lighty_core::AppState;
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    AppState::init("MyLauncher")?;
-
-    Ok(())
-}
-```
-
-### Step 2: Create Instance
-
-```rust
-use lighty_launcher::prelude::*;
-
-let mut instance = VersionBuilder::new(
-    "my-instance",
-    Loader::Fabric,
-    "0.16.9",
-    "1.21.1",
-);
-```
-
-### Step 3: Authenticate
-
-```rust
+```rust,no_run
 use lighty_auth::{offline::OfflineAuth, Authenticator};
-
-let mut auth = OfflineAuth::new("Player123");
-
-#[cfg(not(feature = "events"))]
-let profile = auth.authenticate().await?;
-
-#[cfg(feature = "events"))]
-let profile = auth.authenticate(None).await?;
-```
-
-### Step 4: Launch
-
-```rust
+use lighty_core::AppState;
 use lighty_java::JavaDistribution;
-use lighty_launch::InstanceControl; // IMPORTANT: Import the trait
-
-instance.launch(&profile, JavaDistribution::Temurin)
-    .run()
-    .await?;
-
-println!("Game launched!");
-```
-
-## Launch with Custom JVM Options
-
-```rust
-use lighty_launch::InstanceControl;
-
-instance.launch(&profile, JavaDistribution::Temurin)
-    .with_jvm_options()
-        .set("Xmx", "4G")           // Maximum memory
-        .set("Xms", "2G")           // Initial memory
-        .set("XX:+UseG1GC", "")     // Use G1 garbage collector
-        .done()
-    .run()
-    .await?;
-```
-
-**Common JVM Options**:
-- `Xmx` - Maximum heap size (e.g., "4G", "8G")
-- `Xms` - Initial heap size (e.g., "2G")
-- `XX:+UseG1GC` - Use G1 garbage collector
-- `XX:+UnlockExperimentalVMOptions` - Enable experimental features
-- `XX:MaxGCPauseMillis` - Target max GC pause time
-
-## Launch with Custom Game Options
-
-```rust
-instance.launch(&profile, JavaDistribution::Temurin)
-    .with_game_options()
-        .set("width", "1920")
-        .set("height", "1080")
-        .set("fullscreen", "true")
-        .done()
-    .run()
-    .await?;
-```
-
-**Common Game Options**:
-- `width` / `height` - Window dimensions
-- `fullscreen` - Fullscreen mode
-- `quickPlayPath` - Quick play server path
-- `quickPlaySingleplayer` - Quick play singleplayer world
-- `quickPlayMultiplayer` - Quick play multiplayer server
-
-## Instance Management
-
-### Get Running Instance PID
-
-```rust
-use lighty_launch::InstanceControl;
-
-if let Some(pid) = instance.get_pid() {
-    println!("Instance running with PID: {}", pid);
-} else {
-    println!("Instance not running");
-}
-```
-
-### Get All PIDs (Multiple Instances)
-
-```rust
-let pids = instance.get_pids();
-
-if pids.is_empty() {
-    println!("No instances running");
-} else {
-    println!("Running instances: {:?}", pids);
-}
-```
-
-### Close Instance
-
-```rust
-if let Some(pid) = instance.get_pid() {
-    instance.close_instance(pid).await?;
-    println!("Instance closed");
-}
-```
-
-### Delete Instance
-
-```rust
-// Delete instance from disk (only if not running)
-instance.delete_instance().await?;
-println!("Instance deleted");
-```
-
-**Note**: `delete_instance()` will fail if the instance is running. Close it first.
-
-## Instance Size Calculation
-
-```rust
-use lighty_launch::InstanceControl;
-
-// Get metadata
-let metadata = instance.get_metadata().await?;
-
-// Calculate size
-let size = instance.size_of_instance(&metadata);
-
-println!("Libraries: {} MB", size.libraries / 1_000_000);
-println!("Client JAR: {} MB", size.client / 1_000_000);
-println!("Assets: {} MB", size.assets / 1_000_000);
-println!("Mods: {} MB", size.mods / 1_000_000);
-println!("Natives: {} MB", size.natives / 1_000_000);
-println!("Total: {} MB ({:.2} GB)", size.total / 1_000_000, size.total_gb());
-
-// Or use formatted strings
-use lighty_loaders::types::InstanceSize;
-println!("Total: {}", InstanceSize::format(size.total));
-```
-
-## With Events
-
-Track launch progress with events:
-
-```rust
-use lighty_event::{EventBus, Event, LaunchEvent, ModloaderEvent};
-use lighty_launch::InstanceControl;
+use lighty_launch::launch::Launch;
+use lighty_loaders::types::Loader;
+use lighty_version::VersionBuilder;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     AppState::init("MyLauncher")?;
-
-    // Create event bus
-    let event_bus = EventBus::new(1000);
-    let mut receiver = event_bus.subscribe();
-
-    // Spawn event listener
-    tokio::spawn(async move {
-        while let Ok(event) = receiver.next().await {
-            match event {
-                Event::Launch(LaunchEvent::InstallStarted { version, total_bytes }) => {
-                    println!("Installing {} ({} bytes)", version, total_bytes);
-                }
-                Event::Launch(LaunchEvent::InstallProgress { bytes }) => {
-                    // Accumulate against `total_bytes` from InstallStarted to
-                    // drive a progress bar; the installer emits one of these
-                    // per chunk written to disk across all 8 buckets.
-                    println!("+{} bytes downloaded", bytes);
-                }
-                Event::Launch(LaunchEvent::InstallCompleted { version, .. }) => {
-                    println!("Installed {}", version);
-                }
-                Event::Modloader(ModloaderEvent::ResolveCompleted { total_mods }) => {
-                    println!("Resolved {} mods", total_mods);
-                }
-                Event::Modloader(ModloaderEvent::ResourcePacksInstalled { count, bytes }) => {
-                    println!("ResourcePacks: {} files / {} bytes", count, bytes);
-                }
-                Event::Modloader(ModloaderEvent::ShaderPacksInstalled { count, bytes }) => {
-                    println!("ShaderPacks: {} files / {} bytes", count, bytes);
-                }
-                Event::Modloader(ModloaderEvent::DatapacksInstalled { count, bytes }) => {
-                    println!("Datapacks: {} files / {} bytes", count, bytes);
-                }
-                Event::Launch(LaunchEvent::Launched { version, pid }) => {
-                    println!("Launched {} with PID {}", version, pid);
-                }
-                Event::Launch(LaunchEvent::ProcessOutput { pid, line, .. }) => {
-                    print!("[{}] {}", pid, line);
-                }
-                Event::Launch(LaunchEvent::ProcessExited { pid, exit_code }) => {
-                    println!("Instance {} exited with code: {}", pid, exit_code);
-                }
-                _ => {}
-            }
-        }
-    });
 
     let mut instance = VersionBuilder::new(
         "fabric-1.21",
@@ -230,198 +22,212 @@ async fn main() -> anyhow::Result<()> {
         "1.21.1",
     );
 
-    let mut auth = OfflineAuth::new("Player");
-    let profile = auth.authenticate(None).await?;
+    let mut auth    = OfflineAuth::new("Player");
+    let     profile = auth.authenticate(
+        #[cfg(feature = "events")] None,
+    ).await?;
 
-    // Launch with events
-    instance.launch(&profile, JavaDistribution::Temurin)
+    instance
+        .launch(&profile, JavaDistribution::Temurin)
         .run()
         .await?;
-
-    // Keep running to see console output
-    tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-
     Ok(())
 }
 ```
 
-## Installation Only (No Launch)
+The four parts have canonical docs elsewhere — this page just shows
+how they fit together. For more `VersionBuilder` patterns see
+[`crates/version/docs/how-to-use.md`](../../version/docs/how-to-use.md);
+for `AppState` paths see
+[`crates/core/docs/app_state.md`](../../core/docs/app_state.md);
+for `OfflineAuth` / `MicrosoftAuth` / `AzuriomAuth` see
+[`crates/auth/docs/how-to-use.md`](../../auth/docs/how-to-use.md).
 
-Sometimes you want to download assets without launching:
+## Tuning JVM and game args
 
-```rust
-use lighty_launch::installer::Installer;
+`.launch(...)` returns a [`LaunchBuilder`](./launch.md#launchbuilder-api)
+exposing two sub-builders. The full placeholder list and option
+catalogue live in [arguments.md](./arguments.md); the common knobs:
 
-// Get metadata
-let metadata = instance.get_metadata().await?;
-
-// Install assets, libraries, natives, mods
-Installer.install(&instance, &metadata).await?;
-
-println!("Installation complete!");
+```rust,no_run
+# use lighty_auth::UserProfile;
+# use lighty_core::AppState;
+# use lighty_java::JavaDistribution;
+# use lighty_launch::errors::InstallerResult;
+# use lighty_launch::launch::Launch;
+# use lighty_loaders::types::Loader;
+# use lighty_version::VersionBuilder;
+# async fn run() -> InstallerResult<()> {
+# AppState::init("MyLauncher").ok();
+# let profile = UserProfile::offline("Player", "");
+# let mut instance = VersionBuilder::new("inst", Loader::Vanilla, "", "1.21.1");
+instance
+    .launch(&profile, JavaDistribution::Temurin)
+    .with_jvm_options()
+        .set("Xmx", "4G")               // -Xmx4G
+        .set("Xms", "2G")               // -Xms2G
+        .set("XX:+UseG1GC", "")         // -XX:+UseG1GC
+        .done()
+    .with_arguments()
+        .set("width",  "1920")          // --width 1920
+        .set("height", "1080")          // --height 1080
+        .done()
+    .run()
+    .await?;
+# Ok(()) }
 ```
 
-## Complete Launch Flow
+`set(key, "")` for value-less flags. `.remove(key)` strips an option
+even if the loader metadata injected it. Custom keys default to
+`--key value` form unless they're a known launch placeholder constant
+(see [arguments.md](./arguments.md#standard-placeholders)).
 
-```rust
-use lighty_core::AppState;
-use lighty_launcher::prelude::*;
-use lighty_java::JavaDistribution;
-use lighty_launch::InstanceControl;
+## Tracking progress with events
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // 1. Initialize AppState
-    AppState::init("MyLauncher")?;
+Enable the `events` feature and pass an `EventBus` via
+`.with_event_bus(&bus)`. The launch crate emits two families
+(`LaunchEvent` for install / spawn / process I/O,
+`ModloaderEvent` for mod resolution / modpack / resource-shader-datapack
+buckets) — full catalogue and example listener in
+[events.md](./events.md).
 
-    // 2. Create instance
-    let mut instance = VersionBuilder::new(
-        "my-modpack",
-        Loader::Fabric,
-        "0.16.9",
-        "1.21.1",
-    );
+```rust,no_run
+# #[cfg(feature = "events")]
+# {
+use lighty_event::{Event, EventBus, LaunchEvent};
+use lighty_launch::launch::Launch;
+# use lighty_auth::UserProfile;
+# use lighty_core::AppState;
+# use lighty_java::JavaDistribution;
+# use lighty_launch::errors::InstallerResult;
+# use lighty_loaders::types::Loader;
+# use lighty_version::VersionBuilder;
+# async fn run() -> InstallerResult<()> {
+# AppState::init("MyLauncher").ok();
+# let profile = UserProfile::offline("Player", "");
+# let mut instance = VersionBuilder::new("inst", Loader::Vanilla, "", "1.21.1");
+let bus = EventBus::new(1000);
+let mut rx = bus.subscribe();
 
-    // 3. Authenticate
-    let mut auth = MicrosoftAuth::new("your-client-id");
-    auth.set_device_code_callback(|code, url| {
-        println!("Visit: {}", url);
-        println!("Code: {}", code);
-    });
-
-    #[cfg(not(feature = "events"))]
-    let profile = auth.authenticate().await?;
-
-    #[cfg(feature = "events")]
-    let profile = auth.authenticate(None).await?;
-
-    // 4. Calculate instance size before launching
-    let metadata = instance.get_metadata().await?;
-    let size = instance.size_of_instance(&metadata);
-    println!("Instance size: {:.2} GB", size.total_gb());
-
-    // 5. Launch with custom options
-    instance.launch(&profile, JavaDistribution::Temurin)
-        .with_jvm_options()
-            .set("Xmx", "6G")
-            .set("Xms", "2G")
-            .done()
-        .with_game_options()
-            .set("width", "1920")
-            .set("height", "1080")
-            .done()
-        .run()
-        .await?;
-
-    println!("Game launched!");
-
-    // 6. Get PID
-    if let Some(pid) = instance.get_pid() {
-        println!("Running with PID: {}", pid);
-    }
-
-    // 7. Wait a bit, then close
-    tokio::time::sleep(tokio::time::Duration::from_secs(300)).await;
-
-    if let Some(pid) = instance.get_pid() {
-        instance.close_instance(pid).await?;
-        println!("Game closed");
-    }
-
-    Ok(())
-}
-```
-
-## Error Handling
-
-```rust
-use lighty_launch::errors::{InstallerError, InstanceError};
-
-// Launch errors
-match instance.launch(&profile, JavaDistribution::Temurin).run().await {
-    Ok(_) => println!("Launched successfully"),
-    Err(e) => {
-        eprintln!("Launch failed: {}", e);
-        // Handle specific errors
-        match e.downcast_ref::<InstallerError>() {
-            Some(InstallerError::DownloadFailed(url)) => {
-                eprintln!("Failed to download: {}", url);
-            }
-            Some(InstallerError::VerificationFailed(file)) => {
-                eprintln!("Hash verification failed: {}", file);
-            }
-            _ => {}
+tokio::spawn(async move {
+    while let Ok(event) = rx.next().await {
+        if let Event::Launch(LaunchEvent::ProcessOutput { pid, line, .. }) = event {
+            print!("[{pid}] {line}");
         }
     }
+});
+
+instance.launch(&profile, JavaDistribution::Temurin)
+    .with_event_bus(&bus)
+    .run()
+    .await?;
+# Ok(()) }
+# }
+```
+
+## Inspect or close the running game
+
+`InstanceControl` is auto-implemented for every `VersionInfo`. **You
+must import the trait** to use its methods:
+
+```rust,no_run
+# use lighty_auth::UserProfile;
+# use lighty_core::AppState;
+# use lighty_java::JavaDistribution;
+# use lighty_launch::errors::InstallerResult;
+# use lighty_launch::launch::Launch;
+# use lighty_loaders::types::Loader;
+# use lighty_version::VersionBuilder;
+use lighty_launch::InstanceControl;
+
+# async fn run() -> InstallerResult<()> {
+# AppState::init("MyLauncher").ok();
+# let profile = UserProfile::offline("Player", "");
+# let mut instance = VersionBuilder::new("inst", Loader::Vanilla, "", "1.21.1");
+# instance.launch(&profile, JavaDistribution::Temurin).run().await?;
+if let Some(pid) = instance.get_pid() {
+    println!("running with PID {pid}");
+    // SIGTERM on Unix, taskkill /F on Windows. JVM runs its shutdown hooks.
+    instance.close_instance(pid).await?;
 }
 
-// Instance errors
+// Delete the instance from disk. Errors if any PID is still tracked.
+// instance.delete_instance().await?;
+# Ok(()) }
+```
+
+Disk-size breakdown (libraries / mods / assets / client / natives) is
+exposed by `instance.size_of_instance(&version)` — see
+[instance-control.md](./instance-control.md) for the full API.
+
+## Installation without launch
+
+`Installer` is also a standalone trait. The runner calls it for you,
+but you can drive it directly for "download now, play later" flows:
+
+```rust,no_run
+# use lighty_core::AppState;
+# use lighty_launch::errors::InstallerResult;
+# use lighty_loaders::types::version_metadata::VersionMetaData;
+# use lighty_loaders::types::Loader;
+# use lighty_version::VersionBuilder;
+use lighty_launch::installer::Installer;
+
+# async fn run() -> InstallerResult<()> {
+# AppState::init("MyLauncher").ok();
+# let mut instance = VersionBuilder::new("inst", Loader::Vanilla, "", "1.21.1");
+let metadata = instance.get_metadata().await?;
+if let VersionMetaData::Version(v) = metadata.as_ref() {
+    instance.install(v, #[cfg(feature = "events")] None).await?;
+}
+# Ok(()) }
+```
+
+See [installation.md](./installation.md) for the pipeline detail.
+
+## Error handling
+
+Two error types — `InstallerError` for everything install / launch
+pipeline related, `InstanceError` for manager-level operations
+(`close`, `delete`):
+
+```rust,no_run
+use lighty_launch::errors::{InstallerError, InstanceError};
+# use lighty_auth::UserProfile;
+# use lighty_core::AppState;
+# use lighty_java::JavaDistribution;
+# use lighty_launch::launch::Launch;
+# use lighty_launch::InstanceControl;
+# use lighty_loaders::types::Loader;
+# use lighty_version::VersionBuilder;
+# async fn run() -> anyhow::Result<()> {
+# AppState::init("MyLauncher").ok();
+# let profile = UserProfile::offline("Player", "");
+# let mut instance = VersionBuilder::new("inst", Loader::Vanilla, "", "1.21.1");
+
+match instance.launch(&profile, JavaDistribution::Temurin).run().await {
+    Ok(_)                                       => println!("launched"),
+    Err(InstallerError::DownloadFailed(msg))    => eprintln!("download: {msg}"),
+    Err(InstallerError::NoPid)                  => eprintln!("spawn succeeded but no PID"),
+    Err(e)                                      => eprintln!("{e}"),
+}
+
 match instance.delete_instance().await {
-    Ok(_) => println!("Deleted"),
-    Err(InstanceError::InstanceRunning) => {
-        eprintln!("Cannot delete: instance is running");
+    Ok(_)                                                     => println!("deleted"),
+    Err(InstanceError::StillRunning { instance_name, pids })  => {
+        eprintln!("close PIDs first: {instance_name} {pids:?}");
     }
-    Err(e) => eprintln!("Error: {}", e),
+    Err(e)                                                    => eprintln!("{e}"),
 }
+# Ok(()) }
 ```
 
-## Feature Flags
+## Related
 
-```toml
-[dependencies]
-lighty-launch = { version = "26.5.1", features = ["events"] }
-```
-
-Available features:
-- `events` - Enables LaunchEvent emission (requires lighty-event)
-
-## Exports
-
-**In lighty_launch**:
-```rust
-use lighty_launch::{
-    // Builder
-    LaunchBuilder,
-    LaunchConfig,
-
-    // Trait (MUST import to use methods)
-    InstanceControl,
-
-    // Installer
-    installer::Installer,
-
-    // Errors
-    errors::{InstallerError, InstallerResult, InstanceError, InstanceResult},
-
-    // Arguments
-    arguments::Arguments,
-};
-```
-
-**In lighty_launcher**:
-```rust
-use lighty_launcher::launch::{
-    LaunchBuilder,
-    InstanceControl,
-    // ... etc
-};
-```
-
-## Related Documentation
-
-- [Overview](./overview.md) - Architecture and design
-- [Events](./events.md) - LaunchEvent types
-- [Exports](./exports.md) - Complete export reference
-- [Launch Process](./launch.md) - Detailed launch workflow
-- [Installation](./installation.md) - Asset and library installation details
-- [Arguments](./arguments.md) - JVM and game argument generation
-- [Instance Control](./instance-control.md) - Instance management details
-
-## Related Crates
-
-- **[lighty-core](../../core/README.md)** - AppState and utilities
-- **[lighty-java](../../java/README.md)** - Java runtime management
-- **[lighty-version](../../version/README.md)** - VersionBuilder
-- **[lighty-loaders](../../loaders/README.md)** - Loader metadata
-- **[lighty-auth](../../auth/README.md)** - User authentication
-- **[lighty-event](../../event/README.md)** - Event system
+- [Overview](./overview.md), [Launch](./launch.md)
+- [Installation](./installation.md), [Instance lifecycle](./instance-lifecycle.md)
+- [Instance control](./instance-control.md), [Arguments](./arguments.md)
+- [Events](./events.md), [Exports](./exports.md)
+- Auth: [`crates/auth/docs/how-to-use.md`](../../auth/docs/how-to-use.md)
+- `VersionBuilder`: [`crates/version/docs/how-to-use.md`](../../version/docs/how-to-use.md)
+- Loaders: [`crates/loaders/docs/overview.md`](../../loaders/docs/overview.md)

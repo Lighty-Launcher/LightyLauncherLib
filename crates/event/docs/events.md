@@ -1,15 +1,18 @@
-# Event Reference
+# Event catalogue
 
-Every module event ultimately surfaces through the root `Event` enum
-(`crates/event/src/lib.rs`):
+Canonical list of every variant emitted in the LightyLauncher
+workspace. Per-crate `events.md` files describe only their own
+variants and link back here.
 
-```rust
+The root enum (`crates/event/src/lib.rs`) is:
+
+```rust,ignore
 pub enum Event {
     Auth(AuthEvent),
     Java(JavaEvent),
     Launch(LaunchEvent),
     Loader(LoaderEvent),
-    Modloader(ModloaderEvent),   // new — split out of LaunchEvent
+    Modloader(ModloaderEvent),
     Core(CoreEvent),
     InstanceLaunched(InstanceLaunchedEvent),
     InstanceWindowAppeared(InstanceWindowAppearedEvent),
@@ -19,68 +22,111 @@ pub enum Event {
 }
 ```
 
-## Event Categories
+## `AuthEvent` — `crates/auth`
 
-### AuthEvent
-- `AuthenticationStarted` - Login begins
-- `AuthenticationSuccess` - Login successful
-- `AuthenticationFailed` - Login failed
+| Variant | Fields |
+|---|---|
+| `AuthenticationStarted` | `provider: String` |
+| `AuthenticationInProgress` | `provider: String, step: String` |
+| `AuthenticationSuccess` | `provider: String, username: String, uuid: String` |
+| `AuthenticationFailed` | `provider: String, error: String` |
+| `AlreadyAuthenticated` | `provider: String, username: String` |
 
-### JavaEvent
-- `JavaDownloadStarted` - JRE download begins
-- `JavaDownloadProgress` - Download progress
-- `JavaDownloadCompleted` - Download complete
-- `JavaExtractionStarted` - Extraction begins
-- `JavaExtractionCompleted` - Extraction complete
+## `JavaEvent` — `crates/java`
 
-### LaunchEvent
-- `IsInstalled` - All install targets already up-to-date
-- `InstallStarted` - Installation begins
-- `InstallProgress` - Byte counter increment (global)
-- `InstallCompleted` - Installation complete
-- `Launching` - About to spawn the JVM
-- `Launched` - JVM spawned (carries `pid`)
-- `NotLaunched` - Spawning the JVM failed
-- `ProcessOutput` - stdout/stderr line (carries `pid`, `stream`)
-- `ProcessExited` - Process terminated (carries `pid`, `exit_code`)
+| Variant | Fields |
+|---|---|
+| `JavaNotFound` | `distribution: String, version: u8` |
+| `JavaAlreadyInstalled` | `distribution: String, version: u8, binary_path: String` |
+| `JavaDownloadStarted` | `distribution: String, version: u8, total_bytes: u64` |
+| `JavaDownloadProgress` | `bytes: u64` |
+| `JavaDownloadCompleted` | `distribution: String, version: u8` |
+| `JavaExtractionStarted` | `distribution: String, version: u8` |
+| `JavaExtractionProgress` | `files_extracted: usize, total_files: usize` |
+| `JavaExtractionCompleted` | `distribution: String, version: u8, binary_path: String` |
 
-### LoaderEvent
-- `FetchingData` - Fetching loader manifest
-- `DataFetched` - Manifest retrieved
-- `ManifestCached` - Using cached data
+## `LaunchEvent` — `crates/launch`
 
-### ModloaderEvent
-New module dedicated to mod-source side effects. Defined in
-`crates/event/src/module/modloader.rs`.
+Mod-source events used to live here. They moved to
+[`ModloaderEvent`](#modloaderevent--cratesmodsloader--cratesinstaller).
 
-- `ResolveStarted` - BFS started (`request_count`)
-- `ResolveFetching` - Per-fetch trace (`source`, `identifier`)
-- `ResolveDependency` - Parent pulled a dependency
-- `ResolveCompleted` - BFS done (`total_mods`)
-- `ModpackResolveStart` - Modpack archive URL resolution started
-- `ModpackArchiveDownloaded` - Archive cached on disk (`sha1`, `bytes`)
-- `ModpackOverridesExtracted` - Number of overrides copied
-- `ModpackInstalled` - Modpack pipeline complete (`name`, `mods_count`)
-- `ResourcePacksInstalled` - Resource-pack bucket summary (`count`, `bytes`)
-- `ShaderPacksInstalled` - Shader-pack bucket summary (`count`, `bytes`)
-- `DatapacksInstalled` - Datapack bucket summary (`count`, `bytes`)
+| Variant | Fields |
+|---|---|
+| `IsInstalled` | `version: String` |
+| `InstallStarted` | `version: String, total_bytes: u64` |
+| `InstallProgress` | `bytes: u64` |
+| `InstallCompleted` | `version: String, total_bytes: u64` |
+| `Launching` | `version: String` |
+| `Launched` | `version: String, pid: u32` |
+| `NotLaunched` | `version: String, error: String` |
+| `ProcessOutput` | `pid: u32, stream: String, line: String` |
+| `ProcessExited` | `pid: u32, exit_code: i32` |
 
-The `ResolveStarted/Fetching/Dependency/Completed` and `Modpack*`
-variants used to live under `LaunchEvent`; they were moved here when
-the mod-source pipeline got its own module.
+## `LoaderEvent` — `crates/loaders`
 
-### CoreEvent
-- `DownloadStarted` - File download begins
-- `DownloadProgress` - Download progress
-- `ExtractionStarted` - Archive extraction begins
+| Variant | Fields |
+|---|---|
+| `FetchingData` | `loader: String, minecraft_version: String, loader_version: String` |
+| `DataFetched` | `loader: String, minecraft_version: String, loader_version: String` |
+| `ManifestNotFound` | `loader, minecraft_version, loader_version, error: String` |
+| `ManifestCached` | `loader: String` |
+| `MergingLoaderData` | `base_loader: String, overlay_loader: String` |
+| `DataMerged` | `base_loader: String, overlay_loader: String` |
 
-### InstanceEvent
-- `InstanceLaunched` - Instance started (PID, version, username)
-- `ConsoleOutput` - Real-time stdout/stderr
-- `InstanceExited` - Instance exited (exit code)
-- `InstanceDeleted` - Instance deleted
+## `ModloaderEvent` — `crates/modsloader` + `crates/launch/installer`
 
-## See Also
+Split from `LaunchEvent` when the mod-source pipeline became its own
+module. The resolver variants are emitted natively from
+`lighty_modsloader::resolver`; the modpack pipeline and per-bucket
+summaries are emitted from the launch installer.
 
-- [Architecture](./architecture.md)
-- [Examples](./examples.md)
+| Variant | Fields |
+|---|---|
+| `ResolveStarted` | `request_count: usize` |
+| `ResolveFetching` | `source: String, identifier: String` |
+| `ResolveDependency` | `parent: String, dependency: String` |
+| `ResolveCompleted` | `total_mods: usize` |
+| `ModpackResolveStart` | `source: String` |
+| `ModpackArchiveDownloaded` | `sha1: String, bytes: u64` |
+| `ModpackOverridesExtracted` | `count: usize` |
+| `ModpackInstalled` | `name: String, mods_count: usize` |
+| `ResourcePacksInstalled` | `count: usize, bytes: u64` |
+| `ShaderPacksInstalled` | `count: usize, bytes: u64` |
+| `DatapacksInstalled` | `count: usize, bytes: u64` |
+
+## `CoreEvent` — `crates/core`
+
+| Variant | Fields |
+|---|---|
+| `ExtractionStarted` | `archive_type: String, file_count: usize, destination: String` |
+| `ExtractionProgress` | `files_extracted: usize, total_files: usize` |
+| `ExtractionCompleted` | `archive_type: String, files_extracted: usize` |
+
+## Instance + console events
+
+Defined in `crates/event/src/module/console.rs`. Each carries a
+`SystemTime` timestamp (serialized as Unix seconds).
+
+| Root variant | Struct fields |
+|---|---|
+| `InstanceLaunched(InstanceLaunchedEvent)` | `pid, instance_name, version, username, timestamp` |
+| `InstanceWindowAppeared(InstanceWindowAppearedEvent)` | `pid, instance_name, version, timestamp` |
+| `InstanceExited(InstanceExitedEvent)` | `pid, instance_name, exit_code: Option<i32>, timestamp` |
+| `ConsoleOutput(ConsoleOutputEvent)` | `pid, instance_name, stream: ConsoleStream, line, timestamp` |
+| `InstanceDeleted(InstanceDeletedEvent)` | `instance_name, timestamp` |
+
+`ConsoleStream` is `Stdout | Stderr` (lowercase in JSON).
+
+## Migration notes
+
+- `LaunchEvent::ModResolveStarted/Fetching/Dependency/Completed` →
+  `ModloaderEvent::Resolve*`
+- `LaunchEvent::Modpack*` → `ModloaderEvent::Modpack*` (variant names
+  unchanged, outer arm changed from `Event::Launch(_)` to
+  `Event::Modloader(_)`)
+
+## See also
+
+- [`architecture.md`](./architecture.md) — event bus + receivers
+- [`modules.md`](./modules.md) — file layout under `module/`
+- [`how-to-use.md`](./how-to-use.md) — subscribe / filter / fan-out patterns

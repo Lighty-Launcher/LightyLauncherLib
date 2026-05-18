@@ -6,7 +6,7 @@
 [![Rust Version](https://img.shields.io/badge/rust-1.95%2B-red.svg)](https://www.rust-lang.org)
 
 <p align="center">
-  <img src="docs/assets/banner.png" alt="LightyLauncher banner" />
+  <img src="assets/banner.png" alt="LightyLauncher banner" />
 </p>
 
 ## A launcher built with LightyLauncherLib

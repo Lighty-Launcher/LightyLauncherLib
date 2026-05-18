@@ -1,450 +1,145 @@
-# Traits
+# Traits — VersionInfo and LoaderExtensions
 
-## VersionInfo
+The two traits that make `lighty-loaders` extensible. `VersionInfo`
+describes an installable instance; `LoaderExtensions` is the
+auto-implemented async fetch API on top of it.
 
-The `VersionInfo` trait provides a generic interface for representing version information. It's implemented by `VersionBuilder` and `LightyVersionBuilder`.
+## `VersionInfo`
 
-### Definition
-
-```rust
+```rust,ignore
 pub trait VersionInfo: Clone + Send + Sync {
     type LoaderType: Clone + Send + Sync + std::fmt::Debug;
 
-    fn name(&self) -> &str;
-    fn loader_version(&self) -> &str;
+    fn name(&self)              -> &str;
+    fn loader_version(&self)    -> &str;
     fn minecraft_version(&self) -> &str;
-    fn game_dirs(&self) -> &Path;
-    fn java_dirs(&self) -> &Path;
-    fn loader(&self) -> &Self::LoaderType;
+    fn game_dirs(&self)         -> &Path;        // instance root
+    fn java_dirs(&self)         -> &Path;        // JRE cache
+    fn loader(&self)            -> &Self::LoaderType;
 
-    // Helper methods
-    fn game_dir_exists(&self) -> bool;
-    fn java_dir_exists(&self) -> bool;
-    fn full_identifier(&self) -> String;
-    fn paths(&self) -> (&Path, &Path);
+    fn runtime_dir(&self)       -> &Path  { self.game_dirs() }      // ${game_directory}
+    fn set_runtime_dir(&mut self, _path: PathBuf) {}                 // launch runner hook
+    fn game_dir_exists(&self)   -> bool   { self.game_dirs().exists() }
+    fn java_dir_exists(&self)   -> bool   { self.java_dirs().exists() }
+    fn full_identifier(&self)   -> String { /* "{name}-{mc}-{loader}" */ }
+    fn paths(&self)             -> (&Path, &Path) { (self.game_dirs(), self.java_dirs()) }
+    fn is_installed(&self)      -> bool   { self.game_dirs().exists() }
+    fn ttl(&self)               -> Duration { Duration::from_secs(86_400) }   // 24h default
 }
 ```
 
-### Exports
-
-**In lighty_loaders**:
-```rust
-use lighty_loaders::types::VersionInfo;
-```
-
-**In lighty_launcher**:
-```rust
-use lighty_launcher::loaders::VersionInfo;
-// or
-use lighty_launcher::prelude::VersionInfo;
-```
-
-### Methods
-
-#### name() -> &str
-
-Returns the instance name (unique identifier).
-
-```rust
-let instance = VersionBuilder::new("my-instance", Loader::Vanilla, "", "1.21.1");
-println!("Instance name: {}", instance.name()); // "my-instance"
-```
-
-#### loader_version() -> &str
-
-Returns the loader version string.
-
-```rust
-let instance = VersionBuilder::new("fabric-1.21", Loader::Fabric, "0.16.9", "1.21.1");
-println!("Loader version: {}", instance.loader_version()); // "0.16.9"
-```
-
-For Vanilla, this returns an empty string.
-
-#### minecraft_version() -> &str
-
-Returns the Minecraft version.
-
-```rust
-println!("Minecraft: {}", instance.minecraft_version()); // "1.21.1"
-```
-
-#### game_dirs() -> &Path
-
-Returns the game directory path (contains versions, libraries, assets).
-
-```rust
-let game_dir = instance.game_dirs();
-// Typically: ~/.local/share/MyLauncher (Linux)
-//            ~/Library/Application Support/MyLauncher (macOS)
-//            C:\Users\{user}\AppData\Roaming\MyLauncher (Windows)
-```
-
-**Structure**:
-```
-game_dirs/
-├── versions/          # Minecraft versions
-│   └── {instance}/
-├── libraries/         # Java libraries
-├── assets/            # Game assets
-└── instances/         # Instance data (mods, configs)
-```
-
-#### java_dirs() -> &Path
-
-Returns the Java runtime directory path.
-
-```rust
-let java_dir = instance.java_dirs();
-// Typically: ~/.cache/MyLauncher (Linux)
-//            ~/Library/Caches/MyLauncher (macOS)
-//            C:\Users\{user}\AppData\Local\MyLauncher\cache (Windows)
-```
-
-**Structure**:
-```
-java_dirs/
-└── runtimes/          # Java installations
-    ├── java-8/
-    ├── java-17/
-    └── java-21/
-```
-
-#### loader() -> &Loader
-
-Returns the loader type.
-
-```rust
-match instance.loader() {
-    Loader::Vanilla => println!("Pure Minecraft"),
-    Loader::Fabric => println!("Fabric loader"),
-    Loader::Quilt => println!("Quilt loader"),
-    Loader::NeoForge => println!("NeoForge loader"),
-    _ => {}
-}
-```
-
-#### game_dir_exists() -> bool
-
-Checks if the game directory exists on disk.
-
-```rust
-if instance.game_dir_exists() {
-    println!("Game directory found");
-} else {
-    println!("Need to create game directory");
-}
-```
-
-#### java_dir_exists() -> bool
-
-Checks if the Java directory exists.
-
-```rust
-if instance.java_dir_exists() {
-    println!("Java directory found");
-}
-```
-
-#### full_identifier() -> String
-
-Returns a complete identifier combining name, MC version, and loader version.
-
-```rust
-let id = instance.full_identifier();
-// Format: "{name}-{minecraft_version}-{loader_version}"
-// Example: "my-instance-1.21.1-0.16.9"
-```
-
-#### paths() -> (&Path, &Path)
-
-Returns both game and Java directories as a tuple.
-
-```rust
-let (game_dir, java_dir) = instance.paths();
-println!("Game: {}", game_dir.display());
-println!("Java: {}", java_dir.display());
-```
-
-### Usage Example
-
-```rust
-use lighty_launcher::prelude::*;
-
-fn print_version_info<V: VersionInfo>(version: &V) {
-    println!("=== Version Info ===");
-    println!("Name: {}", version.name());
-    println!("Minecraft: {}", version.minecraft_version());
-    println!("Loader: {:?}", version.loader());
-    println!("Loader version: {}", version.loader_version());
-    println!("Full ID: {}", version.full_identifier());
-    println!("Game dir: {}", version.game_dirs().display());
-    println!("Java dir: {}", version.java_dirs().display());
-    println!("Game dir exists: {}", version.game_dir_exists());
-}
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    AppState::init("MyLauncher")?;
-
-    let instance = VersionBuilder::new("test", Loader::Fabric, "0.16.9", "1.21.1");
-
-    print_version_info(&instance);
-
-    Ok(())
-}
-```
-
-## LoaderExtensions
-
-The `LoaderExtensions` trait provides methods for fetching loader metadata. It's automatically implemented for any type that implements `VersionInfo<LoaderType = Loader>`.
-
-### Definition
-
-```rust
-#[async_trait]
-pub trait LoaderExtensions {
-    async fn get_metadata(&self) -> Result<Arc<VersionMetaData>>;
-    async fn get_libraries(&self) -> Result<Arc<VersionMetaData>>;
-    async fn get_main_class(&self) -> Result<Arc<VersionMetaData>>;
-    async fn get_natives(&self) -> Result<Arc<VersionMetaData>>;
-    async fn get_java_version(&self) -> Result<Arc<VersionMetaData>>;
-    async fn get_assets(&self) -> Result<Arc<VersionMetaData>>;
-}
-```
-
-### Exports
-
-**In lighty_loaders**:
-```rust
-use lighty_loaders::types::LoaderExtensions;
-```
-
-**In lighty_launcher**:
-```rust
-use lighty_launcher::loaders::LoaderExtensions;
-// or
-use lighty_launcher::prelude::LoaderExtensions;
-```
-
-### Methods
-
-#### get_metadata() -> Result<Arc<VersionMetaData>>
-
-Fetches complete metadata for the loader. This is the main method you should use.
-
-```rust
-use lighty_launcher::loaders::LoaderExtensions;
-
-let metadata = instance.get_metadata().await?;
-
-println!("Version: {}", metadata.id);
-println!("Main class: {}", metadata.main_class);
-println!("Libraries: {}", metadata.libraries.len());
-```
-
-**Returns**: `Arc<VersionMetaData>` containing:
-- `id`: Minecraft version
-- `main_class`: Entry point class
-- `libraries`: Vec of library dependencies
-- `arguments`: JVM and game arguments
-- `asset_index`: Asset information
-- And more...
-
-**Loader dispatch**:
-- `Vanilla` → Vanilla manifest
-- `Fabric` → Vanilla + Fabric merged
-- `Quilt` → Vanilla + Quilt merged
-- `NeoForge` → NeoForge manifest
-- `Forge` → Forge manifest (in progress)
-- `LightyUpdater` → Custom server manifest
-
-#### get_libraries() -> Result<Arc<VersionMetaData>>
-
-Fetches only library metadata (faster than full metadata).
-
-```rust
-let libraries = instance.get_libraries().await?;
-
-// Only libraries are guaranteed to be present
-for lib in &libraries.libraries {
-    println!("Library: {}", lib.name);
-}
-```
-
-**Supported loaders**: Vanilla, Fabric, Quilt
-**NeoForge**: Returns full metadata (no separate libraries query)
-
-#### get_main_class() -> Result<Arc<VersionMetaData>>
-
-Fetches only the main class information.
-
-```rust
-let main_class_data = instance.get_main_class().await?;
-println!("Main class: {}", main_class_data.main_class);
-```
-
-**Requires**: `vanilla` feature
-**Only for**: Vanilla-based queries
-
-#### get_natives() -> Result<Arc<VersionMetaData>>
-
-Fetches only native library information.
-
-```rust
-let natives = instance.get_natives().await?;
-
-// Native libraries for platform-specific code
-for lib in &natives.libraries {
-    if lib.natives.is_some() {
-        println!("Native: {}", lib.name);
-    }
-}
-```
-
-**Requires**: `vanilla` feature
-**Only for**: Vanilla-based queries
-
-#### get_java_version() -> Result<Arc<VersionMetaData>>
-
-Fetches Java version requirement.
-
-```rust
-let java_info = instance.get_java_version().await?;
-
-// Java version metadata
-println!("Required Java: {}", java_info.java_version.major_version);
-```
-
-**Requires**: `vanilla` feature
-**Only for**: Vanilla-based queries
-
-#### get_assets() -> Result<Arc<VersionMetaData>>
-
-Fetches asset information.
-
-```rust
-let assets = instance.get_assets().await?;
-
-if let Some(asset_index) = &assets.asset_index {
-    println!("Asset ID: {}", asset_index.id);
-    println!("Total size: {} MB", asset_index.total_size / 1_000_000);
-}
-```
-
-**Requires**: `vanilla` feature
-**Only for**: Vanilla-based queries
-
-### Usage Example
-
-```rust
-use lighty_launcher::prelude::*;
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    AppState::init("MyLauncher")?;
-
-    let instance = VersionBuilder::new("fabric-1.21", Loader::Fabric, "0.16.9", "1.21.1");
-
-    // Full metadata (recommended)
-    let metadata = instance.get_metadata().await?;
-    println!("Full metadata: {} libraries", metadata.libraries.len());
-
-    // Specific queries (optional, for optimization)
-    let libraries = instance.get_libraries().await?;
-    println!("Libraries only: {}", libraries.libraries.len());
-
-    // Vanilla-specific queries
-    if matches!(instance.loader(), Loader::Vanilla) {
-        let assets = instance.get_assets().await?;
-        if let Some(idx) = &assets.asset_index {
-            println!("Assets: {} ({})", idx.id, idx.url);
-        }
-    }
-
-    Ok(())
-}
-```
-
-### Error Handling
-
-```rust
-use lighty_core::QueryError;
-
-match instance.get_metadata().await {
-    Ok(metadata) => {
-        println!("Success!");
-    }
-    Err(QueryError::UnsupportedLoader(msg)) => {
-        eprintln!("Loader not supported: {}", msg);
-        // Feature might not be enabled
-    }
-    Err(QueryError::NetworkError(e)) => {
-        eprintln!("Network error: {}", e);
-    }
-    Err(e) => {
-        eprintln!("Error: {:?}", e);
-    }
-}
-```
-
-## Custom Implementations
-
-You can implement these traits for your own types:
-
-```rust
-use lighty_loaders::types::{VersionInfo, Loader};
-use std::path::{Path, PathBuf};
+The default `ttl` (24 h) feeds the cache layer — override it on
+custom implementations to tighten/loosen freshness per instance.
+
+`set_runtime_dir` is a hook the launch runner uses to write the
+effective working directory back onto a mutable builder (e.g. when an
+instance opens its `instance/` sub-dir).
+
+### Who implements it
+
+| Type | Crate | Loader type |
+|---|---|---|
+| `VersionBuilder` | `lighty-version` | `Loader` |
+| `LightyVersionBuilder` | `lighty-version` | `LightyLoader` (server-tagged) |
+| your custom type | — | anything `Clone + Send + Sync` |
+
+### Custom impl
+
+```rust,no_run
+use lighty_loaders::{Loader, VersionInfo};
+use lighty_core::AppState;
+use std::path::Path;
 
 #[derive(Clone)]
-pub struct MyCustomVersion {
-    name: String,
-    mc_version: String,
-    game_path: PathBuf,
-    java_path: PathBuf,
-}
+struct MyInstance { name: String, mc: String, ver: String, loader: Loader }
 
-impl VersionInfo for MyCustomVersion {
+impl VersionInfo for MyInstance {
     type LoaderType = Loader;
 
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn loader_version(&self) -> &str {
-        ""  // Custom implementation
-    }
-
-    fn minecraft_version(&self) -> &str {
-        &self.mc_version
-    }
-
-    fn game_dirs(&self) -> &Path {
-        &self.game_path
-    }
-
-    fn java_dirs(&self) -> &Path {
-        &self.java_path
-    }
-
-    fn loader(&self) -> &Loader {
-        &Loader::Vanilla  // Or your custom loader
-    }
+    fn name(&self)              -> &str { &self.name }
+    fn loader_version(&self)    -> &str { &self.ver }
+    fn minecraft_version(&self) -> &str { &self.mc }
+    fn game_dirs(&self)         -> &Path { AppState::data_dir() }
+    fn java_dirs(&self)         -> &Path { AppState::cache_dir() }
+    fn loader(&self)            -> &Loader { &self.loader }
 }
-
-// LoaderExtensions is automatically implemented!
 ```
 
-Now `MyCustomVersion` can use all `LoaderExtensions` methods:
+`LoaderExtensions` lights up automatically because of the blanket
+impl below.
 
-```rust
-let custom = MyCustomVersion { /* ... */ };
-let metadata = custom.get_metadata().await?;  // Works!
+## `LoaderExtensions`
+
+Auto-implemented for any `V: VersionInfo<LoaderType = Loader>`.
+
+```rust,ignore
+#[async_trait]
+pub trait LoaderExtensions {
+    async fn get_metadata(&self)     -> QueryResult<Arc<VersionMetaData>>;   // full
+    async fn get_libraries(&self)    -> QueryResult<Arc<VersionMetaData>>;   // libraries only
+    async fn get_main_class(&self)   -> QueryResult<Arc<VersionMetaData>>;   // Vanilla-based
+    async fn get_natives(&self)      -> QueryResult<Arc<VersionMetaData>>;   // Vanilla-based
+    async fn get_java_version(&self) -> QueryResult<Arc<VersionMetaData>>;   // Vanilla-based
+    async fn get_assets(&self)       -> QueryResult<Arc<VersionMetaData>>;   // Vanilla-based
+}
 ```
 
-## Related Documentation
+`get_metadata` returns the merged result; the other five return a
+narrow `VersionMetaData` populated only with the requested slice (so
+calling sites can avoid touching libraries when they only need
+assets).
 
-- [How to Use](./how-to-use.md) - Practical usage examples
-- [Query System](./query.md) - Understanding queries
-- [Cache System](./cache.md) - How caching works
-- [Exports](./exports.md) - All exports and paths
+### Dispatch
+
+`get_metadata` matches on `self.loader()`:
+
+| Loader | What it returns |
+|---|---|
+| `Vanilla` | Mojang manifest, parsed and cached. |
+| `Fabric` | Vanilla + Fabric loader profile, libraries merged, main class overridden. |
+| `Quilt` | Vanilla + Quilt loader profile, same merge. |
+| `NeoForge` | NeoForge installer JAR, processor results, vanilla libs merged. |
+| `Forge` | Forge installer JAR. Detects legacy (1.5.2 → 1.12.2) vs modern (≥ 1.13) from the install profile. |
+| `LightyUpdater` | Server-defined metadata merged onto the base loader the server picks. |
+| `Optifine` | Standalone (not a real loader — see [`loaders/optifine.md`](./loaders/optifine.md)). |
+
+Loaders not compiled in raise `QueryError::UnsupportedLoader`.
+
+## Usage
+
+```rust,no_run
+use lighty_core::AppState;
+use lighty_loaders::{Loader, LoaderExtensions};
+use lighty_version::VersionBuilder;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    AppState::init("LightyLauncher")?;
+
+    let v = VersionBuilder::new("fab", Loader::Fabric, "0.16.9", "1.21.1");
+
+    let meta      = v.get_metadata().await?;       // full
+    let libs_only = v.get_libraries().await?;      // narrow
+
+    println!("full: {}, libs-only: {}",
+        meta.libraries.len(), libs_only.libraries.len());
+    Ok(())
+}
+```
+
+## Errors
+
+All methods return `QueryResult<_>` = `Result<_, lighty_core::QueryError>`.
+The relevant variants for loaders are `Network`, `JsonParsing`,
+`VersionNotFound`, `MissingField`, `UnsupportedLoader`,
+`InvalidMetadata`. Full enum:
+[`../../core/docs/exports.md`](../../core/docs/exports.md#errors).
+
+## See also
+
+- [`overview.md`](./overview.md) — loader catalogue
+- [`how-to-use.md`](./how-to-use.md) — calling `get_metadata`
+- [`query.md`](./query.md) — implementing a new loader
+- [`cache.md`](./cache.md) — TTL behaviour (driven by `ttl()`)
+- [`../../version/docs/how-to-use.md`](../../version/docs/how-to-use.md)
+  — `VersionBuilder` canonical reference

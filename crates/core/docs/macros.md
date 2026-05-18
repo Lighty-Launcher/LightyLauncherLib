@@ -1,96 +1,99 @@
-# Logging Macros
+# macros — directory + tracing helpers
 
-## Overview
+A handful of `#[macro_export]` macros auto-imported via `use
+lighty_core::*;` or directly by name (`use lighty_core::mkdir;`).
 
-Unified tracing macros that work with or without the `tracing` feature.
+## Directory helpers
 
-## Available Macros
+All are async-aware: they use `tokio::fs::create_dir_all` under the
+hood.
 
-```rust
-trace_debug!(...)   // Debug-level messages
-trace_info!(...)    // Informational messages
-trace_warn!(...)    // Warning messages
-trace_error!(...)   // Error messages
-```
+```rust,no_run
+use lighty_core::{mkdir, try_mkdir, join_and_mkdir, join_and_mkdir_vec};
+use std::path::Path;
 
-## Usage
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
+    let base = Path::new("/tmp/launcher");
 
-### Basic Logging
-```rust
-use lighty_core::{trace_info, trace_error};
+    // Fire-and-forget — logs errors via trace_error!, swallows them
+    mkdir!(base);
 
-fn process_file(path: &str)  {
-    trace_info!("Processing file: {}", path);
+    // Propagates io::Error — use when failure should stop the pipeline
+    try_mkdir!(base)?;
 
-    match std::fs::read(path) {
-        Ok(data) => {
-            trace_info!("File read successfully: {} bytes", data.len());
-            Ok(())
-        }
-        Err(e) => {
-            trace_error!("Failed to read file: {}", e);
-            Err(e.into())
-        }
-    }
+    // Join then mkdir, returns PathBuf
+    let mods = join_and_mkdir!(base, "instances/foo/mods");
+
+    // Sequence of joins, each level created
+    let world = join_and_mkdir_vec!(base, &["instances", "foo", "saves", "world1"]);
+
+    println!("{} / {}", mods.display(), world.display());
+    Ok(())
 }
 ```
 
-### Structured Logging (with tracing feature)
-```rust
+`mkdir_blocking!` exists for non-async contexts and runs the
+`create_dir_all` inside `spawn_blocking`.
+
+## Tracing macros
+
+```rust,no_run
+use lighty_core::{trace_debug, trace_info, trace_warn, trace_error};
+
+fn process(path: &str) {
+    trace_info!("processing {}", path);
+    if path.is_empty() {
+        trace_warn!("empty path");
+        return;
+    }
+    trace_debug!("ok");
+}
+```
+
+Structured fields work too (forwarded to `tracing::*!`):
+
+```rust,no_run
+use lighty_core::trace_info;
 trace_info!(
-    file = %path,
-    size = data.len(),
-    "File processed successfully"
+    version  = "1.21.1",
+    loader   = "fabric",
+    "launching instance"
 );
 ```
 
-## Feature Flags
+Without the `tracing` Cargo feature, all four macros and `time_it!`
+expand to no-ops — no runtime cost.
 
-### With `tracing` Feature
-```toml
-[dependencies]
-lighty-core = { version = "26.5.1", features = ["tracing"] }
+## `time_it!`
+
+Logs the elapsed `Duration` of any expression at `DEBUG` level:
+
+```rust,no_run
+use lighty_core::time_it;
+
+# fn expensive() -> i32 { 42 }
+let result = time_it!("expensive op", expensive());
+# let _ = result;
 ```
 
-Macros expand to `tracing::*!` calls with full structured logging support.
-
-### Without `tracing` Feature
-```toml
-[dependencies]
-lighty-core = "26.5.1"
+Output (with tracing on):
+```
+DEBUG label="expensive op" elapsed=12.3ms "Operation completed"
 ```
 
-Macros expand to no-ops (zero runtime cost).
+## Imports
 
-## Best Practices
+The macros are exported at the crate root, so either of these works:
 
-### 1. Use Appropriate Levels
-```rust
-trace_debug!("Cache hit for key: {}", key);        // Debug info
-trace_info!("Download started: {}", url);           // User-facing info
-trace_warn!("Retry attempt {}/3", attempt);         // Recoverable issues
-trace_error!("Fatal error: {}", error);             // Critical failures
+```rust,no_run
+use lighty_core::{mkdir, trace_info};
+// or
+use lighty_core::*;
 ```
 
-### 2. Include Context
-```rust
-trace_info!(
-    version = %mc_version,
-    loader = %loader_type,
-    "Launching Minecraft"
-);
-```
+## See also
 
-### 3. Don't Log Sensitive Data
-```rust
-// Bad
-trace_info!("Access token: {}", token);
-
-// Good
-trace_info!("User authenticated successfully");
-```
-
-## See Also
-
-- [Examples](./examples.md)
-- [tracing documentation](https://docs.rs/tracing)
+- [`how-to-use.md`](./how-to-use.md) — full walkthrough
+- [`tracing` crate docs](https://docs.rs/tracing) — what the tracing
+  macros expand into when the feature is on

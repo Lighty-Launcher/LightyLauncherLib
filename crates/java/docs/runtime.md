@@ -1,341 +1,159 @@
-# Runtime Execution
+# Runtime — spawn + stream a `java` process
 
-## Overview
+`JavaRuntime` is a thin wrapper around `tokio::process::Command`. It
+spawns the binary, returns the `Child`, and offers `handle_io` to
+stream stdout / stderr until the process exits (or a one-shot
+terminator fires).
 
-The `JavaRuntime` struct provides execution of Java processes with real-time I/O streaming.
+## API
 
-## Basic Execution
+```rust,ignore
+pub struct JavaRuntime(pub PathBuf);
 
-```rust
+impl JavaRuntime {
+    pub fn new(path: PathBuf) -> Self;
+
+    pub async fn execute(
+        &self,
+        arguments: Vec<String>,
+        game_dir: &Path,
+    ) -> JavaRuntimeResult<tokio::process::Child>;
+
+    pub async fn handle_io<D: Send + Sync>(
+        &self,
+        process:    &mut tokio::process::Child,
+        on_stdout:  fn(&D, &[u8]) -> JavaRuntimeResult<()>,
+        on_stderr:  fn(&D, &[u8]) -> JavaRuntimeResult<()>,
+        terminator: tokio::sync::oneshot::Receiver<()>,
+        data:       &D,
+    ) -> JavaRuntimeResult<()>;
+}
+```
+
+`game_dir` becomes the process's working directory (this is what gets
+passed to Minecraft via `${game_directory}`).
+
+`handle_io` takes **function pointers** (not closures) so they can
+cross the Tokio `select!` cleanly. The `data` argument is an opaque
+context bag — pass whatever the callbacks need to share (a logger
+handle, an `EventBus`, …).
+
+Windows-only detail: `execute` sets `CREATE_NO_WINDOW` so spawned
+processes don't pop up a console window.
+
+## Examples
+
+### Print `java -version`
+
+```rust,no_run
 use lighty_java::runtime::JavaRuntime;
+use tokio::sync::oneshot;
+use std::path::Path;
 
 #[tokio::main]
-async fn main() {
-    let java_path = "/path/to/java";
+async fn main() -> anyhow::Result<()> {
+    let rt = JavaRuntime::new("/usr/bin/java".into());
+    let mut child = rt.execute(vec!["-version".into()], Path::new(".")).await?;
 
-    let mut runtime = JavaRuntime::new(java_path);
-    runtime.add_arg("-version");
-
-    runtime.run(
-        |line| println!("[STDOUT] {}", line),
-        |line| eprintln!("[STDERR] {}", line),
-    ).await.unwrap();
+    let (_tx, rx) = oneshot::channel();
+    rt.handle_io::<()>(
+        &mut child,
+        |_, b| { print!("{}",  String::from_utf8_lossy(b)); Ok(()) },
+        |_, b| { eprint!("{}", String::from_utf8_lossy(b)); Ok(()) },
+        rx,
+        &(),
+    ).await?;
+    Ok(())
 }
 ```
 
-## Building Arguments
+`java -version` writes to stderr — both callbacks get hit.
 
-### Chaining Method
+### Launch a JAR with memory tuning
 
-```rust
-let mut runtime = JavaRuntime::new(&java_path);
-
-runtime
-    .add_arg("-Xmx2G")
-    .add_arg("-Xms512M")
-    .add_arg("-XX:+UseG1GC")
-    .add_arg("-jar")
-    .add_arg("minecraft.jar");
-```
-
-### From Vec
-
-```rust
-let args = vec![
-    "-Xmx2G",
-    "-Xms512M",
-    "-jar",
-    "minecraft.jar"
-];
-
-let mut runtime = JavaRuntime::new(&java_path);
-for arg in args {
-    runtime.add_arg(arg);
-}
-```
-
-## Memory Configuration
-
-### Basic Memory Settings
-
-```rust
-runtime
-    .add_arg("-Xmx4G")      // Maximum heap: 4GB
-    .add_arg("-Xms1G");     // Initial heap: 1GB
-```
-
-### Recommended Settings
-
-```rust
-runtime
-    .add_arg("-Xmx4G")
-    .add_arg("-Xms1G")
-    .add_arg("-XX:+UseG1GC")
-    .add_arg("-XX:+UnlockExperimentalVMOptions")
-    .add_arg("-XX:G1NewSizePercent=20")
-    .add_arg("-XX:G1ReservePercent=20")
-    .add_arg("-XX:MaxGCPauseMillis=50")
-    .add_arg("-XX:G1HeapRegionSize=32M");
-```
-
-## Output Streaming
-
-### Real-time Console Output
-
-```rust
-runtime.run(
-    |line| {
-        // Handle stdout
-        println!("{}", line);
-    },
-    |line| {
-        // Handle stderr
-        eprintln!("ERROR: {}", line);
-    },
-).await?;
-```
-
-### Filtering Output
-
-```rust
-runtime.run(
-    |line| {
-        if line.contains("[INFO]") {
-            println!("{}", line);
-        }
-    },
-    |line| {
-        if line.contains("Exception") || line.contains("Error") {
-            eprintln!("CRITICAL: {}", line);
-        }
-    },
-).await?;
-```
-
-### Logging to File
-
-```rust
-use std::fs::OpenOptions;
-use std::io::Write;
-
-let mut log_file = OpenOptions::new()
-    .create(true)
-    .append(true)
-    .open("game.log")?;
-
-runtime.run(
-    |line| {
-        writeln!(log_file, "[OUT] {}", line).ok();
-    },
-    |line| {
-        writeln!(log_file, "[ERR] {}", line).ok();
-    },
-).await?;
-```
-
-## Process Management
-
-### Execution Flow
-
-```mermaid
-sequenceDiagram
-    participant App
-    participant Runtime
-    participant Process
-
-    App->>Runtime: new(java_path)
-    App->>Runtime: add_arg("-jar")
-    App->>Runtime: add_arg("game.jar")
-
-    App->>Runtime: run(stdout_fn, stderr_fn)
-    Runtime->>Process: spawn()
-
-    loop Until Exit
-        Process->>Runtime: stdout line
-        Runtime->>App: stdout_fn(line)
-
-        Process->>Runtime: stderr line
-        Runtime->>App: stderr_fn(line)
-    end
-
-    Process->>Runtime: Exit code
-    Runtime-->>App: Result<()>
-```
-
-### Exit Code Handling
-
-```rust
-match runtime.run(|line| println!("{}", line), |line| eprintln!("{}", line)).await {
-    Ok(()) => {
-        println!("Process exited successfully");
-    }
-    Err(e) => {
-        eprintln!("Process failed: {}", e);
-    }
-}
-```
-
-## Common Use Cases
-
-### Running Minecraft Client
-
-```rust
+```rust,no_run
 use lighty_java::runtime::JavaRuntime;
+use tokio::sync::oneshot;
+use std::path::Path;
 
-let mut runtime = JavaRuntime::new(&java_path);
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let rt = JavaRuntime::new("/path/to/java".into());
 
-runtime
-    .add_arg("-Xmx4G")
-    .add_arg("-Xms1G")
-    .add_arg("-Djava.library.path=natives")
-    .add_arg("-cp")
-    .add_arg("libraries/*:minecraft.jar")
-    .add_arg("net.minecraft.client.main.Main")
-    .add_arg("--username")
-    .add_arg("Player")
-    .add_arg("--version")
-    .add_arg("1.20.4");
+    let args = vec![
+        "-Xmx4G".into(),
+        "-Xms1G".into(),
+        "-XX:+UseG1GC".into(),
+        "-jar".into(),
+        "minecraft.jar".into(),
+    ];
+    let mut child = rt.execute(args, Path::new("/games/minecraft")).await?;
 
-runtime.run(
-    |line| println!("[GAME] {}", line),
-    |line| eprintln!("[ERROR] {}", line),
-).await?;
-```
+    let (term_tx, term_rx) = oneshot::channel();
+    let io = rt.handle_io::<()>(
+        &mut child,
+        |_, b| { print!("{}",  String::from_utf8_lossy(b)); Ok(()) },
+        |_, b| { eprint!("{}", String::from_utf8_lossy(b)); Ok(()) },
+        term_rx,
+        &(),
+    );
 
-### Version Check
-
-```rust
-let mut runtime = JavaRuntime::new(&java_path);
-runtime.add_arg("-version");
-
-let mut version_info = String::new();
-
-runtime.run(
-    |_| {},  // Version info goes to stderr
-    |line| {
-        version_info.push_str(line);
-        version_info.push('\n');
-    },
-).await?;
-
-println!("Java version:\n{}", version_info);
-```
-
-## Performance Optimization
-
-### GraalVM Arguments
-
-```rust
-// For GraalVM distributions
-runtime
-    .add_arg("-XX:+UseG1GC")
-    .add_arg("-XX:+UnlockExperimentalVMOptions")
-    .add_arg("-XX:G1NewSizePercent=20")
-    .add_arg("-XX:G1ReservePercent=20")
-    .add_arg("-XX:MaxGCPauseMillis=50")
-    .add_arg("-XX:G1HeapRegionSize=32M");
-```
-
-### ZGC (Java 17+)
-
-```rust
-// For low-latency applications
-runtime
-    .add_arg("-XX:+UseZGC")
-    .add_arg("-Xmx16G")
-    .add_arg("-Xms16G");
-```
-
-### Shenandoah GC
-
-```rust
-// For predictable pause times
-runtime
-    .add_arg("-XX:+UseShenandoahGC")
-    .add_arg("-Xmx8G")
-    .add_arg("-Xms8G");
-```
-
-## Error Handling
-
-### Runtime Errors
-
-```rust
-use lighty_java::JavaRuntimeError;
-
-match runtime.run(stdout, stderr).await {
-    Ok(()) => println!("Success"),
-
-    Err(JavaRuntimeError::SpawnFailed(e)) => {
-        eprintln!("Failed to start Java process: {}", e);
-        // Possible causes:
-        // - Invalid java path
-        // - Insufficient permissions
-        // - Missing dependencies
-    }
-
-    Err(JavaRuntimeError::ExecutionFailed(code)) => {
-        eprintln!("Java process exited with code: {}", code);
-        // Non-zero exit code indicates error
-    }
-
-    Err(e) => {
-        eprintln!("Unexpected error: {}", e);
-    }
+    // Fire `term_tx` from elsewhere to bail out early
+    let _ = term_tx;
+    io.await?;
+    Ok(())
 }
 ```
 
-## Advanced Features
+### Wait for the exit code
 
-### Environment Variables
+`handle_io` returns once the process exits or the terminator fires.
+The exit code is available via `child.wait().await?`:
 
-```rust
-use std::process::Command;
+```rust,no_run
+# use lighty_java::runtime::JavaRuntime;
+# use tokio::sync::oneshot;
+# use std::path::Path;
+# async fn run() -> anyhow::Result<()> {
+let rt = JavaRuntime::new("/usr/bin/java".into());
+let mut child = rt.execute(vec!["-version".into()], Path::new(".")).await?;
+let (_tx, rx) = oneshot::channel();
+rt.handle_io::<()>(&mut child,
+    |_, _| Ok(()), |_, _| Ok(()), rx, &()).await?;
 
-// For custom environment
-let output = Command::new(&java_path)
-    .env("JAVA_HOME", "/path/to/java")
-    .env("PATH", "/custom/path")
-    .args(&["-version"])
-    .output()
-    .await?;
+let status = child.wait().await?;
+println!("exit code: {:?}", status.code());
+# Ok(()) }
 ```
 
-### Working Directory
+## Errors
 
-```rust
-use std::process::Command;
-
-let output = Command::new(&java_path)
-    .current_dir("/path/to/game")
-    .args(&["-jar", "server.jar"])
-    .output()
-    .await?;
-```
-
-### Input Streaming
-
-For interactive Java programs:
-
-```rust
-use tokio::process::Command;
-use tokio::io::AsyncWriteExt;
-
-let mut child = Command::new(&java_path)
-    .args(&["-jar", "interactive.jar"])
-    .stdin(std::process::Stdio::piped())
-    .spawn()?;
-
-if let Some(mut stdin) = child.stdin.take() {
-    stdin.write_all(b"input command\n").await?;
+```rust,ignore
+pub enum JavaRuntimeError {
+    NotFound { path: PathBuf },
+    NonZeroExit { code: i32 },
+    IoCaptureFailure,                    // stdout/stderr couldn't be captured
+    Spawn(std::io::Error),
+    SignalTerminated,
 }
-
-child.wait().await?;
 ```
 
-## See Also
+The Windows forceful-termination code `-1073740791` (0xC0000409) is
+treated as a normal exit, not an error.
 
-- [Overview](./overview.md) - Architecture overview
-- [Installation](./installation.md) - Downloading and installing Java
-- [Distributions](./distributions.md) - Java distribution comparison
-- [Examples](./examples.md) - Complete examples
+## How `lighty-launch` uses it
+
+`lighty-launch::launcher::Launcher` calls `execute` with the full
+launch argv (built from `Arguments`) and pipes `handle_io` into the
+event bus — every line becomes a `ConsoleOutputEvent` and the final
+exit triggers `InstanceExited`. The same `oneshot` terminator is
+hooked to the cancel button in the host UI.
+
+## See also
+
+- [`overview.md`](./overview.md) — crate scope
+- [`installation.md`](./installation.md) — get a binary path first
+- [`../../launch/docs/launch.md`](../../launch/docs/launch.md) — how
+  `Launcher` builds the argv
+- [`../../launch/docs/arguments.md`](../../launch/docs/arguments.md) —
+  JVM arg construction

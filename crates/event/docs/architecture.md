@@ -1,39 +1,45 @@
-# Event System Architecture
+# Architecture
 
-## Design
+`EventBus` is a thin wrapper around `tokio::sync::broadcast::Sender<Event>`.
+Every subscriber receives every event — filtering happens in the
+subscriber's `match` arm.
 
 ```mermaid
-flowchart TD
-    E[Auth Module] -->|emit| A[EventBus]
-    F[Java Module] -->|emit| A
-    G[Launch Module] -->|emit| A
-    H[Loader Module] -->|emit| A
-    I[Modloader Module] -->|emit| A
+flowchart LR
+    AUTH[Auth]    -->|emit| BUS[EventBus]
+    JAVA[Java]    -->|emit| BUS
+    LAUNCH[Launch] -->|emit| BUS
+    LOADER[Loader] -->|emit| BUS
+    MOD[Modloader] -->|emit| BUS
+    CORE[Core]    -->|emit| BUS
 
-    A -->|broadcast| B[Receiver 1: UI]
-    A -->|broadcast| C[Receiver 2: Logger]
-    A -->|broadcast| D[Receiver 3: Analytics]
+    BUS --> S1[Subscriber 1]
+    BUS --> S2[Subscriber 2]
+    BUS --> S3[Subscriber 3]
 ```
 
-The `Modloader` source covers the mod-source pipeline (dependency
-resolver, modpack pipeline, per-bucket install summaries for
-resourcepacks/shaderpacks/datapacks). Its variants previously lived
-under `LaunchEvent`; they now reach receivers as
-`Event::Modloader(ModloaderEvent::…)`.
+`Event::Modloader(ModloaderEvent::…)` covers the mod-source pipeline
+(resolver, modpack, per-bucket install summaries) — those variants
+used to live under `LaunchEvent` and now have their own enum.
 
 ## Flow
 
-1. **Event Emission** - Modules emit events to EventBus
-2. **Broadcasting** - EventBus broadcasts to all subscribers
-3. **Processing** - Each receiver handles events independently
+1. A producer calls `EventBus::emit(Event::X(…))`.
+2. The broadcast channel fans the message out to every active receiver.
+3. Each receiver's `next().await` returns the next message in arrival
+   order. Slow receivers that fall behind the bus capacity (default
+   1000) get an `EventReceiveError::Lagged(missed_count)` instead.
 
-## Thread Safety
+## Threading
 
-- Uses tokio `broadcast` channels
-- Lock-free concurrent access
-- Multiple subscribers supported
+- `EventBus: Send + Sync + Clone` — share it across tasks freely.
+- `EventReceiver: Send` (but not `Clone`) — call `bus.subscribe()`
+  again to get a second receiver.
+- The shared `EVENT_BUS` is `Lazy<EventBus>`, so the first access
+  builds the channel; emissions before any subscriber attaches are
+  dropped silently.
 
-## See Also
+## See also
 
-- [Event Reference](./events.md)
-- [Examples](./examples.md)
+- [`events.md`](./events.md) — full variant catalogue
+- [`how-to-use.md`](./how-to-use.md) — wiring a subscriber

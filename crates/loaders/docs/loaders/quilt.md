@@ -1,92 +1,63 @@
-# Quilt Loader
+# Quilt
 
-Fork of Fabric with additional features and improvements.
+Fabric fork with extra niceties (lossless extension API, broader mod
+compatibility). Same merge model as Fabric — pulls the Vanilla
+manifest, overlays the Quilt loader profile.
 
-## Overview
+| Field | Value |
+|---|---|
+| Status | stable |
+| MC versions | 1.14+ |
+| Feature flag | `quilt` |
+| Provider | QuiltMC meta API |
+| Module | `lighty_loaders::quilt` |
+| Repository singleton | `quilt::QUILT` |
 
-**Status**: Stable
-**MC Versions**: 1.14+
-**Feature Flag**: `quilt`
-**API**: QuiltMC official API
+## Use it
 
-Quilt is a Fabric fork that aims to provide better mod compatibility and additional features while maintaining Fabric mod support.
-
-## Usage
-
-```rust
-use lighty_launcher::prelude::*;
+```rust,no_run
+use lighty_core::AppState;
+use lighty_loaders::{Loader, LoaderExtensions};
+use lighty_version::VersionBuilder;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    AppState::init("MyLauncher")?;
-
-    let instance = VersionBuilder::new(
-        "quilt-1.21",
-        Loader::Quilt,
-        "0.27.1",      // Quilt loader version
-        "1.21.1",      // Minecraft version
-    );
-
-    let metadata = instance.get_metadata().await?;
-
-    println!("Quilt {} with {} libraries", metadata.id, metadata.libraries.len());
-
+    AppState::init("LightyLauncher")?;
+    let v = VersionBuilder::new("quilt-1.21", Loader::Quilt, "0.27.1", "1.21.1");
+    let meta = v.get_metadata().await?;
+    println!("libraries: {}", meta.libraries.len());
     Ok(())
 }
 ```
 
-## Exports
+## Queries
 
-**In lighty_loaders**: `lighty_loaders::loaders::quilt`  
-**In lighty_launcher**: `lighty_launcher::loaders::quilt`
+```rust,ignore
+pub enum QuiltQuery { QuiltBuilder, Libraries }
+```
 
-## API Endpoints
+## API endpoints
 
-### Loader Versions
 ```
 GET https://meta.quiltmc.org/v3/versions/loader
-```
-
-### Game Versions
-```
 GET https://meta.quiltmc.org/v3/versions/game
+GET https://meta.quiltmc.org/v3/versions/loader/{mc}/{loader}/profile/json
 ```
 
-### Loader Profile
-```
-GET https://meta.quiltmc.org/v3/versions/loader/{minecraft}/{loader}/profile/json
-```
+## Compatibility
 
-## Query Types
+Quilt loads most Fabric mods unmodified. Quilt-specific mods only run
+on Quilt. Use the Quilted Fabric API for the Fabric API surface.
 
-- `QuiltBuilder` - Full metadata (Quilt + Vanilla merged)
-- `Libraries` - Only libraries
+## Events
 
-## Merging with Vanilla
+Same set as Fabric — `FetchingData / DataFetched / ManifestCached /
+ManifestNotFound` + `MergingLoaderData / DataMerged` with
+`overlay_loader: "Quilt"`. See [`../events.md`](../events.md).
 
-Same process as Fabric:
-1. Fetch Vanilla metadata
-2. Fetch Quilt loader profile
-3. Merge libraries
-4. Merge arguments
-5. Return combined metadata
+## See also
 
-## Comparison with Fabric
-
-| Feature | Fabric | Quilt |
-|---------|--------|-------|
-| Mod compatibility | Fabric mods only | Fabric + Quilt mods |
-| API stability | Stable | Stable |
-| Development | Community | Fork + improvements |
-| Performance | Excellent | Excellent |
-
-## Mod Support
-
-Quilt can run:
-- Quilt-specific mods
-- Most Fabric mods (high compatibility)
-
-## Related Documentation
-
-- [Fabric](./fabric.md) - Very similar architecture
-- [Vanilla](./vanilla.md) - Base Minecraft
+- [`fabric.md`](./fabric.md) — same merge model
+- [`vanilla.md`](./vanilla.md) — base manifest source
+- [`../../../modsloader/docs/mods.md`](../../../modsloader/docs/mods.md)
+  — auto-pull mods

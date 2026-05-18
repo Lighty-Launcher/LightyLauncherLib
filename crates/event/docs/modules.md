@@ -1,29 +1,31 @@
-# Event Module System
+# Module layout
 
-## Overview
-
-Events are organized into modules for better maintainability.
-
-## Module Structure
+Source files under `crates/event/src/module/`:
 
 ```
 module/
-├── auth.rs       - Authentication events
-├── java.rs       - Java distribution events
-├── launch.rs     - Game launch + install lifecycle events
-├── loader.rs     - Mod loader metadata events
-├── modloader.rs  - Mod-source / modpack / mod-like bucket events
-├── core.rs       - Core system events
-└── console.rs    - Instance console events
+├── auth.rs        AuthEvent
+├── core.rs        CoreEvent
+├── java.rs        JavaEvent
+├── launch.rs      LaunchEvent
+├── loader.rs      LoaderEvent
+├── modloader.rs   ModloaderEvent  (split out of launch.rs)
+└── console.rs     ConsoleStream, InstanceLaunchedEvent,
+                   InstanceWindowAppearedEvent, InstanceExitedEvent,
+                   ConsoleOutputEvent, InstanceDeletedEvent
 ```
 
-`modloader.rs` is a recent split: the `ModResolve*` and `Modpack*`
-variants used to live in `launch.rs` but are now their own enum
-(`ModloaderEvent`), reachable through `Event::Modloader(_)`. The
-three per-bucket summaries `ResourcePacksInstalled`,
-`ShaderPacksInstalled` and `DatapacksInstalled` were added at the same
-time and only live here.
+Each `*.rs` defines one event family. The crate root re-exports them
+flat (`pub use module::AuthEvent;` …) and wraps them in the root
+`Event` enum.
 
-## Creating Custom Modules
+`modloader.rs` is recent: the `ModResolve*` and `Modpack*` variants
+used to live in `launch.rs` and are now their own `ModloaderEvent`
+enum, reached through `Event::Modloader(_)`. The per-bucket
+post-install summaries (`ResourcePacksInstalled`, `ShaderPacksInstalled`,
+`DatapacksInstalled`) only live here.
 
-See main repository for extension guides.
+## See also
+
+- [`events.md`](./events.md) — catalogue of every variant per module
+- [`architecture.md`](./architecture.md) — broadcast / fan-out model
