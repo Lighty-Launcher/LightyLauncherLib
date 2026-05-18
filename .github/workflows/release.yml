@@ -3,6 +3,13 @@ name: Release
 on:
   push:
     branches: [production]
+    # Skip when only docs / workflows / gitignore change — release runs only
+    # when something that affects the published crates moved.
+    paths-ignore:
+      - '**.md'
+      - '.github/**'
+      - '.gitignore'
+      - 'assets/**'
 
 env:
   CARGO_TERM_COLOR: always

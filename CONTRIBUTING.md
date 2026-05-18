@@ -109,7 +109,7 @@ keep up to date.
 
 ## Versioning (CalVer)
 
-Versions look like `YY.MM.PATCH` (e.g. `26.5.6` = May 2026, patch 6):
+Versions look like `YY.MM.PATCH` (e.g. `26.5.7` = May 2026, patch 7):
 
 | Part | Bump when |
 |---|---|
