@@ -25,12 +25,10 @@ jobs:
           # Pull the version line from [workspace.package] (first match after the section header).
           VERSION=$(awk '/^\[workspace\.package\]/{f=1} f && /^version = /{print; exit}' Cargo.toml \
             | sed 's/version = "\(.*\)"/\1/')
-          MINOR=$(echo "${VERSION}" | cut -d. -f1-2)
-          TAG="${MINOR}/${VERSION}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "tag=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Detected workspace version: ${VERSION}"
-          echo "Target tag: ${TAG}"
+          echo "Target tag: ${VERSION}"
 
       - name: Fail if tag already exists
         run: |
