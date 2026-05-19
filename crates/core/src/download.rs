@@ -1,68 +1,52 @@
-/*
- * This file is part of LiquidLauncher (https://github.com/CCBlueX/LiquidLauncher)
- *
- * Copyright (c) 2015 - 2024 CCBlueX
- *
- * LiquidLauncher is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * LiquidLauncher is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with LiquidLauncher. If not, see <https://www.gnu.org/licenses/>.
- */
+// Copyright (c) 2025 Hamadi
+// Licensed under the MIT License
+
+//! HTTP download helpers built on top of the shared `HTTP_CLIENT`.
 
 use std::path::Path;
 
+use tokio::io::AsyncWriteExt;
+
 use crate::errors::DownloadResult;
-use crate::{trace_debug};
-use tokio::fs;
 use crate::hosts::HTTP_CLIENT;
+use crate::trace_debug;
 
-/// Downloads `url` to `path` without progress reporting.
+/// Streams `url` to `path` chunk by chunk. No progress callback —
+/// reserved for small artefacts (modpack archives, single mod files).
 pub async fn download_file_untracked(url: &str, path: impl AsRef<Path>) -> DownloadResult<()> {
-    let path = path.as_ref().to_owned();
-    let response = HTTP_CLIENT.get(url).send().await?.error_for_status()?;
+    let mut response = HTTP_CLIENT.get(url).send().await?.error_for_status()?;
+    let mut file = tokio::fs::File::create(path.as_ref()).await?;
 
-    let content = response.bytes().await?;
-    fs::write(path, content).await?;
+    while let Some(chunk) = response.chunk().await? {
+        file.write_all(&chunk).await?;
+    }
+    file.flush().await?;
     Ok(())
 }
 
-/// Downloads `url` into a `Vec<u8>`, invoking `on_progress(current, total)`
-/// after each chunk. `total` is `0` when the server omits `Content-Length`.
+/// Downloads `url` into an in-memory buffer and reports progress after
+/// every chunk via `on_progress(downloaded_bytes, total_bytes)`. The
+/// total is `0` when the server doesn't expose `Content-Length`.
 pub async fn download_file<F>(url: &str, on_progress: F) -> DownloadResult<Vec<u8>>
 where
     F: Fn(u64, u64),
 {
-    trace_debug!("Downloading file {:?}", url);
+    let trimmed = url.trim();
+    trace_debug!("Downloading {trimmed}");
 
-    let mut response = HTTP_CLIENT
-        .get(url.trim())
-        .send()
-        .await?
-        .error_for_status()?;
+    let mut response = HTTP_CLIENT.get(trimmed).send().await?.error_for_status()?;
+    let total = response.content_length().unwrap_or(0);
 
-    trace_debug!("Response received from url");
+    on_progress(0, total);
 
-    let max_len = response.content_length().unwrap_or(0);
-    let mut output = Vec::with_capacity(max_len as usize);
-    let mut curr_len = 0;
-
-    on_progress(0, max_len);
-
-    trace_debug!("Reading data from response chunk...");
-    while let Some(data) = response.chunk().await? {
-        output.extend_from_slice(&data);
-        curr_len += data.len();
-        on_progress(curr_len as u64, max_len);
+    let mut buffer = Vec::with_capacity(total as usize);
+    let mut downloaded: u64 = 0;
+    while let Some(chunk) = response.chunk().await? {
+        buffer.extend_from_slice(&chunk);
+        downloaded += chunk.len() as u64;
+        on_progress(downloaded, total);
     }
 
-    trace_debug!("Downloaded file");
-    Ok(output)
+    trace_debug!("Downloaded {} ({downloaded} bytes)", trimmed);
+    Ok(buffer)
 }

@@ -4,7 +4,7 @@ Core utilities and foundational components for the LightyLauncher ecosystem.
 
 ## Overview
 
-**Version**: 26.5.9
+**Version**: 26.5.10
 **Part of**: [LightyLauncher](https://crates.io/crates/lighty-launcher)
 
 `lighty-core` provides essential building blocks used across all LightyLauncher crates:
@@ -20,7 +20,7 @@ Core utilities and foundational components for the LightyLauncher ecosystem.
 
 ```toml
 [dependencies]
-lighty-core = "26.5.9"
+lighty-core = "26.5.10"
 ```
 
 ```rust

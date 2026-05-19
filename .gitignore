@@ -10,7 +10,7 @@
 !assets/
 
 # Allow root files
-!LICENCE
+!LICENSE
 !README.md
 !CONTRIBUTING.md
 !Cargo.toml
