@@ -12,7 +12,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "26.5.9"
+version = "26.5.10"
 edition = "2024"
 authors = ["Hamadi <dev.hamadipro@gmail.com>"]
 license = "MIT"
@@ -49,14 +49,14 @@ path = "src/lib.rs"
 
 [workspace.dependencies]
 # Internal crates
-lighty-core = { version = "26.5.9", path = "crates/core" }
-lighty-auth = { version = "26.5.9", path = "crates/auth" }
-lighty-event = { version = "26.5.9", path = "crates/event" }
-lighty-java = { version = "26.5.9", path = "crates/java" }
-lighty-launch = { version = "26.5.9", path = "crates/launch" }
-lighty-loaders = { version = "26.5.9", path = "crates/loaders" }
-lighty-modsloader = { version = "26.5.9", path = "crates/modsloader" }
-lighty-version = { version = "26.5.9", path = "crates/version" }
+lighty-core = { version = "26.5.10", path = "crates/core" }
+lighty-auth = { version = "26.5.10", path = "crates/auth" }
+lighty-event = { version = "26.5.10", path = "crates/event" }
+lighty-java = { version = "26.5.10", path = "crates/java" }
+lighty-launch = { version = "26.5.10", path = "crates/launch" }
+lighty-loaders = { version = "26.5.10", path = "crates/loaders" }
+lighty-modsloader = { version = "26.5.10", path = "crates/modsloader" }
+lighty-version = { version = "26.5.10", path = "crates/version" }
 
 # ---- Async Runtime ----
 tokio = { version = "1.52", features = [
@@ -184,54 +184,35 @@ reqwest = { workspace = true }
 # ============================================
 
 [features]
-# Loaders (forwarded to lighty-loaders)
-vanilla = ["lighty-loaders/vanilla"]
-fabric = ["lighty-loaders/fabric"]
-quilt = ["lighty-loaders/quilt"]
-# lighty-launch is enabled so the installer can run NeoForge post-install processors
-neoforge = ["lighty-loaders/neoforge", "lighty-launch/neoforge"]
-# lighty-launch is enabled so the installer can run Forge post-install
-# processors. The same feature flag also covers legacy Forge (1.5.2 →
-# 1.12.2) since the legacy parser lives inside the same crate path.
-forge = ["lighty-loaders/forge", "lighty-launch/forge"]
+default = []
+
+# Loaders
+vanilla        = ["lighty-loaders/vanilla"]
+fabric         = ["lighty-loaders/fabric"]
+quilt          = ["lighty-loaders/quilt"]
+neoforge       = ["lighty-loaders/neoforge", "lighty-launch/neoforge"]
+forge          = ["lighty-loaders/forge", "lighty-launch/forge"]
 lighty_updater = ["lighty-loaders/lighty_updater"]
-# Mod sources (Modrinth public API, CurseForge keyed API).
-# Each provider feature also pulls in its modpack-format support
-# (`.mrpack` for Modrinth, `.zip` for CurseForge) — no separate `modpack`
-# feature, the parsers ride on whichever provider is active.
-# Each forwards into:
-#   - lighty-modsloader: API clients + resolver + modpack parsers
-#   - lighty-launch:     install-time modpack pipeline (download / extract / overrides)
-#   - lighty-version:    matching .with_*_mods() / .with_*_modpack() methods
-modrinth = ["lighty-modsloader/modrinth", "lighty-launch/modrinth", "lighty-version/modrinth"]
-curseforge = ["lighty-modsloader/curseforge", "lighty-launch/curseforge", "lighty-version/curseforge"]
-all-mods = ["modrinth", "curseforge"]
-all-loaders = [
+all-loaders    = [
     "lighty-loaders/all-loaders",
     "lighty-launch/modrinth", "lighty-launch/curseforge",
     "lighty-version/modrinth", "lighty-version/curseforge",
 ]
 
-# Event system
-events = ["lighty-event", "lighty-auth/events", "lighty-launch/events"]
+# Mod sources (modpacks ride on each provider)
+modrinth   = ["lighty-modsloader/modrinth",   "lighty-launch/modrinth",   "lighty-version/modrinth"]
+curseforge = ["lighty-modsloader/curseforge", "lighty-launch/curseforge", "lighty-version/curseforge"]
+all-mods   = ["modrinth", "curseforge"]
 
-# OS keychain storage for Microsoft / Azuriom tokens (opt-in).
-# Pulls D-Bus on Linux — keep off in headless / CI environments.
+# Cross-cutting
+events  = ["lighty-event", "lighty-auth/events", "lighty-launch/events"]
 keyring = ["lighty-auth/keyring", "lighty-launch/keyring"]
-
-# Logging
 tracing = [
     "dep:tracing",
-    "lighty-core/tracing",
-    "lighty-auth/tracing",
-    "lighty-java/tracing",
-    "lighty-launch/tracing",
-    "lighty-loaders/tracing",
-    "lighty-modsloader/tracing",
-    "lighty-version/tracing",
+    "lighty-core/tracing", "lighty-auth/tracing", "lighty-java/tracing",
+    "lighty-launch/tracing", "lighty-loaders/tracing",
+    "lighty-modsloader/tracing", "lighty-version/tracing",
 ]
-
-default = []
 
 # ============================================
 # COMPILATION PROFILES

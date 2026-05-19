@@ -194,7 +194,7 @@ See `AUTH_SECRETS.md` at the workspace root for the full threat model.
 java
   -Djava.library.path=/tmp/natives-xxxxx
   -Dminecraft.launcher.brand=MyLauncher
-  -Dminecraft.launcher.version=26.5.9
+  -Dminecraft.launcher.version=26.5.10
   -Xmx4G -Xms2G -XX:+UseG1GC
   -cp /path/lib1.jar:/path/lib2.jar:...
   net.minecraft.client.main.Main
