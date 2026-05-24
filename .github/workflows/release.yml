@@ -18,6 +18,8 @@ jobs:
   verify-bump:
     name: Verify version bump
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.extract.outputs.version }}
       tag: ${{ steps.extract.outputs.tag }}
@@ -50,6 +52,8 @@ jobs:
     name: Build release
     needs: verify-bump
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - name: Install system dependencies
