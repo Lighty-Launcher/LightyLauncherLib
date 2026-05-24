@@ -19,7 +19,7 @@
 
 ```toml
 [dependencies]
-lighty-launcher = { version = "26.5.10", features = ["vanilla"] }
+lighty-launcher = { version = "26.5.11", features = ["vanilla"] }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"
 ```
@@ -93,7 +93,7 @@ lighty-launcher/             # Root crate (prelude + feature gates)
 Mix and match:
 
 ```toml
-lighty-launcher = { version = "26.5.10", features = ["fabric", "modrinth", "events"] }
+lighty-launcher = { version = "26.5.11", features = ["fabric", "modrinth", "events"] }
 ```
 
 ## Documentation

@@ -21,15 +21,20 @@ pub async fn collect_asset_tasks(
         return Vec::new();
     };
 
-    let parent_path = version.game_dirs().join("assets").join("objects");
+    let assets_root = version.game_dirs().join("assets");
+    let objects_root = assets_root.join("objects");
     let mut tasks = Vec::new();
 
     for asset in assets.objects.values() {
         let Some(url) = &asset.url else { continue };
 
-        // First 2 chars of hash form the subdirectory.
-        let hash_prefix = &asset.hash[0..2];
-        let path = parent_path.join(hash_prefix).join(&asset.hash);
+        let path = match &asset.path {
+            Some(custom) => assets_root.join(custom),
+            None => {
+                let hash_prefix = &asset.hash[0..2];
+                objects_root.join(hash_prefix).join(&asset.hash)
+            }
+        };
 
         if needs_download(&path, Some(&asset.hash), &asset.hash).await {
             tasks.push((url.clone(), path));

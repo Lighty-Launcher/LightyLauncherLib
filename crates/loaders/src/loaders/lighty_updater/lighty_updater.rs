@@ -302,6 +302,7 @@ fn extract_assets(full_data: &LightyMetadata) -> Result<AssetsFile> {
                 hash: asset.hash.clone(),
                 size: asset.size,
                 url: asset.url.clone(),
+                path: asset.path.clone(),
             }
         );
     }

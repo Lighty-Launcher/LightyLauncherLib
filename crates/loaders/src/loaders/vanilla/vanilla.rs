@@ -327,6 +327,7 @@ async fn extract_assets<V: VersionInfo>(version: &V, full_data: &VanillaMetaData
                 hash: v.hash,
                 size: v.size,
                 url,
+                path: None,
             })
         })
         .collect();
