@@ -106,10 +106,11 @@ pub struct AssetsFile {
     pub objects: HashMap<String, Asset>,
 }
 
-/// Single content-addressed asset.
+/// Single asset entry. `path` overrides the content-addressed default location.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Asset {
     pub hash: String,
     pub size: u64,
     pub url: Option<String>,
+    pub path: Option<String>,
 }
