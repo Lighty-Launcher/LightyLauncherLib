@@ -30,28 +30,78 @@ println!("{} ({})", profile.username, profile.uuid);
 ## Azure AD setup
 
 The launcher does the OAuth dance, but you still need an Azure AD app
-registration:
+registration — and your client ID must be approved by Mojang before
+it can call Minecraft Services.
 
-1. [Azure Portal](https://portal.azure.com) → **App registrations** →
-   **New registration**.
-2. **Supported account types**: "Personal Microsoft accounts only"
-   (Minecraft = consumer accounts).
-3. Leave the redirect URI empty — Device Code Flow doesn't use one.
-4. After creation, on the **Authentication** page:
-   - Toggle **Allow public client flows** → **Yes**.
-   - **Add a platform** → **Mobile and desktop applications** → tick
-     `https://login.microsoftonline.com/common/oauth2/nativeclient`.
-   - Save.
-5. Grab the **Application (client) ID** and pass it to
-   `MicrosoftAuth::new(...)`.
+**→ Full step-by-step guide with screenshots:
+[application-id-microsoft.md](./application-id-microsoft.md)**
+
+### Step 1 — Create the app registration
+
+[Azure Portal](https://portal.azure.com) → **App registrations** →
+**New registration**.
+
+![Step 1 — New registration](../../../../assets/microsoft_auth/step_1.png)
+
+Fill in a display name for your launcher, then under **Supported account
+types** select **"Personal Microsoft accounts only"** — Minecraft accounts
+are consumer accounts, not work/school accounts.
+
+![Step 2 — Personal Microsoft accounts only](../../../../assets/microsoft_auth/step_2.png)
+
+Leave the redirect URI empty and click **Register**.
+
+### Step 2 — Copy your client ID
+
+On the **Overview** page after creation, copy the **Application (client) ID**
+— this is the value you pass to `MicrosoftAuth::new(...)`.
+
+![Step 3 — Copy client ID](../../../../assets/microsoft_auth/step_3.png)
+
+Then click **Authentication** in the left menu.
+
+### Step 3 — Add the desktop platform
+
+On the **Authentication** page, click **Add a platform** →
+**Mobile and desktop applications**.
+
+![Step 4 — Select platform](../../../../assets/microsoft_auth/step_4.png)
+
+Tick `https://login.microsoftonline.com/common/oauth2/nativeclient` and
+click **Configure**.
+
+![Step 5 — nativeclient URI](../../../../assets/microsoft_auth/step_5.png)
+
+### Step 4 — Enable public client flows
+
+Still on **Authentication**, go to the **Parameters** tab and set
+**Allow public client flows** to **Yes**, then click **Save**.
+
+![Step 6 — Allow public client flows](../../../../assets/microsoft_auth/step_6.png)
+
+> This toggle is the most commonly missed step. Without it you get
+> `AADSTS70002: The provided client is not supported for this feature`.
+
+### Step 5 — Submit for Mojang approval
+
+**Your client ID will be rejected by Minecraft Services until Mojang
+approves it.** Submit your app at:
+<https://aka.ms/mce-reviewappid>
+
+You will need your **Application (client) ID** and your
+**Directory (tenant) ID** (both visible on the Overview page).
+Submissions are reviewed weekly.
+
+![Step 7 — AppID review form](../../../../assets/microsoft_auth/step_7.png)
+
+> Without this approval you will see:
+> `"errorMessage": "Invalid app registration, see https://aka.ms/AppRegInfo"`
 
 Required scopes are hardcoded by the provider: `XboxLive.signin
 offline_access`. The `offline_access` scope is what unlocks the
 refresh token.
 
-If you get `AADSTS70002: The provided client is not supported for
-this feature` during testing, you skipped step 4 (public client flow
-+ mobile platform).
+> Full protocol reference: [Minecraft Wiki — Microsoft authentication](https://minecraft.wiki/w/Microsoft_authentication)
 
 ## The token chain
 
@@ -75,12 +125,14 @@ The provider emits an `AuthEvent::AuthenticationInProgress` at every
 arrow with the `events` feature enabled — see
 [events.md](./events.md#sequences).
 
-Known XSTS failures the provider maps to friendlier errors:
+Known failures and their meaning:
 
-| Xbox code | Meaning |
-|---|---|
-| `2148916233` | Account doesn't own Minecraft Java Edition |
-| `2148916238` | Xbox Live unavailable in the user's country |
+| Error | Meaning | Fix |
+|---|---|---|
+| `AADSTS70002` | Public client flows not enabled | Authentication page → Parameters → Allow public client flows → Yes |
+| `Invalid app registration` | Client ID not approved by Mojang | Submit at [aka.ms/mce-reviewappid](https://aka.ms/mce-reviewappid) |
+| XSTS `2148916233` | Account doesn't own Minecraft Java Edition | — |
+| XSTS `2148916238` | Xbox Live unavailable in the user's country | — |
 
 ## Silent re-auth
 
