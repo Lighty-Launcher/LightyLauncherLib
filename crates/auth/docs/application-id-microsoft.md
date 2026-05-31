@@ -17,7 +17,7 @@ Go to [portal.azure.com](https://portal.azure.com), search for
 and select it.
 
 <p align="center">
-  <img src="../../../../assets/microsoft_auth/step_1.png" alt="Step 1 — Search for App registrations" />
+  <img src="../../../assets/microsoft_auth/step_1.png" alt="Step 1 — Search for App registrations" />
 </p>
 
 ---
@@ -27,7 +27,7 @@ and select it.
 Click **+ Nouvelle inscription** (New registration).
 
 <p align="center">
-  <img src="../../../../assets/microsoft_auth/step_2.png" alt="Step 2 — New registration" />
+  <img src="../../../assets/microsoft_auth/step_2.png" alt="Step 2 — New registration" />
 </p>
 
 ---
@@ -42,7 +42,7 @@ Click **+ Nouvelle inscription** (New registration).
 - Click **S'inscrire** (Register) at the bottom.
 
 <p align="center">
-  <img src="../../../../assets/microsoft_auth/step_3.png" alt="Step 3 — Registration form" />
+  <img src="../../../assets/microsoft_auth/step_3.png" alt="Step 3 — Registration form" />
 </p>
 
 ---
@@ -56,7 +56,7 @@ On the **Overview** page after creation:
 - Then click **Authentification** in the left menu to continue.
 
 <p align="center">
-  <img src="../../../../assets/microsoft_auth/step_4.png" alt="Step 4 — Copy client ID and go to Authentication" />
+  <img src="../../../assets/microsoft_auth/step_4.png" alt="Step 4 — Copy client ID and go to Authentication" />
 </p>
 
 ---
@@ -69,7 +69,7 @@ On the **Authentication** page, click **+ Ajouter un URI de redirection**
 Do **not** select Web or iOS/Android.
 
 <p align="center">
-  <img src="../../../../assets/microsoft_auth/step_5.png" alt="Step 5 — Select Mobile and desktop applications" />
+  <img src="../../../assets/microsoft_auth/step_5.png" alt="Step 5 — Select Mobile and desktop applications" />
 </p>
 
 ---
@@ -81,7 +81,7 @@ Check the box next to
 then click **Configurer** (Configure) to save.
 
 <p align="center">
-  <img src="../../../../assets/microsoft_auth/step_6.png" alt="Step 6 — Check nativeclient and save" />
+  <img src="../../../assets/microsoft_auth/step_6.png" alt="Step 6 — Check nativeclient and save" />
 </p>
 
 ---
@@ -91,7 +91,7 @@ then click **Configurer** (Configure) to save.
 Back on the **Authentication** page, click the **Paramètres** (Parameters) tab.
 
 <p align="center">
-  <img src="../../../../assets/microsoft_auth/step_7.png" alt="Step 7 — Parameters tab" />
+  <img src="../../../assets/microsoft_auth/step_7.png" alt="Step 7 — Parameters tab" />
 </p>
 
 ---
@@ -102,7 +102,7 @@ Set **Autoriser les flux clients publics** (Allow public client flows) to
 **Yes**, then click **Enregistrer** (Save).
 
 <p align="center">
-  <img src="../../../../assets/microsoft_auth/step_8.png" alt="Step 8 — Allow public client flows → Yes, then Save" />
+  <img src="../../../assets/microsoft_auth/step_8.png" alt="Step 8 — Allow public client flows → Yes, then Save" />
 </p>
 
 > This is the most critical step. Without it you get:
