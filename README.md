@@ -19,7 +19,7 @@
 
 ```toml
 [dependencies]
-lighty-launcher = { version = "26.5.11", features = ["vanilla"] }
+lighty-launcher = { version = "26.5.12", features = ["vanilla"] }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"
 ```
@@ -93,7 +93,7 @@ lighty-launcher/             # Root crate (prelude + feature gates)
 Mix and match:
 
 ```toml
-lighty-launcher = { version = "26.5.11", features = ["fabric", "modrinth", "events"] }
+lighty-launcher = { version = "26.5.12", features = ["fabric", "modrinth", "events"] }
 ```
 
 ## Documentation
@@ -124,3 +124,10 @@ PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Related
 
 - **[LightyUpdater](https://github.com/Lighty-Launcher/LightyUpdater)** — companion server for custom modpack distribution.
+- **[FlowUpdater](https://github.com/FlowArg/FlowUpdater)** — Java launcher library by FlowArg, one of the early inspirations for this project.
+
+## Acknowledgements
+
+Special thanks to **[FlowArg](https://github.com/FlowArg)** whose work on FlowUpdater provided valuable guidance and direction in the early stages of this project.
+
+Thanks to everyone who has contributed — issues, PRs, and feedback all help make this library better.

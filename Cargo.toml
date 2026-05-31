@@ -12,7 +12,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "26.5.11"
+version = "26.5.12"
 edition = "2024"
 authors = ["Hamadi <dev.hamadipro@gmail.com>"]
 license = "MIT"
@@ -49,14 +49,14 @@ path = "src/lib.rs"
 
 [workspace.dependencies]
 # Internal crates
-lighty-core = { version = "26.5.11", path = "crates/core" }
-lighty-auth = { version = "26.5.11", path = "crates/auth" }
-lighty-event = { version = "26.5.11", path = "crates/event" }
-lighty-java = { version = "26.5.11", path = "crates/java" }
-lighty-launch = { version = "26.5.11", path = "crates/launch" }
-lighty-loaders = { version = "26.5.11", path = "crates/loaders" }
-lighty-modsloader = { version = "26.5.11", path = "crates/modsloader" }
-lighty-version = { version = "26.5.11", path = "crates/version" }
+lighty-core = { version = "26.5.12", path = "crates/core" }
+lighty-auth = { version = "26.5.12", path = "crates/auth" }
+lighty-event = { version = "26.5.12", path = "crates/event" }
+lighty-java = { version = "26.5.12", path = "crates/java" }
+lighty-launch = { version = "26.5.12", path = "crates/launch" }
+lighty-loaders = { version = "26.5.12", path = "crates/loaders" }
+lighty-modsloader = { version = "26.5.12", path = "crates/modsloader" }
+lighty-version = { version = "26.5.12", path = "crates/version" }
 
 # ---- Async Runtime ----
 tokio = { version = "1.52", features = [

@@ -33,6 +33,8 @@ pub mod auth {
         offline::OfflineAuth,
         microsoft::MicrosoftAuth,
         azuriom::AzuriomAuth,
+        ExposeSecret,
+        SecretString,
     };
 }
 

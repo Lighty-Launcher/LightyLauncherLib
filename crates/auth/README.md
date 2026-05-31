@@ -4,7 +4,7 @@ Multi-provider authentication system for Minecraft launchers with OAuth2 and CMS
 
 ## Overview
 
-**Version**: 26.5.11
+**Version**: 26.5.12
 **Part of**: [LightyLauncher](https://crates.io/crates/lighty-launcher)
 
 `lighty-auth` provides a unified trait-based authentication system supporting multiple providers:
@@ -17,7 +17,7 @@ Multi-provider authentication system for Minecraft launchers with OAuth2 and CMS
 
 ```toml
 [dependencies]
-lighty-auth = "26.5.11"
+lighty-auth = "26.5.12"
 ```
 
 ### Offline Authentication
@@ -43,6 +43,14 @@ async fn main() -> anyhow::Result<()> {
 ```
 
 ### Microsoft Authentication
+
+> **Azure AD setup required** — your client ID must also be approved by Mojang
+> before it can call Minecraft Services. Follow the full step-by-step guide with
+> screenshots in [docs/microsoft.md](./docs/microsoft.md).
+
+![Azure — Personal Microsoft accounts only](../../assets/microsoft_auth/step_2.png)
+![Azure — Allow public client flows](../../assets/microsoft_auth/step_6.png)
+![Mojang AppID approval form](../../assets/microsoft_auth/step_7.png)
 
 ```rust
 use lighty_auth::{microsoft::MicrosoftAuth, Authenticator};
@@ -97,6 +105,7 @@ async fn main() -> anyhow::Result<()> {
 | [Events](./docs/events.md) | AuthEvent types |
 | [Offline](./docs/offline.md) | Offline mode and UUID generation |
 | [Microsoft](./docs/microsoft.md) | Microsoft OAuth2 flow |
+| [Azure App ID setup](./docs/application-id-microsoft.md) | Step-by-step Azure registration + Mojang approval |
 | [Azuriom](./docs/azuriom.md) | Azuriom CMS authentication |
 | [Trait](./docs/trait.md) | Implementing custom Authenticator |
 

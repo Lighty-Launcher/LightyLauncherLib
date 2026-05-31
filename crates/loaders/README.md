@@ -4,7 +4,7 @@ Mod loader support for Minecraft: Vanilla, Fabric, Quilt, Forge, NeoForge, OptiF
 
 ## Overview
 
-**Version**: 26.5.11
+**Version**: 26.5.12
 **Part of**: [LightyLauncher](https://crates.io/crates/lighty-launcher)
 
 Provides a unified trait-based API for managing different Minecraft mod loaders with smart caching and metadata resolution.
@@ -62,10 +62,10 @@ async fn main() -> anyhow::Result<()> {
 ```toml
 [dependencies]
 # With all loaders
-lighty-loaders = { version = "26.5.11", features = ["all-loaders"] }
+lighty-loaders = { version = "26.5.12", features = ["all-loaders"] }
 
 # With specific loaders
-lighty-loaders = { version = "26.5.11", features = ["vanilla", "fabric", "quilt"] }
+lighty-loaders = { version = "26.5.12", features = ["vanilla", "fabric", "quilt"] }
 ```
 
 ## Core Traits

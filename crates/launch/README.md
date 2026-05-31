@@ -4,7 +4,7 @@ Minecraft launch system for [LightyLauncher](https://crates.io/crates/lighty-lau
 
 ## Overview
 
-**Version**: 26.5.11
+**Version**: 26.5.12
 **Part of**: [LightyLauncher](https://crates.io/crates/lighty-launcher)
 
 `lighty-launch` handles the complete Minecraft launch process, from downloading assets to managing running instances.
@@ -23,7 +23,7 @@ Minecraft launch system for [LightyLauncher](https://crates.io/crates/lighty-lau
 
 ```toml
 [dependencies]
-lighty-launch = "26.5.11"
+lighty-launch = "26.5.12"
 ```
 
 ### Basic Launch
