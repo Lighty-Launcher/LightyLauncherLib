@@ -22,7 +22,7 @@ license = "MIT"
 repository = "https://github.com/Lighty-Launcher/LightyLauncherLib"
 homepage = "https://github.com/Lighty-Launcher/LightyLauncherLib"
 documentation = "https://docs.rs/lighty-launcher"
-rust-version = "1.95"
+rust-version = "1.98"
 
 [package]
 name = "lighty-launcher"
@@ -112,24 +112,24 @@ tracing = { version = "0.1.44", features = ["log"] }
 # ---- Filesystem & Compression ----
 tokio-tar = "0.3.1"
 async-compression = { version = "0.4.42", features = ["tokio", "gzip"] }
-zip = "6.0.0"
-async_zip = { version = "0.0.18", features = ["deflate", "tokio", "tokio-fs"] }
+zip = "8.6.0"
+async_zip = { version = "0.0.19", features = ["deflate", "tokio", "tokio-fs"] }
 memmap2 = "0.9.10"
 
 # ---- Cryptography ----
 sha1 = "0.11.0"
 sha2 = "0.11.0"
 hex = "0.4.3"
-base64 = "0.22"
+base64 = "0.23"
 
 # ---- Paths & Filenames ----
 # `dirs` instead of `directories`: same author/std but the API only
 # exposes the platform-canonical bases (data/config/cache/home), no
 # qualifier+organization+application triplet. We join the launcher
 # name ourselves — see `crates/core/src/app_state.rs`.
-dirs = "6.0.0"
+dirs = "7.0.0"
 sanitize-filename = "0.6.0"
-path-absolutize = "3.1.1"
+path-absolutize = "4.0.1"
 
 # ---- System & OS ----
 os_info = "3.14"
@@ -148,7 +148,7 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
 # keychain (Linux Secret Service / macOS Keychain / Windows Credential Manager).
 # Examples-only — the lib itself does NOT depend on keyring (storage
 # policy is intentionally left to the consumer).
-keyring = { version = "3.6", features = ["apple-native", "windows-native", "linux-native-sync-persistent"] }
+keyring = { version = "4.2", features = ["apple-native-keyring-store", "windows-native-keyring-store", "dbus-secret-service-keyring-store"] }
 
 # ============================================
 # MAIN PACKAGE DEPENDENCIES

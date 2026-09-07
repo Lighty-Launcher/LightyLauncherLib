@@ -14,10 +14,53 @@
 //! cargo run --example auth_custom
 //! ```
 
+use lighty_launcher::auth::{ExposeSecret, SecretString};
 use lighty_launcher::prelude::*;
 
 const SERVICE: &str = "LightyLauncher";
 const ACCOUNT: &str = "default-custom";
+
+// --------- Driver ---------
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .init();
+
+    AppState::init("LightyLauncher")?;
+
+    let base_url = std::env::var("CUSTOM_AUTH_URL")
+        .map_err(|_| anyhow::anyhow!("set CUSTOM_AUTH_URL=https://…"))?;
+
+    // 1) Try silent re-verify from the persisted session token.
+    if let Some(saved) = load_token() {
+        let auth = MyCustomAuth::new(&base_url, "", "");
+        if let Ok(fresh) = auth.verify(saved.expose_secret()).await {
+            println!("Silent verify OK — welcome back {}", fresh.username);
+            if let Some(token) = &fresh.access_token {
+                save_token(token)?;
+            }
+            return Ok(());
+        }
+        println!("Verify failed, need a fresh login.");
+    }
+
+    // 2) Fallback: credentials login.
+    let username =
+        std::env::var("CUSTOM_USERNAME").map_err(|_| anyhow::anyhow!("set CUSTOM_USERNAME=…"))?;
+    let password =
+        std::env::var("CUSTOM_PASSWORD").map_err(|_| anyhow::anyhow!("set CUSTOM_PASSWORD=…"))?;
+
+    let mut auth = MyCustomAuth::new(&base_url, username, password);
+    let profile = auth.authenticate(None).await?;
+
+    if let Some(token) = &profile.access_token {
+        save_token(token)?;
+    }
+    println!("Logged in as {} ({})", profile.username, profile.uuid);
+    Ok(())
+}
 
 // --------- Your auth backend implementation ---------
 
@@ -39,6 +82,15 @@ impl MyCustomAuth {
             username: username.into(),
             password: password.into(),
         }
+    }
+
+    fn into_profile(&self, body: MyAuthResponse) -> UserProfile {
+        let mut profile = UserProfile::offline(body.username, body.uuid);
+        profile.access_token = Some(SecretString::from(body.access_token));
+        profile.provider = AuthProvider::Custom {
+            base_url: self.base_url.clone(),
+        };
+        profile
     }
 }
 
@@ -76,19 +128,7 @@ impl Authenticator for MyCustomAuth {
             .await
             .map_err(|e| AuthError::InvalidResponse(e.to_string()))?;
 
-        Ok(UserProfile {
-            id: None,
-            username: body.username,
-            uuid: body.uuid,
-            access_token: Some(body.access_token),
-            xuid: None,
-            email: None,
-            email_verified: false,
-            money: None,
-            role: None,
-            banned: false,
-            provider: AuthProvider::Custom { base_url: self.base_url.clone() },
-        })
+        Ok(self.into_profile(body))
     }
 
     async fn verify(&self, token: &str) -> Result<UserProfile, AuthError> {
@@ -110,72 +150,19 @@ impl Authenticator for MyCustomAuth {
             .await
             .map_err(|e| AuthError::InvalidResponse(e.to_string()))?;
 
-        Ok(UserProfile {
-            id: None,
-            username: body.username,
-            uuid: body.uuid,
-            access_token: Some(body.access_token),
-            xuid: None,
-            email: None,
-            email_verified: false,
-            money: None,
-            role: None,
-            banned: false,
-            provider: AuthProvider::Custom { base_url: self.base_url.clone() },
-        })
+        Ok(self.into_profile(body))
     }
 }
 
 // --------- Keyring persistence (identical to the other examples) ---------
 
-fn load_profile() -> Option<UserProfile> {
+fn load_token() -> Option<SecretString> {
     let entry = keyring::Entry::new(SERVICE, ACCOUNT).ok()?;
-    let json = entry.get_password().ok()?;
-    serde_json::from_str(&json).ok()
+    Some(SecretString::from(entry.get_password().ok()?))
 }
 
-fn save_profile(profile: &UserProfile) -> anyhow::Result<()> {
+fn save_token(token: &SecretString) -> anyhow::Result<()> {
     let entry = keyring::Entry::new(SERVICE, ACCOUNT)?;
-    entry.set_password(&serde_json::to_string(profile)?)?;
-    Ok(())
-}
-
-// --------- Driver ---------
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .init();
-
-    AppState::init("LightyLauncher")?;
-
-    let base_url = std::env::var("CUSTOM_AUTH_URL")
-        .map_err(|_| anyhow::anyhow!("set CUSTOM_AUTH_URL=https://…"))?;
-
-    // 1) Try silent re-verify from the persisted session token.
-    if let Some(saved) = load_profile() {
-        if let Some(token) = &saved.access_token {
-            let auth = MyCustomAuth::new(&base_url, "", "");
-            if let Ok(fresh) = auth.verify(token).await {
-                println!("Silent verify OK — welcome back {}", fresh.username);
-                save_profile(&fresh)?;
-                return Ok(());
-            }
-            println!("Verify failed, need a fresh login.");
-        }
-    }
-
-    // 2) Fallback: credentials login.
-    let username = std::env::var("CUSTOM_USERNAME")
-        .map_err(|_| anyhow::anyhow!("set CUSTOM_USERNAME=…"))?;
-    let password = std::env::var("CUSTOM_PASSWORD")
-        .map_err(|_| anyhow::anyhow!("set CUSTOM_PASSWORD=…"))?;
-
-    let mut auth = MyCustomAuth::new(&base_url, username, password);
-    let profile = auth.authenticate(None).await?;
-
-    save_profile(&profile)?;
-    println!("Logged in as {} ({})", profile.username, profile.uuid);
+    entry.set_password(token.expose_secret())?;
     Ok(())
 }

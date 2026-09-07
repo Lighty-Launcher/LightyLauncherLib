@@ -49,7 +49,7 @@ Branch off `development`, never push directly to `production`.
 ## Local setup
 
 ```bash
-rustup toolchain install stable      # MSRV is 1.95, edition 2024
+rustup toolchain install stable      # MSRV is 1.98, edition 2024
 git clone https://github.com/Lighty-Launcher/LightyLauncherLib
 cd LightyLauncherLib
 git checkout development

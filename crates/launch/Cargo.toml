@@ -69,7 +69,7 @@ fastrand.workspace = true
 
 # Windows API (conditional)
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 
 # Unix API (conditional)
 [target.'cfg(unix)'.dependencies]

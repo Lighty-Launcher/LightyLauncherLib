@@ -2,7 +2,7 @@
 //!
 //! Flow on every launch:
 //!
-//! 1. Try to load the previous `UserProfile` from the OS keyring.
+//! 1. Try to load the previous session token from the OS keyring.
 //! 2. If found, call `verify(access_token)` — the Azuriom API will
 //!    either confirm the session (return a fresh profile) or reject
 //!    it (token revoked / changed password / expired server-side).
@@ -10,7 +10,7 @@
 //!    call `authenticate()`. In a real launcher you'd show a login UI;
 //!    here we read email/password from env vars to keep the example
 //!    headless.
-//! 4. Persist the resulting `UserProfile` so the next launch is silent.
+//! 4. Persist the resulting session token so the next launch is silent.
 //!
 //! Run with:
 //! ```bash
@@ -20,20 +20,20 @@
 //! cargo run --example auth_azuriom
 //! ```
 
+use lighty_launcher::auth::{ExposeSecret, SecretString};
 use lighty_launcher::prelude::*;
 
 const SERVICE: &str = "LightyLauncher";
 const ACCOUNT: &str = "default-azuriom";
 
-fn load_profile() -> Option<UserProfile> {
+fn load_token() -> Option<SecretString> {
     let entry = keyring::Entry::new(SERVICE, ACCOUNT).ok()?;
-    let json = entry.get_password().ok()?;
-    serde_json::from_str(&json).ok()
+    Some(SecretString::from(entry.get_password().ok()?))
 }
 
-fn save_profile(profile: &UserProfile) -> anyhow::Result<()> {
+fn save_token(token: &SecretString) -> anyhow::Result<()> {
     let entry = keyring::Entry::new(SERVICE, ACCOUNT)?;
-    entry.set_password(&serde_json::to_string(profile)?)?;
+    entry.set_password(token.expose_secret())?;
     Ok(())
 }
 
@@ -49,18 +49,18 @@ async fn main() -> anyhow::Result<()> {
         .map_err(|_| anyhow::anyhow!("set AZURIOM_URL=https://your-site.example"))?;
 
     // 1) Try silent re-verify from the persisted session token.
-    if let Some(saved) = load_profile() {
-        if let Some(token) = &saved.access_token {
-            // `verify` doesn't need credentials, so build a stub authenticator.
-            let auth = AzuriomAuth::new(&base_url, "", "");
-            match auth.verify(token).await {
-                Ok(fresh) => {
-                    println!("Silent verify OK — welcome back {}", fresh.username);
-                    save_profile(&fresh)?;
-                    return Ok(());
+    if let Some(saved) = load_token() {
+        // `verify` doesn't need credentials, so build a stub authenticator.
+        let auth = AzuriomAuth::new(&base_url, "", "");
+        match auth.verify(saved.expose_secret()).await {
+            Ok(fresh) => {
+                println!("Silent verify OK — welcome back {}", fresh.username);
+                if let Some(token) = &fresh.access_token {
+                    save_token(token)?;
                 }
-                Err(e) => println!("Verify failed ({e}), need a fresh login."),
+                return Ok(());
             }
+            Err(e) => println!("Verify failed ({e}), need a fresh login."),
         }
     }
 
@@ -85,7 +85,9 @@ async fn main() -> anyhow::Result<()> {
         Err(e) => return Err(e.into()),
     };
 
-    save_profile(&profile)?;
+    if let Some(token) = &profile.access_token {
+        save_token(token)?;
+    }
     println!("Logged in as {} ({})", profile.username, profile.uuid);
     Ok(())
 }
