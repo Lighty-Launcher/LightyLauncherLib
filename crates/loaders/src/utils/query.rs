@@ -34,10 +34,27 @@ pub trait Query: Send + Sync {
 }
 
 
-/// Cache key combining instance name and sub-query discriminator.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct InstanceKey {
+    pub name: String,
+    pub minecraft_version: String,
+    pub loader_version: String,
+}
+
+impl InstanceKey {
+    pub fn of<V: VersionInfo>(version: &V) -> Self {
+        Self {
+            name: version.name().to_string(),
+            minecraft_version: version.minecraft_version().to_string(),
+            loader_version: version.loader_version().to_string(),
+        }
+    }
+}
+
+/// Cache key combining the instance and the sub-query discriminator.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct QueryKey<Q> {
-    pub version: String,
+    pub instance: InstanceKey,
     pub query: Q,
 }
 

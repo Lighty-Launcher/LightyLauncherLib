@@ -38,6 +38,10 @@ where
     /// Creates a cache with a background task that evicts expired entries
     /// and sweeps orphaned fetch-locks on the same cadence.
     pub fn with_smart_cleanup() -> Self {
+        if tokio::runtime::Handle::try_current().is_err() {
+            return Self::new();
+        }
+
         let store: Arc<RwLock<HashMap<K, (V, Instant)>>> = Arc::new(RwLock::new(HashMap::new()));
         let fetch_locks: Arc<RwLock<HashMap<K, Arc<Mutex<()>>>>> =
             Arc::new(RwLock::new(HashMap::new()));
@@ -64,9 +68,6 @@ where
                         .unwrap_or(MAX_WAIT)
                 };
 
-                // Edge-triggered Notify: future is constructed before await,
-                // so notify_waiters() during the read above is captured by
-                // tokio's permit and consumed on the next iteration.
                 tokio::select! {
                     _ = tokio::time::sleep(wait) => {}
                     _ = notify_bg.notified() => {}
@@ -140,7 +141,7 @@ where
         }
         // Wake the cleanup task in case the new TTL is shorter than the
         // current sleep. No-op if the cache was built with `new()`.
-        self.cleanup_notify.notify_waiters();
+        self.cleanup_notify.notify_one();
     }
 
     /// Returns the cached value for `key` if present and unexpired.
@@ -202,20 +203,33 @@ where
                 .clone()
         };
 
-        let _guard = lock.lock().await;
+        let guard = lock.lock().await;
 
         // Double-check: another task may have populated the cache while
         // we waited on the mutex.
         if let Some(v) = self.get_with_ttl(&key).await {
+            drop(guard);
+            self.release_fetch_lock(&key).await;
             return Ok(v);
         }
 
-        match f().await {
+        let fetched = f().await;
+        drop(guard);
+        self.release_fetch_lock(&key).await;
+
+        match fetched {
             Ok(value) => {
                 self.insert_with_ttl(key, value.clone(), ttl).await;
                 Ok(value)
             }
             Err(e) => Err(e),
+        }
+    }
+
+    async fn release_fetch_lock(&self, key: &K) {
+        let mut locks = self.fetch_locks.write().await;
+        if locks.get(key).is_some_and(|lock| Arc::strong_count(lock) == 2) {
+            locks.remove(key);
         }
     }
 

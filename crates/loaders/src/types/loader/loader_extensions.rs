@@ -2,7 +2,7 @@ use crate::types::version_metadata::VersionMetaData;
 use crate::types::{Loader, VersionInfo};
 use lighty_core::QueryError;
 #[cfg(feature = "lighty_updater")]
-use crate::loaders::lighty_updater::lighty_updater::{LIGHTY_UPDATER, LightyQuery};
+use crate::loaders::lighty_updater::lighty_updater::{revalidate, LIGHTY_UPDATER, LightyQuery};
 #[cfg(feature = "neoforge")]
 use crate::loaders::neoforge::neoforge::{NeoForgeQuery, NEOFORGE};
 #[cfg(feature = "forge")]
@@ -42,6 +42,7 @@ pub trait LoaderExtensions {
 
     /// Get assets information (Vanilla-based loaders only).
     async fn get_assets(&self) -> Result<Arc<VersionMetaData>>;
+    async fn invalidate_cache(&self);
 }
 
 #[async_trait]
@@ -78,6 +79,7 @@ where
 
             #[cfg(feature = "lighty_updater")]
             Loader::LightyUpdater => {
+                revalidate(self).await?;
                 LIGHTY_UPDATER.get(self, LightyQuery::LightyBuilder).await
             }
 
@@ -179,6 +181,30 @@ where
             Err(QueryError::UnsupportedLoader(
                 "get_assets() requires vanilla feature".to_string()
             ))
+        }
+    }
+
+    async fn invalidate_cache(&self) {
+        match self.loader() {
+            #[cfg(feature = "vanilla")]
+            Loader::Vanilla => VANILLA.invalidate(self.name()).await,
+
+            #[cfg(feature = "fabric")]
+            Loader::Fabric => FABRIC.invalidate(self.name()).await,
+
+            #[cfg(feature = "quilt")]
+            Loader::Quilt => QUILT.invalidate(self.name()).await,
+
+            #[cfg(feature = "neoforge")]
+            Loader::NeoForge => NEOFORGE.invalidate(self.name()).await,
+
+            #[cfg(feature = "forge")]
+            Loader::Forge => FORGE.invalidate(self.name()).await,
+
+            #[cfg(feature = "lighty_updater")]
+            Loader::LightyUpdater => LIGHTY_UPDATER.invalidate(self.name()).await,
+
+            _ => {}
         }
     }
 }

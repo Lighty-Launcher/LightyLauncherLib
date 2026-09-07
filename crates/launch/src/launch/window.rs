@@ -23,11 +23,9 @@ const DETECTION_TIMEOUT: Duration = Duration::from_secs(30);
 /// cannot enumerate windows per PID.
 const ASSUMED_DELAY: Duration = Duration::from_secs(5);
 
-/// Watches for the game window and emits `InstanceWindowAppeared`.
-///
-/// `detected` is `true` where windows can be matched to a PID (Windows,
-/// X11 including XWayland), `false` when it is a timed assumption.
-/// Nothing is emitted if the process exits first.
+/// Watches for the game window and emits `InstanceWindowAppeared`, with
+/// `detected` telling a real observation from a timed guess. Emits
+/// nothing if the process exits first.
 pub(crate) async fn detect_window_appearance(
     pid: u32,
     instance_name: String,
@@ -77,8 +75,6 @@ async fn watch(pid: u32) -> Option<bool> {
         }
 
         if Instant::now() >= deadline {
-            // Not a failure to report: the game may be running on a
-            // windowing system this session cannot enumerate.
             lighty_core::trace_warn!(
                 "[Launch] Window detection timed out for PID: {}, assuming it is up",
                 pid
@@ -174,11 +170,9 @@ mod platform {
     use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, Window};
     use x11rb::rust_connection::RustConnection;
 
-    /// Opens the X display once and interns the two EWMH atoms.
-    ///
-    /// `None` when no X server is reachable. Minecraft goes through GLFW,
-    /// which targets X11 directly or via XWayland, so this is the normal
-    /// path on Linux.
+    /// `None` when no X server answers, which sends the caller back to
+    /// the timed guess. Minecraft goes through GLFW, so X11 or XWayland
+    /// is the normal path on Linux.
     pub(super) fn watcher() -> Option<Watcher> {
         let (connection, screen) = x11rb::connect(None).ok()?;
         let root = connection.setup().roots.get(screen)?.root;

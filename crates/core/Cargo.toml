@@ -10,6 +10,9 @@ documentation.workspace = true
 rust-version.workspace = true
 description = "Core utilities for Lighty Launcher"
 
+[lints]
+workspace = true
+
 [dependencies]
 # Workspace crates
 lighty-event = { workspace = true, optional = true }

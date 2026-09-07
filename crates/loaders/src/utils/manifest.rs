@@ -1,5 +1,5 @@
 use lighty_core::QueryError;
-use crate::utils::query::{Query, QueryKey};
+use crate::utils::query::{InstanceKey, Query, QueryKey};
 use crate::utils::cache::Cache;
 use crate::types::VersionInfo;
 use std::sync::Arc;
@@ -10,11 +10,11 @@ pub type Result<T> = std::result::Result<T, QueryError>;
 /// once per TTL window.
 ///
 /// `raw_version_cache` holds the raw manifest returned by
-/// [`Query::fetch_full_data`] keyed by instance name; `query_cache`
-/// holds extracted sub-query results keyed by `(instance, sub-query)`.
+/// [`Query::fetch_full_data`]; `query_cache` holds extracted sub-query
+/// results. Both key on the instance *and* the versions it points at.
 pub struct ManifestRepository<F: Query> {
     query_cache: Arc<Cache<QueryKey<F::Query>, Arc<F::Data>>>,
-    raw_version_cache: Arc<Cache<String, Arc<<F as Query>::Raw>>>,
+    raw_version_cache: Arc<Cache<InstanceKey, Arc<<F as Query>::Raw>>>,
     _marker: std::marker::PhantomData<F>,
 }
 
@@ -34,7 +34,7 @@ impl<F: Query> ManifestRepository<F> {
         query: F::Query,
     ) -> Result<Arc<F::Data>> {
         let key = QueryKey {
-            version: version.name().to_string(),
+            instance: InstanceKey::of(version),
             query: query.clone(),
         };
 
@@ -64,7 +64,7 @@ impl<F: Query> ManifestRepository<F> {
     
     async fn get_cached_version_data<V: VersionInfo>(&self, version: &V) -> Result<Arc<<F as Query>::Raw>> {
         let ttl = version.ttl();
-        let key = version.name().to_string();
+        let key = InstanceKey::of(version);
 
         let data = self
             .raw_version_cache
@@ -90,9 +90,9 @@ impl<F: Query> ManifestRepository<F> {
     pub async fn invalidate(&self, version_name: &str) {
         let needle = version_name.to_string();
         let needle_for_query = needle.clone();
-        self.raw_version_cache.retain(move |k| k != &needle).await;
+        self.raw_version_cache.retain(move |k| k.name != needle).await;
         self.query_cache
-            .retain(move |k| k.version != needle_for_query)
+            .retain(move |k| k.instance.name != needle_for_query)
             .await;
     }
 

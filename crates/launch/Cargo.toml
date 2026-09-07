@@ -10,6 +10,9 @@ documentation.workspace = true
 rust-version.workspace = true
 description = "Minecraft launch logic for Lighty Launcher"
 
+[lints]
+workspace = true
+
 [dependencies]
 # Workspace crates
 lighty-core = { workspace = true }
@@ -73,9 +76,8 @@ windows = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsA
 nix = { version = "0.31.3", features = ["signal", "process"] }
 
 # X11 API (conditional)
-# Matches a game window to its PID through `_NET_CLIENT_LIST` /
-# `_NET_WM_PID`, the X11 counterpart of `EnumWindows`. Default features
-# are empty: pure Rust, no libxcb FFI, no unsafe.
+# Matches a game window to its PID via `_NET_CLIENT_LIST` / `_NET_WM_PID`,
+# the X11 counterpart of `EnumWindows`. Pure Rust, no unsafe.
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = { version = "0.14", optional = true }
 
