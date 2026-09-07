@@ -4,7 +4,6 @@ Multi-provider authentication system for Minecraft launchers with OAuth2 and CMS
 
 ## Overview
 
-**Version**: 26.9.1
 **Part of**: [LightyLauncher](https://crates.io/crates/lighty-launcher)
 
 `lighty-auth` provides a unified trait-based authentication system supporting multiple providers:
@@ -15,9 +14,8 @@ Multi-provider authentication system for Minecraft launchers with OAuth2 and CMS
 
 ## Quick Start
 
-```toml
-[dependencies]
-lighty-auth = "26.9.1"
+```bash
+cargo add lighty-auth
 ```
 
 ### Offline Authentication

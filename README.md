@@ -19,7 +19,7 @@
 
 ```toml
 [dependencies]
-lighty-launcher = { version = "26.9.1", features = ["vanilla"] }
+lighty-launcher = { version = "<project_version>", features = ["vanilla"] }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"
 ```
@@ -92,8 +92,8 @@ lighty-launcher/             # Root crate (prelude + feature gates)
 
 Mix and match:
 
-```toml
-lighty-launcher = { version = "26.9.1", features = ["fabric", "modrinth", "events"] }
+```bash
+cargo add lighty-launcher --features fabric,modrinth,events
 ```
 
 ## Documentation
