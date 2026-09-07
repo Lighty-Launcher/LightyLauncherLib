@@ -132,19 +132,21 @@ mod platform {
             }
 
             unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
-                let data = &mut *(lparam.0 as *mut EnumData);
+                unsafe {
+                    let data = &mut *(lparam.0 as *mut EnumData);
 
-                if IsWindowVisible(hwnd).as_bool() {
-                    let mut window_pid: u32 = 0;
-                    GetWindowThreadProcessId(hwnd, Some(&mut window_pid));
+                    if IsWindowVisible(hwnd).as_bool() {
+                        let mut window_pid: u32 = 0;
+                        GetWindowThreadProcessId(hwnd, Some(&mut window_pid));
 
-                    if window_pid == data.target_pid {
-                        data.found = true;
-                        return BOOL(0); // Stop enumeration
+                        if window_pid == data.target_pid {
+                            data.found = true;
+                            return BOOL(0); // Stop enumeration
+                        }
                     }
-                }
 
-                BOOL(1) // Continue enumeration
+                    BOOL(1) // Continue enumeration
+                }
             }
 
             let mut data = EnumData {
