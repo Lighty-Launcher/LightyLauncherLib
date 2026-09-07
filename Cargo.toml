@@ -22,7 +22,7 @@ license = "MIT"
 repository = "https://github.com/Lighty-Launcher/LightyLauncherLib"
 homepage = "https://github.com/Lighty-Launcher/LightyLauncherLib"
 documentation = "https://docs.rs/lighty-launcher"
-rust-version = "1.95"
+rust-version = "1.98"
 
 [package]
 name = "lighty-launcher"
