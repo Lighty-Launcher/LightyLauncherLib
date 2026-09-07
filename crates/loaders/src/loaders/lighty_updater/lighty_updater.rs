@@ -1,9 +1,12 @@
 use crate::types::version_metadata::{Library, MainClass, Arguments, Version, VersionMetaData, JavaVersion, Mods, Native, Client, AssetsFile, Asset};
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
 use std::path::{Path, PathBuf};
 use crate::types::{VersionInfo, Loader};
 use lighty_core::QueryError;
-use crate::utils::{query::Query, manifest::ManifestRepository};
+use crate::utils::cache::Cache;
+use crate::utils::{query::InstanceKey, query::Query, manifest::ManifestRepository};
 use once_cell::sync::Lazy;
 use super::lighty_metadata::{LightyMetadata, ServersResponse};
 use async_trait::async_trait;
@@ -65,6 +68,41 @@ pub enum LightyQuery {
     LightyBuilder,
 }
 
+const REVISION_TTL: Duration = Duration::from_secs(86_400);
+
+static LAST_SEEN: Lazy<Cache<InstanceKey, Arc<String>>> =
+    Lazy::new(Cache::with_smart_cleanup);
+
+pub async fn revalidate<V: VersionInfo>(version: &V) -> Result<()> {
+    let listing = fetch_listing(version.loader_version()).await?;
+    let Some(info) = listing.find_by_name(version.name()) else {
+        return Ok(());
+    };
+
+    let key = InstanceKey::of(version);
+    let seen = LAST_SEEN.get_with_ttl(&key).await;
+
+    if seen.as_deref().map(String::as_str) != Some(info.last_update()) {
+        lighty_core::trace_info!(
+            instance = %version.name(),
+            revision = %info.last_update(),
+            "Lighty server revision changed, dropping cached metadata"
+        );
+        LIGHTY_UPDATER.invalidate(version.name()).await;
+        LAST_SEEN
+            .insert_with_ttl(key, Arc::new(info.last_update().to_string()), REVISION_TTL)
+            .await;
+    }
+
+    Ok(())
+}
+
+async fn fetch_listing(server_url: &str) -> Result<ServersResponse> {
+    let listing_url = format!("{}/", server_url);
+    let text = CLIENT.get(&listing_url).send().await?.text().await?;
+    serde_json::from_str(&text).map_err(QueryError::JsonParsing)
+}
+
 #[async_trait]
 impl Query for LightyQuery {
     type Query = LightyQuery;
@@ -76,12 +114,7 @@ impl Query for LightyQuery {
     }
 
     async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<LightyMetadata> {
-        let server_info_url = format!("{}/", version.loader_version());
-        let response = CLIENT.get(&server_info_url).send().await?;
-        let text = response.text().await?;
-
-        let servers_response: ServersResponse = serde_json::from_str(&text)
-            .map_err(QueryError::JsonParsing)?;
+        let servers_response = fetch_listing(version.loader_version()).await?;
 
         let server_info = servers_response.find_by_name(version.name())
             .cloned()

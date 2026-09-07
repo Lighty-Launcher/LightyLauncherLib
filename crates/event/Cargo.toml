@@ -6,6 +6,9 @@ authors.workspace = true
 license.workspace = true
 description = "Event system for LightyLauncher"
 
+[lints]
+workspace = true
+
 [dependencies]
 tokio = { version = "1.52", features = ["sync"] }
 serde = { version = "1.0.228", features = ["derive"] }

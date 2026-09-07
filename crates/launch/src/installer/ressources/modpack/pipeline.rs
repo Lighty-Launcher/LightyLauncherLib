@@ -1,11 +1,12 @@
 // Copyright (c) 2025 Hamadi
 // Licensed under the MIT License
 
-//! Modpack pipeline orchestrator: download, cache, extract, dispatch, mark installed.
+//! Modpack pipeline orchestrator: download, cache, extract, dispatch, record.
 
 #![cfg(any(feature = "modrinth", feature = "curseforge"))]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use lighty_core::download::download_file_untracked;
 use lighty_core::hash::calculate_sha1_bytes;
@@ -21,9 +22,6 @@ use lighty_event::{Event, EventBus, ModloaderEvent};
 
 /// Runs the modpack pipeline for `source` and returns the `Vec<Mods>`
 /// to merge into the version pivot before install.
-///
-/// Returns `Ok(vec![])` when the marker already matches (idempotent
-/// re-run — nothing to do).
 pub(crate) async fn process<V>(
     source: &ModpackSource,
     version: &V,
@@ -49,22 +47,23 @@ where
     let cache_dir = AppState::cache_dir().join("modpacks");
     tokio::fs::create_dir_all(&cache_dir).await?;
     let archive_path = cache_dir.join(format!("{url_sha1}.archive"));
-    let marker_path = cache_dir.join(format!("{url_sha1}.installed"));
     let work_dir = cache_dir.join(format!("work-{url_sha1}"));
 
-    // Idempotence: marker file matches the URL hash means we're done.
-    if marker_path.exists() {
-        if let Ok(saved) = tokio::fs::read_to_string(&marker_path).await {
-            if saved.trim() == url_sha1 {
-                lighty_core::trace_info!(
-                    "[Modpack] Already installed (marker matches), skipping"
-                );
-                return Ok(Vec::new());
-            }
-        }
+    let record_path = install_record_path(version, &url_sha1);
+
+    if let Some(mods) = read_install_record(&record_path).await {
+        lighty_core::trace_info!(
+            "[Modpack] Already installed for this instance, {} mods from record",
+            mods.len()
+        );
+        return Ok(mods);
     }
 
-    if !archive_path.exists() {
+    purge_stale_archives(&cache_dir).await;
+
+    if archive_path.exists() {
+        touch(&archive_path).await;
+    } else {
         lighty_core::trace_info!("[Modpack] Downloading archive to {}", archive_path.display());
         download_file_untracked(&archive_url, &archive_path)
             .await
@@ -98,7 +97,7 @@ where
         }));
     };
 
-    tokio::fs::write(&marker_path, &url_sha1).await?;
+    write_install_record(&record_path, &mods).await?;
 
     if work_dir.exists() {
         let _ = tokio::fs::remove_dir_all(&work_dir).await;
@@ -119,6 +118,71 @@ where
     );
 
     Ok(mods)
+}
+
+const ARCHIVE_RETENTION: Duration = Duration::from_secs(30 * 86_400);
+
+async fn purge_stale_archives(cache_dir: &Path) {
+    let Ok(mut entries) = tokio::fs::read_dir(cache_dir).await else {
+        return;
+    };
+
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let path = entry.path();
+        if path.extension().is_none_or(|ext| ext != "archive") {
+            continue;
+        }
+
+        let stale = entry
+            .metadata()
+            .await
+            .ok()
+            .and_then(|meta| meta.modified().ok())
+            .and_then(|modified| SystemTime::now().duration_since(modified).ok())
+            .is_some_and(|age| age > ARCHIVE_RETENTION);
+
+        if stale {
+            lighty_core::trace_info!("[Modpack] Purging stale archive {}", path.display());
+            let _ = tokio::fs::remove_file(&path).await;
+        }
+    }
+}
+
+async fn touch(path: &Path) {
+    let path = path.to_path_buf();
+    let _ = tokio::task::spawn_blocking(move || {
+        let times = std::fs::FileTimes::new()
+            .set_accessed(SystemTime::now())
+            .set_modified(SystemTime::now());
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .and_then(|file| file.set_times(times))
+    })
+    .await;
+}
+
+fn install_record_path<V: VersionInfo>(version: &V, url_sha1: &str) -> PathBuf {
+    version
+        .game_dirs()
+        .join(".modpack")
+        .join(format!("{url_sha1}.json"))
+}
+
+async fn read_install_record(path: &Path) -> Option<Vec<Mods>> {
+    let raw = tokio::fs::read_to_string(path).await.ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+async fn write_install_record(path: &Path, mods: &[Mods]) -> InstallerResult<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+
+    let payload = serde_json::to_string(mods)
+        .map_err(|error| InstallerError::Query(QueryError::JsonParsing(error)))?;
+    tokio::fs::write(path, payload).await?;
+    Ok(())
 }
 
 async fn resolve_archive_url(source: &ModpackSource) -> InstallerResult<String> {

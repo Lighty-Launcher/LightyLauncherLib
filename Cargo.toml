@@ -11,6 +11,9 @@ members = [
 ]
 resolver = "2"
 
+[workspace.lints.rust]
+unexpected_cfgs = "deny"
+
 [workspace.package]
 version = "26.9.1"
 edition = "2024"
@@ -38,6 +41,9 @@ categories = ["command-line-utilities", "development-tools", "games", "api-bindi
 # Exclude the demo video — embedded in the README via GitHub
 # user-attachments URL, no need to ship it inside the crate.
 exclude = ["assets/exemple_launcher_with_lightylauncherlib.mp4"]
+
+[lints]
+workspace = true
 
 [lib]
 name = "lighty_launcher"

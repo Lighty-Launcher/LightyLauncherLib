@@ -10,6 +10,9 @@ documentation.workspace = true
 rust-version.workspace = true
 description = "Minecraft version management for Lighty Launcher"
 
+[lints]
+workspace = true
+
 [dependencies]
 # Workspace crates
 lighty-core = { workspace = true }

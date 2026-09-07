@@ -62,7 +62,6 @@ impl InstanceManager {
     }
 
     /// Returns `true` if `pid` is still tracked as a running instance.
-    ///
     /// Reads the registry, not the OS: it goes stale if the console
     /// handler dies without unregistering — see [`process_is_running`].
     pub fn is_alive(&self, pid: u32) -> bool {
@@ -157,11 +156,9 @@ impl InstanceManager {
     }
 }
 
-/// Asks the kernel whether `pid` still exists.
-///
-/// Signal 0 runs the existence check without delivering anything; a
-/// zombie still counts, which is fine since the console handler
-/// unregisters the PID as soon as it reaps the child.
+/// Asks the kernel whether `pid` still exists. Signal 0 runs the check
+/// without delivering anything; a zombie counts, which is fine since the
+/// console handler unregisters as soon as it reaps the child.
 #[cfg(unix)]
 pub(crate) fn process_is_running(pid: u32) -> bool {
     use nix::errno::Errno;
