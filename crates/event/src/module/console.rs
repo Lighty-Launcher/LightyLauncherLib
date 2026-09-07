@@ -12,12 +12,16 @@ pub struct InstanceLaunchedEvent {
     pub timestamp: SystemTime,
 }
 
-/// Event emitted when a game instance window appears.
+/// Event emitted when a game instance window appears. `detected` tells a
+/// real observation apart from a timed assumption, emitted where windows
+/// cannot be matched to a PID.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstanceWindowAppearedEvent {
     pub pid: u32,
     pub instance_name: String,
     pub version: String,
+    #[serde(default)]
+    pub detected: bool,
     #[serde(with = "system_time_serializer")]
     pub timestamp: SystemTime,
 }

@@ -14,7 +14,7 @@ Real-time event system for monitoring launcher operations and progress tracking.
 
 ```toml
 [dependencies]
-lighty-event = "26.5.12"
+lighty-event = "26.9.1"
 ```
 
 ```rust

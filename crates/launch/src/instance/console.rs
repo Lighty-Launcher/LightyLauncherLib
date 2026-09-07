@@ -71,7 +71,15 @@ pub(crate) async fn handle_console_streams(
         }
     }
 
-    match child.wait().await {
+    let exit = child.wait().await;
+
+    // Unregister before announcing the exit: a watcher gating on
+    // `is_alive` must not still see the PID alive once `InstanceExited`
+    // is out, or it could emit `InstanceWindowAppeared` after the fact.
+    use super::INSTANCE_MANAGER;
+    INSTANCE_MANAGER.unregister_instance(pid).await;
+
+    match exit {
         Ok(status) => {
             #[cfg(feature = "events")]
             {
@@ -104,7 +112,4 @@ pub(crate) async fn handle_console_streams(
             );
         }
     }
-
-    use super::INSTANCE_MANAGER;
-    let _ = INSTANCE_MANAGER.unregister_instance(pid).await;
 }
