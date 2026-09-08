@@ -7,6 +7,7 @@
 
 use std::path::PathBuf;
 
+use lighty_core::extract::is_path_within_base;
 use lighty_core::time_it;
 use lighty_loaders::types::{version_metadata::Mods, VersionInfo};
 
@@ -17,14 +18,9 @@ use crate::installer::verifier::needs_download;
 #[cfg(feature = "events")]
 use lighty_event::EventBus;
 
-/// Collects download tasks for every `Mods` entry whose `path`
-/// targets `subdir`. Returns `(tasks, total_bytes)` where `total_bytes`
-/// is the sum of the entries' declared size — used by bucket-scoped
-/// events and the global progress total.
-///
-/// `legacy_fallback`: when true and an entry's `path` has no `/`,
-/// treat it as `<subdir>/<filename>` and emit a deprecation warn.
-/// Only enabled for `subdir == "mods"` during the migration window.
+/// Collects the download tasks for the `Mods` entries under `subdir`, with
+/// the sum of their declared sizes. `legacy_fallback` accepts an unqualified
+/// `path` as `<subdir>/<filename>`.
 pub(super) async fn collect<V: VersionInfo>(
     version: &V,
     mods: &[Mods],
@@ -59,6 +55,15 @@ pub(super) async fn collect<V: VersionInfo>(
         } else {
             continue;
         };
+
+        if !is_path_within_base(&target, &parent) {
+            lighty_core::trace_warn!(
+                "[Installer] Rejecting '{}': resolves outside {}/",
+                path_str,
+                subdir
+            );
+            continue;
+        }
 
         if let Some(dir) = target.parent() {
             lighty_core::mkdir!(dir);
