@@ -403,6 +403,13 @@ fn extract_artifact_key(maven_name: &str) -> String {
     }
 }
 
+/// Legacy Forge carries its own main class outright — nothing to merge.
+pub(super) fn legacy_main_class(profile: &ForgeLegacyInstallProfile) -> MainClass {
+    MainClass {
+        main_class: profile.version_info.main_class.clone(),
+    }
+}
+
 /// Builds the full pivot `Version` for a legacy Forge instance.
 pub async fn legacy_version_builder<V: VersionInfo>(
     version: &V,
@@ -417,9 +424,7 @@ pub async fn legacy_version_builder<V: VersionInfo>(
     let extra_jvm = legacy_fml_jvm_workarounds(version.minecraft_version());
 
     Ok(Version {
-        main_class: MainClass {
-            main_class: profile.version_info.main_class.clone(),
-        },
+        main_class: legacy_main_class(profile),
         java_version: vanilla_builder.java_version,
         arguments: parse_legacy_arguments(
             &profile.version_info.minecraft_arguments,

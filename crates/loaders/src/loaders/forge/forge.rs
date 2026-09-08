@@ -8,7 +8,9 @@ use zip::ZipArchive;
 use lighty_core::download::download_file_untracked;
 use lighty_core::mkdir;
 
-use crate::loaders::vanilla::vanilla::{VANILLA, VanillaQuery};
+use crate::loaders::vanilla::vanilla::{
+    extract_main_class as vanilla_main_class, VANILLA, VanillaQuery,
+};
 use crate::types::version_metadata::{Arguments, Library, MainClass, Version, VersionMetaData};
 use crate::types::VersionInfo;
 use crate::utils::forge_installer::{ForgeInstallProfile, ForgeVersionManifest};
@@ -35,6 +37,7 @@ pub static FORGE: Lazy<ManifestRepository<ForgeQuery>> =
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ForgeQuery {
     Libraries,
+    MainClass,
     ForgeBuilder,
 }
 
@@ -98,6 +101,9 @@ impl Query for ForgeQuery {
             }
             (ForgeQuery::Libraries, ForgeRawData::Legacy(profile)) => {
                 VersionMetaData::Libraries(forge_legacy::extract_legacy_libraries(profile).await)
+            }
+            (ForgeQuery::MainClass, _) => {
+                VersionMetaData::MainClass(main_class(version, full_data).await?)
             }
             (ForgeQuery::ForgeBuilder, _) => {
                 VersionMetaData::Version(Self::version_builder(version, full_data).await?)
@@ -203,7 +209,7 @@ async fn modern_version_builder<V: VersionInfo>(
     };
 
     Ok(Version {
-        main_class: merge_main_class(vanilla_builder.main_class, extract_main_class(version_meta)),
+        main_class: modern_main_class(version, version_meta).await?,
         java_version: vanilla_builder.java_version,
         arguments: merged_arguments,
         libraries: merged_libs,
@@ -223,6 +229,28 @@ fn replace_game_keep_jvm(vanilla: Arguments, forge: Arguments) -> Arguments {
         game: forge.game,
         jvm: vanilla.jvm,
     }
+}
+
+/// Forge's main class merged with vanilla's, so the standalone query and the
+/// builder can never disagree.
+async fn main_class<V: VersionInfo>(version: &V, raw: &ForgeRawData) -> Result<MainClass> {
+    match raw {
+        ForgeRawData::Modern { version_manifest, .. } => {
+            modern_main_class(version, version_manifest).await
+        }
+        ForgeRawData::Legacy(profile) => Ok(forge_legacy::legacy_main_class(profile)),
+    }
+}
+
+async fn modern_main_class<V: VersionInfo>(
+    version: &V,
+    version_meta: &ForgeVersionManifest,
+) -> Result<MainClass> {
+    let vanilla_data = VANILLA.get_raw(version).await?;
+    Ok(merge_main_class(
+        vanilla_main_class(&vanilla_data),
+        extract_main_class(version_meta),
+    ))
 }
 
 fn merge_main_class(vanilla: MainClass, forge: MainClass) -> MainClass {

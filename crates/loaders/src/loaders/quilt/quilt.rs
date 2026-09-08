@@ -8,7 +8,10 @@ use lighty_core::hosts::HTTP_CLIENT as CLIENT;
 use super::quilt_metadata::QuiltMetaData;
 use crate::types::VersionInfo;
 
-use crate::loaders::vanilla::vanilla::{VANILLA, VanillaQuery};
+use crate::loaders::vanilla::vanilla::{
+    extract_arguments as vanilla_arguments, extract_main_class as vanilla_main_class,
+    VANILLA, VanillaQuery,
+};
 use lighty_core::QueryError;
 use crate::utils::{query::Query, manifest::ManifestRepository};
 use crate::utils::maven::{fetch_file_size, fetch_maven_sha1};
@@ -57,9 +60,9 @@ impl Query for QuiltQuery {
 
     async fn extract<V: VersionInfo>(version: &V, query: &Self::Query, full_data: &QuiltMetaData) -> Result<Self::Data> {
         let result = match query {
-            QuiltQuery::MainClass => VersionMetaData::MainClass(extract_main_class(full_data)),
+            QuiltQuery::MainClass => VersionMetaData::MainClass(main_class(version, full_data).await?),
             QuiltQuery::Libraries => VersionMetaData::Libraries(extract_libraries(full_data).await?),
-            QuiltQuery::Arguments => VersionMetaData::Arguments(extract_arguments(full_data)),
+            QuiltQuery::Arguments => VersionMetaData::Arguments(arguments(version, full_data).await?),
             QuiltQuery::QuiltBuilder => VersionMetaData::Version(Self::version_builder(version, full_data).await?),
         };
 
@@ -76,9 +79,9 @@ impl Query for QuiltQuery {
     )?;
 
         Ok(Version {
-            main_class: merge_main_class(vanilla_builder.main_class, extract_main_class(full_data)),
+            main_class: main_class(version, full_data).await?,
             java_version: vanilla_builder.java_version,
-            arguments: merge_arguments(vanilla_builder.arguments, extract_arguments(full_data)),
+            arguments: arguments(version, full_data).await?,
             libraries: merge_libraries(vanilla_builder.libraries, quilt_libraries),
             mods: None,
             natives: vanilla_builder.natives,
@@ -87,6 +90,25 @@ impl Query for QuiltQuery {
             assets: vanilla_builder.assets,
         })
     }
+}
+
+/// The loader's main class merged with vanilla's, so the standalone query and
+/// the builder can never disagree.
+async fn main_class<V: VersionInfo>(version: &V, full_data: &QuiltMetaData) -> Result<MainClass> {
+    let vanilla_data = VANILLA.get_raw(version).await?;
+    Ok(merge_main_class(
+        vanilla_main_class(&vanilla_data),
+        extract_main_class(full_data),
+    ))
+}
+
+/// Same contract as [`main_class`], for the argument lists.
+async fn arguments<V: VersionInfo>(version: &V, full_data: &QuiltMetaData) -> Result<Arguments> {
+    let vanilla_data = VANILLA.get_raw(version).await?;
+    Ok(merge_arguments(
+        vanilla_arguments(&vanilla_data),
+        extract_arguments(full_data),
+    ))
 }
 
 fn merge_main_class(vanilla: MainClass, quilt: MainClass) -> MainClass {

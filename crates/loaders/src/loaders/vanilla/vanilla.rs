@@ -240,7 +240,7 @@ fn extract_java_version(full_data: &VanillaMetaData) -> JavaVersion {
         })
 }
 
-fn extract_main_class(full_data: &VanillaMetaData) -> MainClass {
+pub(crate) fn extract_main_class(full_data: &VanillaMetaData) -> MainClass {
     MainClass {
         main_class: full_data.main_class.clone(),
     }
@@ -350,7 +350,7 @@ fn extract_client<V: VersionInfo>(version: &V, full_data: &VanillaMetaData) -> R
         })
 }
 
-fn extract_arguments(full_data: &VanillaMetaData) -> Arguments {
+pub(crate) fn extract_arguments(full_data: &VanillaMetaData) -> Arguments {
     if let Some(args) = &full_data.arguments {
         Arguments {
             game: args.game
