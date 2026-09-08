@@ -3,7 +3,7 @@
 
 //! File download utilities with retry logic and concurrency control
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs;
 use tokio::io::{AsyncWriteExt, BufWriter};
@@ -20,6 +20,16 @@ use super::config::get_config;
 #[cfg(feature = "events")]
 use lighty_event::{EventBus, Event, LaunchEvent};
 
+/// One file to fetch. `url` and `sha1` borrow the manifest that is alive for
+/// the whole install, so building the list copies no strings; only `dest` is
+/// owned, being a path that exists nowhere else.
+pub struct DownloadTask<'a> {
+    pub url: &'a str,
+    pub dest: PathBuf,
+    pub sha1: Option<&'a str>,
+    pub size: u64,
+}
+
 /// Exponential backoff with up-to-50% jitter to prevent thundering herd.
 fn calculate_retry_delay(base_delay_ms: u64, attempt: u32) -> u64 {
     let exponential_delay = base_delay_ms * 2u64.pow(attempt - 1);
@@ -29,9 +39,9 @@ fn calculate_retry_delay(base_delay_ms: u64, attempt: u32) -> u64 {
 
 /// Downloads small files (loaded entirely in memory)
 pub async fn download_small_file(
-    url: String,
-    dest: PathBuf,
-    sha1: String,
+    url: &str,
+    dest: &Path,
+    sha1: Option<&str>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
     let config = get_config();
@@ -39,9 +49,9 @@ pub async fn download_small_file(
 
     for attempt in 1..=config.max_retries {
         match download_small_file_once(
-            &url,
-            &dest,
-            &sha1,
+            url,
+            dest,
+            sha1,
             #[cfg(feature = "events")]
             event_bus,
         ).await {
@@ -70,8 +80,8 @@ pub async fn download_small_file(
 
 async fn download_small_file_once(
     url: &str,
-    dest: &PathBuf,
-    sha1: &str,
+    dest: &Path,
+    sha1: Option<&str>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
     let response = CLIENT.get(url).send().await?;
@@ -85,13 +95,16 @@ async fn download_small_file_once(
     }
 
     let bytes = response.bytes().await?;
-    let digest = calculate_sha1_bytes(&bytes);
 
-    if !digest.eq_ignore_ascii_case(sha1) {
-        return Err(InstallerError::DownloadFailed(format!(
-            "SHA1 mismatch for {}: expected {}, got {}",
-            url, sha1, digest
-        )));
+    if let Some(expected) = sha1 {
+        let digest = calculate_sha1_bytes(&bytes);
+
+        if !digest.eq_ignore_ascii_case(expected) {
+            return Err(InstallerError::DownloadFailed(format!(
+                "SHA1 mismatch for {}: expected {}, got {}",
+                url, expected, digest
+            )));
+        }
     }
 
     #[cfg(feature = "events")]
@@ -111,8 +124,8 @@ async fn download_small_file_once(
 
 /// Downloads large files with streaming (memory efficient)
 pub async fn download_large_file(
-    url: String,
-    dest: PathBuf,
+    url: &str,
+    dest: &Path,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
     let config = get_config();
@@ -120,8 +133,8 @@ pub async fn download_large_file(
 
     for attempt in 1..=config.max_retries {
         match download_large_file_once(
-            &url,
-            &dest,
+            url,
+            dest,
             #[cfg(feature = "events")]
             event_bus,
         )
@@ -135,7 +148,7 @@ pub async fn download_large_file(
                         "[Retry {}/{}] Failed to download {}: {}. Retrying in {}ms...",
                         attempt, config.max_retries, url, e, delay
                     );
-                    let _ = fs::remove_file(&dest).await;
+                    let _ = fs::remove_file(dest).await;
                     tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
                 }
                 last_error = Some(e);
@@ -153,7 +166,7 @@ pub async fn download_large_file(
 
 async fn download_large_file_once(
     url: &str,
-    dest: &PathBuf,
+    dest: &Path,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
     let response = CLIENT.get(url).send().await?;
@@ -192,14 +205,14 @@ async fn download_large_file_once(
 
 /// Downloads multiple large files with concurrency limit
 pub async fn download_with_concurrency_limit(
-    tasks: Vec<(String, PathBuf)>,
+    tasks: Vec<DownloadTask<'_>>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
     let config = get_config();
     let semaphore = Arc::new(Semaphore::new(config.max_concurrent_downloads));
     let futures: Vec<_> = tasks
-        .into_iter()
-        .map(|(url, dest)| {
+        .iter()
+        .map(|task| {
             let sem = semaphore.clone();
             async move {
                 let _permit = sem.acquire().await
@@ -207,8 +220,8 @@ pub async fn download_with_concurrency_limit(
                         "Download concurrency semaphore closed".into()
                     ))?;
                 download_large_file(
-                    url,
-                    dest,
+                    task.url,
+                    &task.dest,
                     #[cfg(feature = "events")]
                     event_bus,
                 )
@@ -223,14 +236,14 @@ pub async fn download_with_concurrency_limit(
 
 /// Downloads multiple small files with concurrency limit
 pub async fn download_small_with_concurrency_limit(
-    tasks: Vec<(String, PathBuf, String)>,
+    tasks: Vec<DownloadTask<'_>>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
     let config = get_config();
     let semaphore = Arc::new(Semaphore::new(config.max_concurrent_downloads));
     let futures: Vec<_> = tasks
-        .into_iter()
-        .map(|(url, dest, sha1)| {
+        .iter()
+        .map(|task| {
             let sem = semaphore.clone();
             async move {
                 let _permit = sem.acquire().await
@@ -238,9 +251,9 @@ pub async fn download_small_with_concurrency_limit(
                         "Download concurrency semaphore closed".into()
                     ))?;
                 download_small_file(
-                    url,
-                    dest,
-                    sha1,
+                    task.url,
+                    &task.dest,
+                    task.sha1,
                     #[cfg(feature = "events")]
                     event_bus,
                 )

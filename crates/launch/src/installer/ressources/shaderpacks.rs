@@ -3,30 +3,30 @@
 
 //! Shader-pack (`shaderpacks/*.zip`) installation.
 
-use std::path::PathBuf;
-
 use lighty_loaders::types::{version_metadata::Mods, VersionInfo};
 
 use crate::errors::InstallerResult;
+use crate::installer::downloader::DownloadTask;
 
 #[cfg(feature = "events")]
 use lighty_event::{Event, EventBus, ModloaderEvent};
 
 use super::asset_partition;
 
-pub async fn collect_shaderpack_tasks(
+pub async fn collect_shaderpack_tasks<'a>(
     version: &impl VersionInfo,
-    mods: &[Mods],
-) -> (Vec<(String, PathBuf)>, u64) {
+    mods: &'a [Mods],
+) -> Vec<DownloadTask<'a>> {
     asset_partition::collect(version, mods, "shaderpacks", false).await
 }
 
 pub async fn download_shaderpacks(
-    tasks: Vec<(String, PathBuf)>,
-    bytes: u64,
+    tasks: Vec<DownloadTask<'_>>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
     let count = tasks.len();
+    #[cfg(feature = "events")]
+    let bytes: u64 = tasks.iter().map(|task| task.size).sum();
     asset_partition::download(
         tasks,
         "shaderpacks",

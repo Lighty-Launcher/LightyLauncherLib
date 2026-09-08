@@ -7,16 +7,16 @@ use lighty_loaders::types::{VersionInfo, version_metadata::AssetsFile};
 use lighty_core::time_it;
 use crate::errors::InstallerResult;
 use crate::installer::verifier::{is_missing_or_empty, needs_download};
-use crate::installer::downloader::download_small_with_concurrency_limit;
+use crate::installer::downloader::{download_small_with_concurrency_limit, DownloadTask};
 
 #[cfg(feature = "events")]
 use lighty_event::EventBus;
 
 /// Collects assets that need to be downloaded.
-pub async fn collect_asset_tasks(
+pub async fn collect_asset_tasks<'a>(
     version: &impl VersionInfo,
-    assets: Option<&AssetsFile>,
-) -> Vec<(String, std::path::PathBuf, String)> {
+    assets: Option<&'a AssetsFile>,
+) -> Vec<DownloadTask<'a>> {
     let Some(assets) = assets else {
         return Vec::new();
     };
@@ -44,21 +44,26 @@ pub async fn collect_asset_tasks(
         };
 
         if let Some(path) = outdated {
-            tasks.push((url.clone(), path, asset.hash.clone()));
+            tasks.push(DownloadTask {
+                url,
+                dest: path,
+                sha1: Some(&asset.hash),
+                size: asset.size,
+            });
         }
     }
 
     // Two index entries can share a hash and thus one destination file:
     // 1.7.x declares every sound under both `sound/` and `sounds/`.
-    tasks.sort_unstable_by(|left, right| left.1.cmp(&right.1));
-    tasks.dedup_by(|left, right| left.1 == right.1);
+    tasks.sort_unstable_by(|left, right| left.dest.cmp(&right.dest));
+    tasks.dedup_by(|left, right| left.dest == right.dest);
 
     tasks
 }
 
 /// Downloads assets from pre-collected tasks.
 pub async fn download_assets(
-    tasks: Vec<(String, std::path::PathBuf, String)>,
+    tasks: Vec<DownloadTask<'_>>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
     if tasks.is_empty() {

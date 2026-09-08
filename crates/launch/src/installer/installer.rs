@@ -61,10 +61,10 @@ where
             library_tasks,
             client_task,
             asset_tasks,
-            (mod_tasks, mod_bytes),
-            (resourcepack_tasks, resourcepack_bytes),
-            (shaderpack_tasks, shaderpack_bytes),
-            (datapack_tasks, datapack_bytes),
+            mod_tasks,
+            resourcepack_tasks,
+            shaderpack_tasks,
+            datapack_tasks,
             (native_download_tasks, native_extract_paths),
         ) = tokio::join!(
             libraries::collect_library_tasks(self, &builder.libraries),
@@ -113,18 +113,17 @@ where
             return Ok(());
         }
 
-        #[cfg(feature = "events")]
-        let total_bytes = {
-            let mod_like = mod_bytes + resourcepack_bytes + shaderpack_bytes + datapack_bytes;
-            calculate_download_size(
-                builder,
-                &library_tasks,
-                &client_task,
-                &asset_tasks,
-                &native_download_tasks,
-                mod_like,
-            )
-        };
+        let total_bytes: u64 = library_tasks
+            .iter()
+            .chain(&asset_tasks)
+            .chain(&mod_tasks)
+            .chain(&resourcepack_tasks)
+            .chain(&shaderpack_tasks)
+            .chain(&datapack_tasks)
+            .chain(&native_download_tasks)
+            .chain(&client_task)
+            .map(|task| task.size)
+            .sum();
 
         #[cfg(feature = "events")]
         if let Some(bus) = event_bus {
@@ -158,19 +157,16 @@ where
                 ),
                 resourcepacks::download_resourcepacks(
                     resourcepack_tasks,
-                    resourcepack_bytes,
                     #[cfg(feature = "events")]
                     event_bus
                 ),
                 shaderpacks::download_shaderpacks(
                     shaderpack_tasks,
-                    shaderpack_bytes,
                     #[cfg(feature = "events")]
                     event_bus
                 ),
                 datapacks::download_datapacks(
                     datapack_tasks,
-                    datapack_bytes,
                     #[cfg(feature = "events")]
                     event_bus
                 ),
@@ -317,48 +313,3 @@ async fn create_directories(version: &impl VersionInfo) {
     mkdir!(parent_path.join("assets").join("objects"));
 }
 
-/// Aggregates the byte-total of files that need downloading.
-/// `mod_like_bytes` is the pre-summed total returned by the four
-/// mod-like buckets (mods + resourcepacks + shaderpacks + datapacks)
-/// since their `collect_*` helpers already walk the `Mods` slice.
-#[cfg(feature = "events")]
-fn calculate_download_size(
-    builder: &Version,
-    library_tasks: &[(String, std::path::PathBuf)],
-    client_task: &Option<(String, std::path::PathBuf)>,
-    asset_tasks: &[(String, std::path::PathBuf, String)],
-    native_download_tasks: &[(String, std::path::PathBuf)],
-    mod_like_bytes: u64,
-) -> u64 {
-    let mut total = mod_like_bytes;
-
-    for (url, _) in library_tasks {
-        if let Some(lib) = builder.libraries.iter().find(|l| l.url.as_ref() == Some(url)) {
-            total += lib.size.unwrap_or(0);
-        }
-    }
-
-    if client_task.is_some() {
-        if let Some(client) = &builder.client {
-            total += client.size.unwrap_or(0);
-        }
-    }
-
-    if let Some(assets) = &builder.assets {
-        for (url, _, _) in asset_tasks {
-            if let Some(asset) = assets.objects.values().find(|a| a.url.as_ref() == Some(url)) {
-                total += asset.size;
-            }
-        }
-    }
-
-    if let Some(natives) = &builder.natives {
-        for (url, _) in native_download_tasks {
-            if let Some(native) = natives.iter().find(|n| n.url.as_ref() == Some(url)) {
-                total += native.size.unwrap_or(0);
-            }
-        }
-    }
-
-    total
-}

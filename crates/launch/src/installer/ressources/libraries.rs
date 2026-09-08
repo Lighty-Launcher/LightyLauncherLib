@@ -7,16 +7,16 @@ use lighty_loaders::types::{VersionInfo, version_metadata::Library};
 use lighty_core::time_it;
 use crate::errors::InstallerResult;
 use crate::installer::verifier::needs_download;
-use crate::installer::downloader::download_with_concurrency_limit;
+use crate::installer::downloader::{download_with_concurrency_limit, DownloadTask};
 
 #[cfg(feature = "events")]
 use lighty_event::EventBus;
 
 /// Collects libraries that need to be downloaded.
-pub async fn collect_library_tasks(
+pub async fn collect_library_tasks<'a>(
     version: &impl VersionInfo,
-    libraries: &[Library],
-) -> Vec<(String, std::path::PathBuf)> {
+    libraries: &'a [Library],
+) -> Vec<DownloadTask<'a>> {
     let parent_path = version.game_dirs().join("libraries");
     let mut tasks = Vec::new();
 
@@ -33,7 +33,12 @@ pub async fn collect_library_tasks(
         let path = parent_path.join(path_str);
 
         if needs_download(&path, lib.sha1.as_ref(), &lib.name).await {
-            tasks.push((url.clone(), path));
+            tasks.push(DownloadTask {
+                url,
+                dest: path,
+                sha1: None,
+                size: lib.size.unwrap_or(0),
+            });
         }
     }
 
@@ -42,7 +47,7 @@ pub async fn collect_library_tasks(
 
 /// Downloads libraries from pre-collected tasks.
 pub async fn download_libraries(
-    tasks: Vec<(String, std::path::PathBuf)>,
+    tasks: Vec<DownloadTask<'_>>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
     if tasks.is_empty() {

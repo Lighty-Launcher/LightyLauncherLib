@@ -14,16 +14,16 @@ use futures_util::io;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use crate::errors::{InstallerError, InstallerResult};
 use crate::installer::verifier::needs_download;
-use crate::installer::downloader::download_with_concurrency_limit;
+use crate::installer::downloader::{download_with_concurrency_limit, DownloadTask};
 
 #[cfg(feature = "events")]
 use lighty_event::EventBus;
 
-/// Collects natives that need downloading and paths for extraction.
-pub async fn collect_native_tasks(
+/// Collects natives that need downloading and the paths to extract.
+pub async fn collect_native_tasks<'a>(
     version: &impl VersionInfo,
-    natives: &[Native],
-) -> (Vec<(String, PathBuf)>, Vec<PathBuf>) {
+    natives: &'a [Native],
+) -> (Vec<DownloadTask<'a>>, Vec<PathBuf>) {
     if natives.is_empty() {
         return (Vec::new(), Vec::new());
     }
@@ -39,7 +39,12 @@ pub async fn collect_native_tasks(
         let jar_path = libraries_path.join(path_str);
 
         if needs_download(&jar_path, native.sha1.as_ref(), &native.name).await {
-            download_tasks.push((url.clone(), jar_path.clone()));
+            download_tasks.push(DownloadTask {
+                url,
+                dest: jar_path.clone(),
+                sha1: None,
+                size: native.size.unwrap_or(0),
+            });
         }
 
         extract_paths.push(jar_path);
@@ -52,7 +57,7 @@ pub async fn collect_native_tasks(
 pub async fn download_and_extract_natives(
     version: &impl VersionInfo,
     jvm_arguments: Option<&[String]>,
-    download_tasks: Vec<(String, PathBuf)>,
+    download_tasks: Vec<DownloadTask<'_>>,
     extract_paths: Vec<PathBuf>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {

@@ -7,33 +7,36 @@ use lighty_loaders::types::{VersionInfo, version_metadata::Client};
 use lighty_core::time_it;
 use crate::errors::InstallerResult;
 use crate::installer::verifier::needs_download;
-use crate::installer::downloader::download_large_file;
+use crate::installer::downloader::{download_large_file, DownloadTask};
 
 #[cfg(feature = "events")]
 use lighty_event::EventBus;
 
-/// Collects client JAR task if it needs to be downloaded.
-pub async fn collect_client_task(
+/// Collects the client JAR task if it needs downloading.
+pub async fn collect_client_task<'a>(
     version: &impl VersionInfo,
-    client: Option<&Client>,
-) -> Option<(String, std::path::PathBuf)> {
+    client: Option<&'a Client>,
+) -> Option<DownloadTask<'a>> {
     let client = client?;
-    let url = client.url.as_ref()?.clone();
+    let url = client.url.as_deref()?;
     let client_path = version.game_dirs().join(format!("{}.jar", version.name()));
 
-    if needs_download(&client_path, client.sha1.as_ref(), "Client JAR").await {
-        Some((url, client_path))
-    } else {
-        None
-    }
+    needs_download(&client_path, client.sha1.as_ref(), "Client JAR")
+        .await
+        .then(|| DownloadTask {
+            url,
+            dest: client_path,
+            sha1: None,
+            size: client.size.unwrap_or(0),
+        })
 }
 
 /// Downloads client JAR from pre-collected task.
 pub async fn download_client(
-    task: Option<(String, std::path::PathBuf)>,
+    task: Option<DownloadTask<'_>>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
-    let Some((url, client_path)) = task else {
+    let Some(task) = task else {
         lighty_core::trace_info!("[Installer] Client JAR already cached and verified");
         return Ok(());
     };
@@ -42,8 +45,8 @@ pub async fn download_client(
     time_it!(
         "Client download",
         download_large_file(
-            url,
-            client_path,
+            task.url,
+            &task.dest,
             #[cfg(feature = "events")]
             event_bus,
         )

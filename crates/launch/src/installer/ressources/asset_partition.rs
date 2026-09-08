@@ -12,23 +12,22 @@ use lighty_core::time_it;
 use lighty_loaders::types::{version_metadata::Mods, VersionInfo};
 
 use crate::errors::InstallerResult;
-use crate::installer::downloader::download_with_concurrency_limit;
+use crate::installer::downloader::{download_with_concurrency_limit, DownloadTask};
 use crate::installer::verifier::needs_download;
 
 #[cfg(feature = "events")]
 use lighty_event::EventBus;
 
-/// Collects the download tasks for the `Mods` entries under `subdir`, with
-/// the sum of their declared sizes. `legacy_fallback` accepts an unqualified
-/// `path` as `<subdir>/<filename>`.
-pub(super) async fn collect<V: VersionInfo>(
+/// Collects the download tasks for the `Mods` entries under `subdir`.
+/// `legacy_fallback` accepts an unqualified `path` as `<subdir>/<filename>`.
+pub(super) async fn collect<'a, V: VersionInfo>(
     version: &V,
-    mods: &[Mods],
+    mods: &'a [Mods],
     subdir: &str,
     legacy_fallback: bool,
-) -> (Vec<(String, PathBuf)>, u64) {
+) -> Vec<DownloadTask<'a>> {
     if mods.is_empty() {
-        return (Vec::new(), 0);
+        return Vec::new();
     }
 
     let runtime = version.runtime_dir();
@@ -37,7 +36,6 @@ pub(super) async fn collect<V: VersionInfo>(
 
     let prefix = format!("{}/", subdir);
     let mut tasks = Vec::new();
-    let mut bytes = 0u64;
 
     for entry in mods {
         let Some(url) = &entry.url else { continue };
@@ -70,18 +68,22 @@ pub(super) async fn collect<V: VersionInfo>(
         }
 
         if needs_download(&target, entry.sha1.as_ref(), &entry.name).await {
-            bytes += entry.size.unwrap_or(0);
-            tasks.push((url.clone(), target));
+            tasks.push(DownloadTask {
+                url,
+                dest: target,
+                sha1: None,
+                size: entry.size.unwrap_or(0),
+            });
         }
     }
 
-    (tasks, bytes)
+    tasks
 }
 
 /// Downloads a partitioned task batch with a human-readable label
 /// used for logging (`"mods"`, `"resourcepacks"`, ...).
 pub(super) async fn download(
-    tasks: Vec<(String, PathBuf)>,
+    tasks: Vec<DownloadTask<'_>>,
     label: &str,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
