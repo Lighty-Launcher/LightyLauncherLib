@@ -15,7 +15,7 @@ use lighty_core::mkdir;
 
 use lighty_core::system::OS;
 
-use crate::loaders::vanilla::vanilla::{should_apply_rules, VanillaQuery};
+use crate::loaders::vanilla::vanilla::{should_apply_rules, VANILLA, VanillaQuery};
 use crate::types::version_metadata::{Arguments, Library, MainClass, Version};
 use crate::types::VersionInfo;
 use lighty_core::QueryError;
@@ -408,7 +408,7 @@ pub async fn legacy_version_builder<V: VersionInfo>(
     version: &V,
     profile: &ForgeLegacyInstallProfile,
 ) -> Result<Version> {
-    let vanilla_data = VanillaQuery::fetch_full_data(version).await?;
+    let vanilla_data = VANILLA.get_raw(version).await?;
     let vanilla_builder = VanillaQuery::version_builder(version, &vanilla_data).await?;
 
     let forge_libs = extract_legacy_libraries(profile).await;

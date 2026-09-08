@@ -6,7 +6,7 @@ use zip::ZipArchive;
 use lighty_core::download::download_file_untracked;
 use lighty_core::mkdir;
 
-use crate::loaders::vanilla::vanilla::VanillaQuery;
+use crate::loaders::vanilla::vanilla::{VANILLA, VanillaQuery};
 use crate::types::version_metadata::{Arguments, Library, MainClass, Version, VersionMetaData};
 use crate::types::VersionInfo;
 use crate::utils::forge_installer::{ForgeInstallProfile, ForgeVersionManifest};
@@ -111,7 +111,7 @@ impl Query for NeoForgeQuery {
     async fn version_builder<V: VersionInfo>(version: &V, _full_data: &ForgeInstallProfile) -> Result<Version> {
         let (vanilla_builder, version_meta) = tokio::try_join!(
             async {
-                let vanilla_data = VanillaQuery::fetch_full_data(version).await?;
+                let vanilla_data = VANILLA.get_raw(version).await?;
                 VanillaQuery::version_builder(version, &vanilla_data).await
             },
             async {

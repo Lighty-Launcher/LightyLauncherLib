@@ -3,7 +3,7 @@ use crate::types::VersionInfo;
 use lighty_core::QueryError;
 use crate::utils::{query::Query, manifest::ManifestRepository};
 use crate::utils::maven::{fetch_file_size, fetch_maven_sha1};
-use crate::loaders::vanilla::{vanilla::VanillaQuery};
+use crate::loaders::vanilla::vanilla::{VANILLA, VanillaQuery};
 use once_cell::sync::Lazy;
 use super::fabric_metadata::FabricMetaData;
 use async_trait::async_trait;
@@ -66,7 +66,7 @@ impl Query for FabricQuery {
     async fn version_builder<V: VersionInfo>(version: &V, full_data: &FabricMetaData) -> Result<Version> {
         let (vanilla_builder, fabric_libraries) = tokio::try_join!(
         async {
-            let vanilla_data = VanillaQuery::fetch_full_data(version).await?;
+            let vanilla_data = VANILLA.get_raw(version).await?;
             VanillaQuery::version_builder(version, &vanilla_data).await
         },
         extract_libraries(full_data)

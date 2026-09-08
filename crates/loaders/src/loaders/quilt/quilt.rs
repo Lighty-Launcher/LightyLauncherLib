@@ -8,7 +8,7 @@ use lighty_core::hosts::HTTP_CLIENT as CLIENT;
 use super::quilt_metadata::QuiltMetaData;
 use crate::types::VersionInfo;
 
-use crate::loaders::vanilla::vanilla::VanillaQuery;
+use crate::loaders::vanilla::vanilla::{VANILLA, VanillaQuery};
 use lighty_core::QueryError;
 use crate::utils::{query::Query, manifest::ManifestRepository};
 use crate::utils::maven::{fetch_file_size, fetch_maven_sha1};
@@ -69,7 +69,7 @@ impl Query for QuiltQuery {
     async fn version_builder<V: VersionInfo>(version: &V, full_data: &QuiltMetaData) -> Result<Version> {
         let (vanilla_builder, quilt_libraries) = tokio::try_join!(
         async {
-            let vanilla_data = VanillaQuery::fetch_full_data(version).await?;
+            let vanilla_data = VANILLA.get_raw(version).await?;
             VanillaQuery::version_builder(version, &vanilla_data).await
         },
         extract_libraries(full_data)

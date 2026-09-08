@@ -8,7 +8,7 @@ use zip::ZipArchive;
 use lighty_core::download::download_file_untracked;
 use lighty_core::mkdir;
 
-use crate::loaders::vanilla::vanilla::VanillaQuery;
+use crate::loaders::vanilla::vanilla::{VANILLA, VanillaQuery};
 use crate::types::version_metadata::{Arguments, Library, MainClass, Version, VersionMetaData};
 use crate::types::VersionInfo;
 use crate::utils::forge_installer::{ForgeInstallProfile, ForgeVersionManifest};
@@ -182,7 +182,7 @@ async fn modern_version_builder<V: VersionInfo>(
     version: &V,
     version_meta: &ForgeVersionManifest,
 ) -> Result<Version> {
-    let vanilla_data = VanillaQuery::fetch_full_data(version).await?;
+    let vanilla_data = VANILLA.get_raw(version).await?;
     let vanilla_builder = VanillaQuery::version_builder(version, &vanilla_data).await?;
 
     // Use ONLY runtime libraries from version.json. install_profile libraries
