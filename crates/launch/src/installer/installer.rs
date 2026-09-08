@@ -100,6 +100,7 @@ where
             if !native_extract_paths.is_empty() {
                 natives::download_and_extract_natives(
                     self,
+                    builder.arguments.jvm.as_deref(),
                     native_download_tasks,
                     native_extract_paths,
                     #[cfg(feature = "events")]
@@ -144,6 +145,7 @@ where
                 ),
                 natives::download_and_extract_natives(
                     self,
+                    builder.arguments.jvm.as_deref(),
                     native_download_tasks,
                     native_extract_paths,
                     #[cfg(feature = "events")]

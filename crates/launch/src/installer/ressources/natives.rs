@@ -51,16 +51,22 @@ pub async fn collect_native_tasks(
 /// Downloads and extracts natives from pre-collected tasks.
 pub async fn download_and_extract_natives(
     version: &impl VersionInfo,
+    jvm_arguments: Option<&[String]>,
     download_tasks: Vec<(String, PathBuf)>,
     extract_paths: Vec<PathBuf>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
-    let natives_extract_path = version.game_dirs().join("natives");
+    let natives_root = version.game_dirs().join("natives");
 
     // Natives are cleaned on each install since LWJGL needs a fresh extraction.
-    if natives_extract_path.exists() {
-        let _ = fs::remove_dir_all(&natives_extract_path).await;
+    if natives_root.exists() {
+        let _ = fs::remove_dir_all(&natives_root).await;
     }
+
+    let natives_extract_path = match jvm_arguments.and_then(library_subdir) {
+        Some(subdir) => natives_root.join(subdir),
+        None => natives_root,
+    };
     mkdir!(natives_extract_path);
 
     if !download_tasks.is_empty() {
@@ -90,6 +96,19 @@ pub async fn download_and_extract_natives(
     }
 
     Ok(())
+}
+
+/// Returns where the version expects its JNI libraries, relative to the
+/// natives directory. 26.x asks for a `java` subdirectory, older versions
+/// want them at the root.
+fn library_subdir(jvm_arguments: &[String]) -> Option<&str> {
+    const DECLARATION: &str = "-Djava.library.path=${natives_directory}";
+
+    jvm_arguments
+        .iter()
+        .find_map(|argument| argument.strip_prefix(DECLARATION))
+        .map(|subdir| subdir.trim_start_matches('/'))
+        .filter(|subdir| !subdir.is_empty())
 }
 
 /// Extracts a native JAR using async ZIP extraction.
