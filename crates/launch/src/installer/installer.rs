@@ -324,7 +324,7 @@ fn calculate_download_size(
     builder: &Version,
     library_tasks: &[(String, std::path::PathBuf)],
     client_task: &Option<(String, std::path::PathBuf)>,
-    asset_tasks: &[(String, std::path::PathBuf)],
+    asset_tasks: &[(String, std::path::PathBuf, String)],
     native_download_tasks: &[(String, std::path::PathBuf)],
     mod_like_bytes: u64,
 ) -> u64 {
@@ -343,7 +343,7 @@ fn calculate_download_size(
     }
 
     if let Some(assets) = &builder.assets {
-        for (url, _) in asset_tasks {
+        for (url, _, _) in asset_tasks {
             if let Some(asset) = assets.objects.values().find(|a| a.url.as_ref() == Some(url)) {
                 total += asset.size;
             }

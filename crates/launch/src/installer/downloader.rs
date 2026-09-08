@@ -10,6 +10,7 @@ use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::Semaphore;
 use futures::future::try_join_all;
 use futures::StreamExt;
+use lighty_core::calculate_sha1_bytes;
 use lighty_core::hosts::HTTP_CLIENT as CLIENT;
 use lighty_core::mkdir;
 use crate::errors::InstallerResult;
@@ -30,6 +31,7 @@ fn calculate_retry_delay(base_delay_ms: u64, attempt: u32) -> u64 {
 pub async fn download_small_file(
     url: String,
     dest: PathBuf,
+    sha1: String,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
     let config = get_config();
@@ -39,6 +41,7 @@ pub async fn download_small_file(
         match download_small_file_once(
             &url,
             &dest,
+            &sha1,
             #[cfg(feature = "events")]
             event_bus,
         ).await {
@@ -68,9 +71,28 @@ pub async fn download_small_file(
 async fn download_small_file_once(
     url: &str,
     dest: &PathBuf,
+    sha1: &str,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
-    let bytes = CLIENT.get(url).send().await?.bytes().await?;
+    let response = CLIENT.get(url).send().await?;
+
+    if !response.status().is_success() {
+        return Err(InstallerError::DownloadFailed(format!(
+            "HTTP {} for {}",
+            response.status(),
+            url
+        )));
+    }
+
+    let bytes = response.bytes().await?;
+    let digest = calculate_sha1_bytes(&bytes);
+
+    if !digest.eq_ignore_ascii_case(sha1) {
+        return Err(InstallerError::DownloadFailed(format!(
+            "SHA1 mismatch for {}: expected {}, got {}",
+            url, sha1, digest
+        )));
+    }
 
     #[cfg(feature = "events")]
     if let Some(bus) = event_bus {
@@ -201,14 +223,14 @@ pub async fn download_with_concurrency_limit(
 
 /// Downloads multiple small files with concurrency limit
 pub async fn download_small_with_concurrency_limit(
-    tasks: Vec<(String, PathBuf)>,
+    tasks: Vec<(String, PathBuf, String)>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
     let config = get_config();
     let semaphore = Arc::new(Semaphore::new(config.max_concurrent_downloads));
     let futures: Vec<_> = tasks
         .into_iter()
-        .map(|(url, dest)| {
+        .map(|(url, dest, sha1)| {
             let sem = semaphore.clone();
             async move {
                 let _permit = sem.acquire().await
@@ -218,6 +240,7 @@ pub async fn download_small_with_concurrency_limit(
                 download_small_file(
                     url,
                     dest,
+                    sha1,
                     #[cfg(feature = "events")]
                     event_bus,
                 )
