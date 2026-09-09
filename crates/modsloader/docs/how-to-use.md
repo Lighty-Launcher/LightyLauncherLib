@@ -127,7 +127,8 @@ QueryError::ModNotFound { provider, id }
 QueryError::ModIncompatible { provider, id, mc, loader }
 QueryError::ModDistributionForbidden { id }                // CurseForge download_url=null
 QueryError::UnsupportedFormat { what, expected, found }    // unknown project_type / classId
-QueryError::UnsupportedLoader(String)                       // Vanilla / OptiFine / LightyUpdater
+QueryError::LoaderNotOnProvider { provider, loader }        // Vanilla / OptiFine / LightyUpdater
+QueryError::ProviderDisabled { provider, feature }          // cargo feature is off
 QueryError::Network(reqwest::Error)
 ```
 

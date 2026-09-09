@@ -73,8 +73,10 @@ impl JavaDistribution {
 
 ```rust
 pub enum JreError {
-    NotFound { path: PathBuf }, InvalidStructure, Download(String),
-    UnsupportedOS, Io(std::io::Error), Extraction(String),
+    NotFound { path: PathBuf }, InvalidStructure, UnsupportedOS,
+    Io(std::io::Error), Distribution(DistributionError),
+    Transfer(lighty_core::errors::DownloadError),
+    Archive(lighty_core::errors::ExtractError),
 }
 
 pub enum JavaRuntimeError {

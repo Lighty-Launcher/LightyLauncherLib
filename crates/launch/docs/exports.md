@@ -141,12 +141,14 @@ Detail: [instance-control.md](./instance-control.md) (API),
 
 ```rust
 pub enum InstallerError {
-    DownloadFailed(String),
-    VerificationFailed(String),
-    ExtractionFailed(String),
+    HttpStatus       { status: u16, url: String },
+    Sha1Mismatch     { url: String, expected: String, actual: String },
+    StalePartialFile { url: String },
+    RetriesExhausted { attempts: u32, url: String },
+    ConcurrencyClosed,
     InvalidMetadata,
     NoPid,
-    IOError(std::io::Error),
+    Io(std::io::Error),
     // …
 }
 
@@ -155,6 +157,7 @@ pub enum InstanceError {
     StillRunning  { instance_name: String, pids: Vec<u32> },
     Io            (std::io::Error),
     DuplicatePid  { pid: u32, existing_instance: String },
+    KillFailed    { pid: u32, reason: String },
 }
 ```
 
