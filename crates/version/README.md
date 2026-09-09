@@ -112,7 +112,7 @@ Both implement `VersionInfo` from `lighty-loaders`.
 
 ## Related Crates
 
-- **[lighty-launcher](../../../README.md)** - Main package
+- **[lighty-launcher](../../README.md)** - Main package
 - **[lighty-loaders](../loaders/README.md)** - VersionInfo trait and loaders
 - **[lighty-core](../core/README.md)** - AppState for launcher paths
 - **[lighty-launch](../launch/README.md)** - Uses VersionBuilder for launching

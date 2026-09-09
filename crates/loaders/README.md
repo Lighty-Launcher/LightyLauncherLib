@@ -147,7 +147,7 @@ use lighty_launcher::loaders::{Loader, VersionInfo, LoaderExtensions, InstanceSi
 
 ## Related Crates
 
-- **[lighty-launcher](../../../README.md)** - Main package
+- **[lighty-launcher](../../README.md)** - Main package
 - **[lighty-version](../version/README.md)** - VersionBuilder implementation
 - **[lighty-launch](../launch/README.md)** - Launch system
 - **[lighty-event](../event/README.md)** - Event system
