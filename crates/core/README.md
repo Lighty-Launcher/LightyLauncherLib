@@ -64,7 +64,7 @@ async fn main() -> anyhow::Result<()> {
 
 ## Related Crates
 
-- **[lighty-launcher](../../../README.md)** - Main package
+- **[lighty-launcher](../../README.md)** - Main package
 - **[lighty-event](../event/README.md)** - Event system (for CoreEvent)
 - **[lighty-loaders](../loaders/README.md)** - Uses AppState and system detection
 - **[lighty-java](../java/README.md)** - Uses download and extract

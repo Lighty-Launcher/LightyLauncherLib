@@ -126,7 +126,7 @@ instance.delete_instance().await?;
 
 ## Related Crates
 
-- **[lighty-launcher](../../../README.md)** - Main package
+- **[lighty-launcher](../../README.md)** - Main package
 - **[lighty-event](../event/README.md)** - Event system (for LaunchEvent)
 - **[lighty-core](../core/README.md)** - AppState and utilities
 - **[lighty-java](../java/README.md)** - Java runtime management

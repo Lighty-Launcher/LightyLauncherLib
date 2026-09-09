@@ -6,6 +6,7 @@
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use crate::errors::{JreError, JreResult};
+use lighty_core::errors::DownloadError;
 use path_absolutize::Absolutize;
 use tokio::fs;
 
@@ -61,17 +62,14 @@ where
 
     prepare_installation_directory(&runtime_dir).await?;
 
-    let download_url = effective_distribution
-        .get_download_url(version)
-        .await
-        .map_err(|e| JreError::Download(format!("Failed to get download URL: {}", e)))?;
+    let download_url = effective_distribution.get_download_url(version).await?;
 
     if let Some(bus) = event_bus {
         let response = lighty_core::hosts::HTTP_CLIENT
             .get(&download_url)
             .send()
             .await
-            .map_err(|e| JreError::Download(format!("Failed to check file size: {}", e)))?;
+            .map_err(DownloadError::from)?;
 
         let total_bytes = response.content_length().unwrap_or(0);
 
@@ -96,7 +94,7 @@ where
             }
         })
         .await
-        .map_err(|e| JreError::Download(format!("Download failed: {}", e)))?
+?
     };
 
     if let Some(bus) = event_bus {
@@ -151,14 +149,11 @@ where
 
     prepare_installation_directory(&runtime_dir).await?;
 
-    let download_url = effective_distribution
-        .get_download_url(version)
-        .await
-        .map_err(|e| JreError::Download(format!("Failed to get download URL: {}", e)))?;
+    let download_url = effective_distribution.get_download_url(version).await?;
 
     let archive_bytes = download_file(&download_url, on_progress)
         .await
-        .map_err(|e| JreError::Download(format!("Download failed: {}", e)))?;
+?;
 
     extract_archive(&archive_bytes, &runtime_dir).await?;
 
@@ -198,12 +193,12 @@ async fn extract_archive(
         OperatingSystem::WINDOWS => {
             zip_extract(cursor, destination, event_bus)
                 .await
-                .map_err(|e| JreError::Extraction(format!("ZIP extraction failed: {}", e)))?;
+?;
         }
         OperatingSystem::LINUX | OperatingSystem::OSX => {
             tar_gz_extract(cursor, destination, event_bus)
                 .await
-                .map_err(|e| JreError::Extraction(format!("TAR.GZ extraction failed: {}", e)))?;
+?;
         }
         OperatingSystem::UNKNOWN => {
             return Err(JreError::UnsupportedOS);
@@ -222,12 +217,12 @@ async fn extract_archive(archive_bytes: &[u8], destination: &Path) -> JreResult<
         OperatingSystem::WINDOWS => {
             zip_extract(cursor, destination)
                 .await
-                .map_err(|e| JreError::Extraction(format!("ZIP extraction failed: {}", e)))?;
+?;
         }
         OperatingSystem::LINUX | OperatingSystem::OSX => {
             tar_gz_extract(cursor, destination)
                 .await
-                .map_err(|e| JreError::Extraction(format!("TAR.GZ extraction failed: {}", e)))?;
+?;
         }
         OperatingSystem::UNKNOWN => {
             return Err(JreError::UnsupportedOS);

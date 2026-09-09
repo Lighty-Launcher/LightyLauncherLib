@@ -106,15 +106,14 @@ impl InstanceManager {
     /// Kills the process using the system's kill mechanism.
     /// The instance will be unregistered automatically by the console handler.
     pub async fn close_instance(&self, pid: u32) -> InstanceResult<()> {
-        let mut instances = self
+        if !self
             .instances
-            .write()
-            .unwrap_or_else(PoisonError::into_inner);
-        instances
-            .remove(&pid)
-            .ok_or(InstanceError::NotFound { pid })?;
-
-        drop(instances);
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains_key(&pid)
+        {
+            return Err(InstanceError::NotFound { pid });
+        }
 
         // Unix uses SIGTERM so the JVM runs its shutdown hooks (avoids losing
         // unflushed world state); Windows shells out to `taskkill /F` to
@@ -127,9 +126,10 @@ impl InstanceManager {
                 .output()?;
 
             if !output.status.success() {
-                lighty_core::trace_warn!(pid = pid, "Failed to kill process");
-            } else {
-                lighty_core::trace_info!(pid = pid, "Instance killed");
+                return Err(InstanceError::KillFailed {
+                    pid,
+                    reason: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+                });
             }
         }
 
@@ -138,20 +138,22 @@ impl InstanceManager {
             use nix::sys::signal::{kill, Signal};
             use nix::unistd::Pid;
 
-            match kill(Pid::from_raw(pid as i32), Signal::SIGTERM) {
-                Ok(_) => {
-                    lighty_core::trace_info!(pid = pid, "Instance killed");
+            kill(Pid::from_raw(pid as i32), Signal::SIGTERM).map_err(|err| {
+                InstanceError::KillFailed {
+                    pid,
+                    reason: err.to_string(),
                 }
-                Err(e) => {
-                    lighty_core::trace_warn!(pid = pid, error = %e, "Failed to kill process");
-                    return Err(InstanceError::Io(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("Failed to kill process: {}", e),
-                    )));
-                }
-            }
+            })?;
         }
 
+        // Only now: a failed kill must leave the instance registered, or the
+        // process would keep running with nothing tracking it.
+        self.instances
+            .write()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&pid);
+
+        lighty_core::trace_info!(pid = pid, "Instance killed");
         Ok(())
     }
 }

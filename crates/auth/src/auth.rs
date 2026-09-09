@@ -175,7 +175,7 @@ pub trait Authenticator {
     fn verify(&self, token: &str) -> impl Future<Output = AuthResult<UserProfile>> + Send {
         async move {
             let _ = token;
-            Err(AuthError::Custom("Verification not supported for this provider".into()))
+            Err(AuthError::VerificationUnsupported)
         }
     }
 

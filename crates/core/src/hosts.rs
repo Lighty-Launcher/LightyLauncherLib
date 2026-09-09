@@ -1,8 +1,8 @@
 use std::env;
+use std::path::Path;
 use std::time::Duration;
 use once_cell::sync::Lazy;
 use reqwest::Client;
-use tokio::fs;
 use thiserror::Error;
 
 /// Shared HTTP client tuned for parallel asset/library downloads.
@@ -37,11 +37,15 @@ const HOSTS_PATH: &str = "System32\\drivers\\etc\\hosts";
 #[cfg(not(target_os = "windows"))]
 const HOSTS_PATH: &str = "etc/hosts";
 
-/// Auth-critical domains we refuse to see redirected by a hijacked hosts file.
-const HOSTS: [&str; 3] = [
+/// Hosts the launcher must be able to reach. Antivirus, parental filters and
+/// cracked-launcher installers routinely blackhole these in the hosts file,
+/// which breaks login; add a domain here when a launch depends on reaching it.
+const HOSTS: [&str; 5] = [
     "mojang.com",
     "minecraft.net",
-    "lightylauncher.fr",
+    "minecraftservices.com",
+    "microsoftonline.com",
+    "xboxlive.com",
 ];
 
 /// Errors related to the hosts file check.
@@ -50,17 +54,18 @@ pub enum HostsError {
     #[error("Failed to read hosts file at {0}")]
     HostsReadError(String),
 
-    #[error("Hosts file contains blocked entries: {0}")]
-    HostsBlocked(String),
-
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
 }
 
 pub type HostsResult<T> = std::result::Result<T, HostsError>;
 
-/// Checks whether the system hosts file redirects any auth-critical domains.
-pub async fn check_hosts_file() -> HostsResult<()> {
+/// Returns the hosts entries intercepting a domain the launcher needs; empty
+/// means the file is clean. `extra` adds a launcher's own auth domain.
+///
+/// Synchronous on purpose: the file is tiny and [`crate::AppState::init`],
+/// which calls it, is not async.
+pub fn blocked_launcher_domains(extra: &[&str]) -> HostsResult<Vec<String>> {
     let hosts_path = if cfg!(target_os = "windows") {
         let system_drive = env::var("SystemDrive").unwrap_or("C:".to_string());
         format!("{}\\{}", system_drive, HOSTS_PATH)
@@ -68,28 +73,31 @@ pub async fn check_hosts_file() -> HostsResult<()> {
         format!("/{}", HOSTS_PATH)
     };
 
-    if !fs::try_exists(&hosts_path).await? {
-        return Ok(());
+    if !Path::new(&hosts_path).exists() {
+        return Ok(Vec::new());
     }
 
-    let hosts_file = fs::read_to_string(&hosts_path)
-        .await
+    let hosts_file = std::fs::read_to_string(&hosts_path)
         .map_err(|_| HostsError::HostsReadError(hosts_path.clone()))?;
 
-    let flagged_entries: Vec<_> = hosts_file
+    Ok(hosts_file
         .lines()
         .filter(|line| !line.trim_start().starts_with('#'))
-        .flat_map(|line| {
-            let mut parts = line.split_whitespace();
-            let _ip = parts.next();
-            parts.filter(|domain| HOSTS.iter().any(|&entry| domain.contains(entry)))
-        })
-        .map(|s| s.to_string())
-        .collect();
+        .flat_map(|line| line.split_whitespace().skip(1))
+        .filter(|host| is_watched_host(host, extra))
+        .map(str::to_string)
+        .collect())
+}
 
-    if !flagged_entries.is_empty() {
-        return Err(HostsError::HostsBlocked(flagged_entries.join("\n")));
-    }
+/// An entry matches when it is the domain itself or one of its subdomains —
+/// a `contains` test also fired on lookalikes such as mojang.com.evil.tld.
+fn is_watched_host(host: &str, extra: &[&str]) -> bool {
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
 
-    Ok(())
+    HOSTS.iter().chain(extra).any(|domain| {
+        host == *domain
+            || host
+                .strip_suffix(*domain)
+                .is_some_and(|prefix| prefix.ends_with('.'))
+    })
 }

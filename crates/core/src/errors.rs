@@ -107,8 +107,38 @@ pub enum QueryError {
         found: String,
     },
 
-    #[error("Unsupported loader: {0}")]
-    UnsupportedLoader(String),
+    #[error("Unknown loader '{name}'")]
+    UnknownLoader { name: String },
+
+    #[error("{loader} for Minecraft {minecraft_version} predates the installer format")]
+    LoaderTooOld {
+        loader: &'static str,
+        minecraft_version: String,
+    },
+
+    #[error("{provider} does not host mods for {loader} instances")]
+    LoaderNotOnProvider {
+        provider: &'static str,
+        loader: String,
+    },
+
+    #[error("{provider} support is disabled: enable the '{feature}' cargo feature")]
+    ProviderDisabled {
+        provider: &'static str,
+        feature: &'static str,
+    },
+
+    #[error("{operation} is not supported for {loader}, or its cargo feature is off")]
+    OperationUnsupported {
+        operation: &'static str,
+        loader: String,
+    },
+
+    #[error("{operation} requires the '{feature}' cargo feature")]
+    FeatureRequired {
+        operation: &'static str,
+        feature: &'static str,
+    },
 
     #[error("Invalid metadata format")]
     InvalidMetadata,

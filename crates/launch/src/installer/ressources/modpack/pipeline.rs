@@ -65,9 +65,7 @@ where
         touch(&archive_path).await;
     } else {
         lighty_core::trace_info!("[Modpack] Downloading archive to {}", archive_path.display());
-        download_file_untracked(&archive_url, &archive_path)
-            .await
-            .map_err(|e| InstallerError::DownloadFailed(format!("modpack archive: {e}")))?;
+        download_file_untracked(&archive_url, &archive_path).await?;
     }
 
     let archive_bytes = tokio::fs::metadata(&archive_path).await?.len();

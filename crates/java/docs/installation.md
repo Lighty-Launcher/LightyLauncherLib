@@ -133,10 +133,11 @@ Pass `Some(&bus)` to receive the eight `JavaEvent` variants. See
 pub enum JreError {
     NotFound { path: PathBuf },
     InvalidStructure,
-    Download(String),       // wraps provider URL fetch + download_file
+    Distribution(DistributionError),  // provider URL lookup
     UnsupportedOS,
     Io(std::io::Error),
-    Extraction(String),     // wraps zip_extract / tar_gz_extract
+    Transfer(DownloadError),          // wraps download_file
+    Archive(ExtractError),            // wraps zip_extract / tar_gz_extract
 }
 ```
 

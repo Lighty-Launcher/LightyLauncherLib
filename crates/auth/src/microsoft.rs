@@ -97,9 +97,10 @@ impl MicrosoftAuth {
             .await?;
 
         if !response.status().is_success() {
+            let status = response.status().as_u16();
             let error_text = response.text().await?;
             lighty_core::trace_error!(error = %error_text, "Failed to request device code");
-            return Err(AuthError::InvalidResponse(error_text));
+            return Err(AuthError::HttpStatus { status, body: error_text });
         }
 
         let device_code: DeviceCodeResponse = response.json().await?;
@@ -180,9 +181,10 @@ impl MicrosoftAuth {
             .await?;
 
         if !response.status().is_success() {
+            let status = response.status().as_u16();
             let error_text = response.text().await?;
             lighty_core::trace_error!(error = %error_text, "Failed to get Xbox Live token");
-            return Err(AuthError::InvalidResponse(error_text));
+            return Err(AuthError::HttpStatus { status, body: error_text });
         }
 
         let xbox_token: XboxTokenResponse = response.json().await?;
@@ -214,15 +216,15 @@ impl MicrosoftAuth {
 
             if error_text.contains("2148916233") {
                 lighty_core::trace_error!("Account doesn't own Minecraft");
-                return Err(AuthError::Custom("This Microsoft account doesn't own Minecraft".into()));
+                return Err(AuthError::MinecraftNotOwned);
             }
             if error_text.contains("2148916238") {
                 lighty_core::trace_error!("Account is from a country where Xbox Live is unavailable");
-                return Err(AuthError::Custom("Xbox Live is not available in your country".into()));
+                return Err(AuthError::XboxLiveUnavailable);
             }
 
             lighty_core::trace_error!(status = %status, error = %error_text, "Failed to get XSTS token");
-            return Err(AuthError::InvalidResponse(error_text));
+            return Err(AuthError::HttpStatus { status: status.as_u16(), body: error_text });
         }
 
         let xsts_token: XboxTokenResponse = response.json().await?;
@@ -244,9 +246,10 @@ impl MicrosoftAuth {
             .await?;
 
         if !response.status().is_success() {
+            let status = response.status().as_u16();
             let error_text = response.text().await?;
             lighty_core::trace_error!(error = %error_text, "Failed to get Minecraft token");
-            return Err(AuthError::InvalidResponse(error_text));
+            return Err(AuthError::HttpStatus { status, body: error_text });
         }
 
         let mc_token: MinecraftTokenResponse = response.json().await?;
@@ -269,7 +272,7 @@ impl MicrosoftAuth {
             let status = response.status();
             let error_text = response.text().await?;
             lighty_core::trace_error!(status = %status, error = %error_text, "Failed to get Minecraft profile");
-            return Err(AuthError::InvalidResponse(error_text));
+            return Err(AuthError::HttpStatus { status: status.as_u16(), body: error_text });
         }
 
         let profile: MinecraftProfile = response.json().await?;
@@ -338,7 +341,7 @@ impl MicrosoftAuth {
             .and_then(|xui| xui.get(0))
             .and_then(|user| user.get("uhs"))
             .and_then(|v| v.as_str())
-            .ok_or_else(|| AuthError::InvalidResponse("Missing UHS in XSTS token".into()))?;
+            .ok_or_else(|| AuthError::MissingField { field: "UHS" })?;
 
         #[cfg(feature = "events")]
         if let Some(bus) = event_bus {

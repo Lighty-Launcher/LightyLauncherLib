@@ -68,7 +68,6 @@ pub mod java {
 
     pub use lighty_java::{
         JavaDistribution,
-        DistributionSelection,
         runtime::JavaRuntime,
         jre_downloader,
         JreError,
@@ -84,7 +83,7 @@ pub mod launch {
     //! Game launching and installation.
 
     pub use lighty_launch::{
-        launch::{Launch, LaunchBuilder, LaunchConfig},
+        launch::{Launch, LaunchBuilder},
         installer::{
             Installer,
             config::{DownloaderConfig, init_downloader_config},

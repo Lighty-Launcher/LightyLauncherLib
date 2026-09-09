@@ -3,12 +3,28 @@
 
 //! File verification and cache checking utilities.
 
+use lighty_core::verify_file_sha1_streaming;
 use std::path::PathBuf;
 use tokio::fs;
-// Streaming variant: 8KB chunks instead of loading the full file (client JAR
-// can be 200MB+). The asset-index check in vanilla.rs keeps the non-streaming
-// `verify_file_sha1`.
-use lighty_core::verify_file_sha1_streaming;
+
+/// Returns whether the file at `path` is missing or empty.
+///
+/// The object store is content-addressed — the file name is the expected
+/// SHA1 — so a file sitting there was already verified when written.
+pub async fn is_missing_or_empty(path: &PathBuf) -> bool {
+    match fs::metadata(path).await {
+        Ok(meta) if meta.len() > 0 => false,
+        Ok(_) => {
+            lighty_core::trace_warn!(
+                "[Installer] Zero-byte cached file at {}, re-downloading...",
+                path.display()
+            );
+            let _ = fs::remove_file(path).await;
+            true
+        }
+        Err(_) => true,
+    }
+}
 
 /// Returns whether the file at `path` needs to be (re-)downloaded.
 ///
@@ -34,7 +50,10 @@ pub async fn needs_download(path: &PathBuf, sha1: Option<&String>, name: &str) -
         match verify_file_sha1_streaming(path, hash).await {
             Ok(true) => false,
             _ => {
-                lighty_core::trace_warn!("[Installer] SHA1 mismatch for {}, re-downloading...", name);
+                lighty_core::trace_warn!(
+                    "[Installer] SHA1 mismatch for {}, re-downloading...",
+                    name
+                );
                 let _ = fs::remove_file(path).await;
                 true
             }

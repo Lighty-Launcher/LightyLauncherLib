@@ -24,6 +24,27 @@ pub enum AuthError {
     #[error("Invalid response from server: {0}")]
     InvalidResponse(String),
 
+    #[error("HTTP {status} from the auth server: {body}")]
+    HttpStatus { status: u16, body: String },
+
+    #[error("Missing '{field}' in the auth server response")]
+    MissingField { field: &'static str },
+
+    #[error("This Microsoft account doesn't own Minecraft")]
+    MinecraftNotOwned,
+
+    #[error("Xbox Live is not available in this account's country")]
+    XboxLiveUnavailable,
+
+    #[error("This provider does not support token verification")]
+    VerificationUnsupported,
+
+    #[error("Username must be between {min} and {max} characters")]
+    UsernameLength { min: usize, max: usize },
+
+    #[error("Username can only contain letters, numbers and underscores")]
+    UsernameCharset,
+
     #[error("Token expired or invalid")]
     InvalidToken,
 

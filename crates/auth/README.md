@@ -44,11 +44,8 @@ async fn main() -> anyhow::Result<()> {
 
 > **Azure AD setup required** — your client ID must also be approved by Mojang
 > before it can call Minecraft Services. Follow the full step-by-step guide with
-> screenshots in [docs/microsoft.md](./docs/microsoft.md).
-
-![Azure — Personal Microsoft accounts only](../../assets/microsoft_auth/step_2.png)
-![Azure — Allow public client flows](../../assets/microsoft_auth/step_6.png)
-![Mojang AppID approval form](../../assets/microsoft_auth/step_7.png)
+> screenshots in
+> [docs/application-id-microsoft.md](./docs/application-id-microsoft.md).
 
 ```rust
 use lighty_auth::{microsoft::MicrosoftAuth, Authenticator};
@@ -109,7 +106,7 @@ async fn main() -> anyhow::Result<()> {
 
 ## Related Crates
 
-- **[lighty-launcher](../../../README.md)** - Main package
+- **[lighty-launcher](../../README.md)** - Main package
 - **[lighty-event](../event/README.md)** - Event system (for AuthEvent)
 - **[lighty-core](../core/README.md)** - Hash utilities for offline UUID
 - **[lighty-launch](../launch/README.md)** - Uses UserProfile for launching

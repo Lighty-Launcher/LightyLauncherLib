@@ -8,8 +8,7 @@ Public surface of the `lighty-launch` crate.
 lighty_launch
 ├── launch
 │   ├── Launch              (trait — adds .launch(profile, java))
-│   ├── LaunchBuilder
-│   └── LaunchConfig
+│   └── LaunchBuilder
 ├── installer
 │   └── Installer           (trait — async fn install(&self, &Version, …))
 ├── instance
@@ -32,7 +31,6 @@ lighty_launch
 ```rust
 use lighty_launch::{
     LaunchBuilder,
-    LaunchConfig,
     Installer,
     InstanceControl,
     InstanceError,
@@ -49,7 +47,7 @@ to use its methods (`get_pid`, `close_instance`, `delete_instance`,
 
 ```rust
 // The fluent .launch().run() entry point.
-use lighty_launch::launch::{Launch, LaunchBuilder, LaunchConfig};
+use lighty_launch::launch::{Launch, LaunchBuilder};
 
 // The install pipeline trait.
 use lighty_launch::installer::Installer;
@@ -83,20 +81,6 @@ where T: VersionInfo<LoaderType = Loader> + LoaderExtensions + Arguments + Insta
 ```
 
 Full API and overrides reference: [arguments.md](./arguments.md).
-
-### `LaunchConfig`
-
-Shared launch configuration (currently username / uuid / java
-distribution). Has a `Default` impl. Used by higher-level helpers
-that want a one-shot config object rather than the builder.
-
-```rust
-pub struct LaunchConfig {
-    pub username: String,
-    pub uuid: String,
-    pub java_distribution: JavaDistribution,
-}
-```
 
 ### `Launch` trait
 
@@ -157,12 +141,14 @@ Detail: [instance-control.md](./instance-control.md) (API),
 
 ```rust
 pub enum InstallerError {
-    DownloadFailed(String),
-    VerificationFailed(String),
-    ExtractionFailed(String),
+    HttpStatus       { status: u16, url: String },
+    Sha1Mismatch     { url: String, expected: String, actual: String },
+    StalePartialFile { url: String },
+    RetriesExhausted { attempts: u32, url: String },
+    ConcurrencyClosed,
     InvalidMetadata,
     NoPid,
-    IOError(std::io::Error),
+    Io(std::io::Error),
     // …
 }
 
@@ -171,6 +157,7 @@ pub enum InstanceError {
     StillRunning  { instance_name: String, pids: Vec<u32> },
     Io            (std::io::Error),
     DuplicatePid  { pid: u32, existing_instance: String },
+    KillFailed    { pid: u32, reason: String },
 }
 ```
 

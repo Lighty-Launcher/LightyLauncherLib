@@ -15,7 +15,7 @@ use lighty_core::mkdir;
 
 use lighty_core::system::OS;
 
-use crate::loaders::vanilla::vanilla::{should_apply_rules, VanillaQuery};
+use crate::loaders::vanilla::vanilla::{should_apply_rules, VANILLA, VanillaQuery};
 use crate::types::version_metadata::{Arguments, Library, MainClass, Version};
 use crate::types::VersionInfo;
 use lighty_core::QueryError;
@@ -107,10 +107,10 @@ pub fn legacy_installer_path<V: VersionInfo>(version: &V) -> PathBuf {
 pub async fn ensure_installer_cached<V: VersionInfo>(version: &V) -> Result<PathBuf> {
     let mc = version.minecraft_version();
     if is_pre_installer_forge(mc) {
-        return Err(QueryError::UnsupportedLoader(format!(
-            "Forge for Minecraft {} predates the installer format (1.5.2+ only)",
-            mc
-        )));
+        return Err(QueryError::LoaderTooOld {
+            loader: "Forge",
+            minecraft_version: mc.to_string(),
+        });
     }
 
     let profiles_dir = version.game_dirs().join(".forge");
@@ -403,12 +403,19 @@ fn extract_artifact_key(maven_name: &str) -> String {
     }
 }
 
+/// Legacy Forge carries its own main class outright — nothing to merge.
+pub(super) fn legacy_main_class(profile: &ForgeLegacyInstallProfile) -> MainClass {
+    MainClass {
+        main_class: profile.version_info.main_class.clone(),
+    }
+}
+
 /// Builds the full pivot `Version` for a legacy Forge instance.
 pub async fn legacy_version_builder<V: VersionInfo>(
     version: &V,
     profile: &ForgeLegacyInstallProfile,
 ) -> Result<Version> {
-    let vanilla_data = VanillaQuery::fetch_full_data(version).await?;
+    let vanilla_data = VANILLA.get_raw(version).await?;
     let vanilla_builder = VanillaQuery::version_builder(version, &vanilla_data).await?;
 
     let forge_libs = extract_legacy_libraries(profile).await;
@@ -417,9 +424,7 @@ pub async fn legacy_version_builder<V: VersionInfo>(
     let extra_jvm = legacy_fml_jvm_workarounds(version.minecraft_version());
 
     Ok(Version {
-        main_class: MainClass {
-            main_class: profile.version_info.main_class.clone(),
-        },
+        main_class: legacy_main_class(profile),
         java_version: vanilla_builder.java_version,
         arguments: parse_legacy_arguments(
             &profile.version_info.minecraft_arguments,

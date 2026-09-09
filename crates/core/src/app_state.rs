@@ -42,7 +42,20 @@ impl AppState {
             .join(&name);
         PATHS
             .set(LauncherPaths { name, data_dir, config_dir, cache_dir })
-            .map_err(|_| AppStateError::AlreadyInitialized)
+            .map_err(|_| AppStateError::AlreadyInitialized)?;
+
+        // Startup diagnostic: an antivirus or a cracked-launcher installer can
+        // blackhole login in the hosts file long before the first request.
+        match crate::hosts::blocked_launcher_domains(&[]) {
+            Ok(entries) if !entries.is_empty() => crate::trace_warn!(
+                entries = %entries.join(", "),
+                "Hosts file intercepts domains the launcher needs"
+            ),
+            Err(err) => crate::trace_debug!(error = %err, "Could not read the hosts file"),
+            _ => {}
+        }
+
+        Ok(())
     }
 
     /// Returns the resolved launcher paths.

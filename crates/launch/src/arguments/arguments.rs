@@ -410,16 +410,18 @@ fn format_jvm_option(key: &str, value: &str) -> String {
 }
 
 /// Removes JVM options whose key appears in `jvm_removals`.
+///
+/// Prefix match, like `apply_jvm_overrides`: an -X option glues its value to
+/// the key, so -Xmx4G is only reachable through "Xmx".
 fn apply_jvm_removals(jvm_args: &mut Vec<String>, jvm_removals: &HashSet<String>) {
     jvm_args.retain(|arg| {
-        let arg_key = if let Some(stripped) = arg.strip_prefix('-') {
-            stripped.split('=').next().unwrap_or(stripped)
-                .split(|c: char| c.is_numeric()).next().unwrap_or(stripped)
-        } else {
+        let Some(option) = arg.strip_prefix('-') else {
             return true;
         };
 
-        !jvm_removals.contains(arg_key)
+        !jvm_removals
+            .iter()
+            .any(|key| option.starts_with(key.split('=').next().unwrap_or(key)))
     });
 }
 

@@ -1,9 +1,8 @@
-# Runtime — spawn + stream a `java` process
+# Runtime — spawn a `java` process
 
 `JavaRuntime` is a thin wrapper around `tokio::process::Command`. It
-spawns the binary, returns the `Child`, and offers `handle_io` to
-stream stdout / stderr until the process exits (or a one-shot
-terminator fires).
+spawns the binary and returns the `Child` with stdout / stderr piped,
+leaving the caller free to stream them however it wants.
 
 ## API
 
@@ -18,25 +17,16 @@ impl JavaRuntime {
         arguments: Vec<String>,
         game_dir: &Path,
     ) -> JavaRuntimeResult<tokio::process::Child>;
-
-    pub async fn handle_io<D: Send + Sync>(
-        &self,
-        process:    &mut tokio::process::Child,
-        on_stdout:  fn(&D, &[u8]) -> JavaRuntimeResult<()>,
-        on_stderr:  fn(&D, &[u8]) -> JavaRuntimeResult<()>,
-        terminator: tokio::sync::oneshot::Receiver<()>,
-        data:       &D,
-    ) -> JavaRuntimeResult<()>;
 }
 ```
 
 `game_dir` becomes the process's working directory (this is what gets
 passed to Minecraft via `${game_directory}`).
 
-`handle_io` takes **function pointers** (not closures) so they can
-cross the Tokio `select!` cleanly. The `data` argument is an opaque
-context bag — pass whatever the callbacks need to share (a logger
-handle, an `EventBus`, …).
+Both pipes are **always** created, so whoever owns the `Child` has to
+drain them: an unread pipe fills up and the JVM blocks on `write` once
+the buffer is full. `lighty-launch` does this in
+`handle_console_streams`.
 
 Windows-only detail: `execute` sets `CREATE_NO_WINDOW` so spawned
 processes don't pop up a console window.
@@ -47,7 +37,7 @@ processes don't pop up a console window.
 
 ```rust
 use lighty_java::runtime::JavaRuntime;
-use tokio::sync::oneshot;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use std::path::Path;
 
 #[tokio::main]
@@ -55,25 +45,22 @@ async fn main() -> anyhow::Result<()> {
     let rt = JavaRuntime::new("/usr/bin/java".into());
     let mut child = rt.execute(vec!["-version".into()], Path::new(".")).await?;
 
-    let (_tx, rx) = oneshot::channel();
-    rt.handle_io::<()>(
-        &mut child,
-        |_, b| { print!("{}",  String::from_utf8_lossy(b)); Ok(()) },
-        |_, b| { eprint!("{}", String::from_utf8_lossy(b)); Ok(()) },
-        rx,
-        &(),
-    ).await?;
+    let stderr = child.stderr.take().expect("stderr is piped");
+    let mut lines = BufReader::new(stderr).lines();
+    while let Some(line) = lines.next_line().await? {
+        eprintln!("{line}");
+    }
     Ok(())
 }
 ```
 
-`java -version` writes to stderr — both callbacks get hit.
+`java -version` writes to stderr — drain stdout too, or the pipe fills.
 
 ### Launch a JAR with memory tuning
 
 ```rust
 use lighty_java::runtime::JavaRuntime;
-use tokio::sync::oneshot;
+use tokio::io::{self, AsyncBufReadExt, BufReader};
 use std::path::Path;
 
 #[tokio::main]
@@ -89,37 +76,36 @@ async fn main() -> anyhow::Result<()> {
     ];
     let mut child = rt.execute(args, Path::new("/games/minecraft")).await?;
 
-    let (term_tx, term_rx) = oneshot::channel();
-    let io = rt.handle_io::<()>(
-        &mut child,
-        |_, b| { print!("{}",  String::from_utf8_lossy(b)); Ok(()) },
-        |_, b| { eprint!("{}", String::from_utf8_lossy(b)); Ok(()) },
-        term_rx,
-        &(),
-    );
+    let stdout = child.stdout.take().expect("stdout is piped");
+    let mut stderr = child.stderr.take().expect("stderr is piped");
+    tokio::spawn(async move { let _ = io::copy(&mut stderr, &mut io::sink()).await; });
 
-    // Fire `term_tx` from elsewhere to bail out early
-    let _ = term_tx;
-    io.await?;
+    let mut lines = BufReader::new(stdout).lines();
+    while let Some(line) = lines.next_line().await? {
+        println!("{line}");
+    }
+
+    // Call `child.kill().await` from elsewhere to bail out early
     Ok(())
 }
 ```
 
 ### Wait for the exit code
 
-`handle_io` returns once the process exits or the terminator fires.
-The exit code is available via `child.wait().await?`:
+Drain both pipes first, then `child.wait().await?` yields the exit
+code:
 
 ```rust
 # use lighty_java::runtime::JavaRuntime;
-# use tokio::sync::oneshot;
+# use tokio::io::{self, AsyncReadExt};
 # use std::path::Path;
 # async fn run() -> anyhow::Result<()> {
 let rt = JavaRuntime::new("/usr/bin/java".into());
 let mut child = rt.execute(vec!["-version".into()], Path::new(".")).await?;
-let (_tx, rx) = oneshot::channel();
-rt.handle_io::<()>(&mut child,
-    |_, _| Ok(()), |_, _| Ok(()), rx, &()).await?;
+let mut stdout = child.stdout.take().expect("stdout is piped");
+let mut stderr = child.stderr.take().expect("stderr is piped");
+io::copy(&mut stdout, &mut io::sink()).await?;
+io::copy(&mut stderr, &mut io::sink()).await?;
 
 let status = child.wait().await?;
 println!("exit code: {:?}", status.code());
@@ -138,16 +124,13 @@ pub enum JavaRuntimeError {
 }
 ```
 
-The Windows forceful-termination code `-1073740791` (0xC0000409) is
-treated as a normal exit, not an error.
-
 ## How `lighty-launch` uses it
 
-`lighty-launch::launcher::Launcher` calls `execute` with the full
-launch argv (built from `Arguments`) and pipes `handle_io` into the
-event bus — every line becomes a `ConsoleOutputEvent` and the final
-exit triggers `InstanceExited`. The same `oneshot` terminator is
-hooked to the cancel button in the host UI.
+`lighty-launch::launch::runner` calls `execute` with the full launch
+argv (built from `Arguments`) and hands the `Child` to
+`handle_console_streams` — every line becomes a `ConsoleOutputEvent`
+and the final exit triggers `InstanceExited`. Without the `events`
+feature the pipes go to a sink so the JVM never blocks.
 
 ## See also
 

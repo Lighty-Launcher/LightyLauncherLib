@@ -6,17 +6,17 @@
 use lighty_loaders::types::{VersionInfo, version_metadata::AssetsFile};
 use lighty_core::time_it;
 use crate::errors::InstallerResult;
-use crate::installer::verifier::needs_download;
-use crate::installer::downloader::download_small_with_concurrency_limit;
+use crate::installer::verifier::{is_missing_or_empty, needs_download};
+use crate::installer::downloader::{download_small_with_concurrency_limit, DownloadTask};
 
 #[cfg(feature = "events")]
 use lighty_event::EventBus;
 
 /// Collects assets that need to be downloaded.
-pub async fn collect_asset_tasks(
+pub async fn collect_asset_tasks<'a>(
     version: &impl VersionInfo,
-    assets: Option<&AssetsFile>,
-) -> Vec<(String, std::path::PathBuf)> {
+    assets: Option<&'a AssetsFile>,
+) -> Vec<DownloadTask<'a>> {
     let Some(assets) = assets else {
         return Vec::new();
     };
@@ -28,25 +28,42 @@ pub async fn collect_asset_tasks(
     for asset in assets.objects.values() {
         let Some(url) = &asset.url else { continue };
 
-        let path = match &asset.path {
-            Some(custom) => assets_root.join(custom),
+        // A custom path is not content-addressed, so its content still has
+        // to be hashed; everything under objects/ is named by its own SHA1.
+        let outdated = match &asset.path {
+            Some(custom) => {
+                let path = assets_root.join(custom);
+                needs_download(&path, Some(&asset.hash), &asset.hash)
+                    .await
+                    .then_some(path)
+            }
             None => {
-                let hash_prefix = &asset.hash[0..2];
-                objects_root.join(hash_prefix).join(&asset.hash)
+                let path = objects_root.join(&asset.hash[0..2]).join(&asset.hash);
+                is_missing_or_empty(&path).await.then_some(path)
             }
         };
 
-        if needs_download(&path, Some(&asset.hash), &asset.hash).await {
-            tasks.push((url.clone(), path));
+        if let Some(path) = outdated {
+            tasks.push(DownloadTask {
+                url,
+                dest: path,
+                sha1: Some(&asset.hash),
+                size: asset.size,
+            });
         }
     }
+
+    // Two index entries can share a hash and thus one destination file:
+    // 1.7.x declares every sound under both `sound/` and `sounds/`.
+    tasks.sort_unstable_by(|left, right| left.dest.cmp(&right.dest));
+    tasks.dedup_by(|left, right| left.dest == right.dest);
 
     tasks
 }
 
 /// Downloads assets from pre-collected tasks.
 pub async fn download_assets(
-    tasks: Vec<(String, std::path::PathBuf)>,
+    tasks: Vec<DownloadTask<'_>>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
     if tasks.is_empty() {

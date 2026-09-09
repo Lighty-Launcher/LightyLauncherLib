@@ -31,16 +31,18 @@ pub trait LoaderExtensions {
     /// Get only libraries metadata.
     async fn get_libraries(&self) -> Result<Arc<VersionMetaData>>;
 
-    /// Get main class information (Vanilla-based loaders only).
+    /// Get main class information, already merged with the wrapped
+    /// Minecraft version's the way the full builder merges it.
     async fn get_main_class(&self) -> Result<Arc<VersionMetaData>>;
 
-    /// Get native libraries (Vanilla-based loaders only).
+    /// Get native libraries. No loader overrides them, so they always come
+    /// from the wrapped Minecraft version.
     async fn get_natives(&self) -> Result<Arc<VersionMetaData>>;
 
-    /// Get Java version requirement (Vanilla-based loaders only).
+    /// Get Java version requirement. No loader overrides it either.
     async fn get_java_version(&self) -> Result<Arc<VersionMetaData>>;
 
-    /// Get assets information (Vanilla-based loaders only).
+    /// Get assets information.
     async fn get_assets(&self) -> Result<Arc<VersionMetaData>>;
     async fn invalidate_cache(&self);
 }
@@ -84,9 +86,10 @@ where
             }
 
             _ => {
-                Err(QueryError::UnsupportedLoader(
-                    format!("Loader {:?} is not supported or feature is not enabled", self.loader())
-                ))
+                Err(QueryError::OperationUnsupported {
+                    operation: "get_metadata()",
+                    loader: format!("{:?}", self.loader()),
+                })
             }
         }
     }
@@ -121,24 +124,47 @@ where
             }
 
             _ => {
-                Err(QueryError::UnsupportedLoader(
-                    format!("get_libraries() not supported for {:?}", self.loader())
-                ))
+                Err(QueryError::OperationUnsupported {
+                    operation: "get_libraries()",
+                    loader: format!("{:?}", self.loader()),
+                })
             }
         }
     }
 
     async fn get_main_class(&self) -> Result<Arc<VersionMetaData>> {
-        #[cfg(feature = "vanilla")]
-        {
-            VANILLA.get(self, VanillaQuery::MainClass).await
-        }
+        match self.loader() {
+            #[cfg(feature = "vanilla")]
+            Loader::Vanilla => {
+                VANILLA.get(self, VanillaQuery::MainClass).await
+            }
 
-        #[cfg(not(feature = "vanilla"))]
-        {
-            Err(QueryError::UnsupportedLoader(
-                "get_main_class() requires vanilla feature".to_string()
-            ))
+            #[cfg(feature = "fabric")]
+            Loader::Fabric => {
+                FABRIC.get(self, FabricQuery::MainClass).await
+            }
+
+            #[cfg(feature = "quilt")]
+            Loader::Quilt => {
+                QUILT.get(self, QuiltQuery::MainClass).await
+            }
+
+            #[cfg(feature = "neoforge")]
+            Loader::NeoForge => {
+                NEOFORGE.get(self, NeoForgeQuery::MainClass).await
+            }
+
+            #[cfg(feature = "forge")]
+            Loader::Forge => {
+                FORGE.get(self, ForgeQuery::MainClass).await
+            }
+
+            _ => {
+                Err(QueryError::OperationUnsupported {
+                    operation: "get_main_class()",
+                    loader: format!("{:?}", self.loader()),
+                })
+            }
         }
     }
 
@@ -150,9 +176,10 @@ where
 
         #[cfg(not(feature = "vanilla"))]
         {
-            Err(QueryError::UnsupportedLoader(
-                "get_natives() requires vanilla feature".to_string()
-            ))
+            Err(QueryError::FeatureRequired {
+                operation: "get_natives()",
+                feature: "vanilla",
+            })
         }
     }
 
@@ -164,9 +191,10 @@ where
 
         #[cfg(not(feature = "vanilla"))]
         {
-            Err(QueryError::UnsupportedLoader(
-                "get_java_version() requires vanilla feature".to_string()
-            ))
+            Err(QueryError::FeatureRequired {
+                operation: "get_java_version()",
+                feature: "vanilla",
+            })
         }
     }
 
@@ -178,9 +206,10 @@ where
 
         #[cfg(not(feature = "vanilla"))]
         {
-            Err(QueryError::UnsupportedLoader(
-                "get_assets() requires vanilla feature".to_string()
-            ))
+            Err(QueryError::FeatureRequired {
+                operation: "get_assets()",
+                feature: "vanilla",
+            })
         }
     }
 

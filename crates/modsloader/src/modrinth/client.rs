@@ -88,10 +88,10 @@ fn loader_tag(loader: &Loader) -> Result<&'static str, QueryError> {
         Loader::NeoForge => Ok("neoforge"),
         Loader::Quilt => Ok("quilt"),
         Loader::Vanilla | Loader::Optifine | Loader::LightyUpdater => {
-            Err(QueryError::UnsupportedLoader(format!(
-                "Modrinth doesn't host mods for {:?} instances",
-                loader
-            )))
+            Err(QueryError::LoaderNotOnProvider {
+                provider: "Modrinth",
+                loader: format!("{:?}", loader),
+            })
         }
     }
 }
