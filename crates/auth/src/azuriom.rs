@@ -6,6 +6,7 @@
 use crate::auth::route_token;
 use crate::{Authenticator, AuthError, AuthProvider, AuthResult, UserProfile, UserRole};
 use lighty_core::hosts::HTTP_CLIENT as CLIENT;
+use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 
 #[cfg(feature = "events")]
@@ -15,8 +16,8 @@ use lighty_event::{EventBus, Event, AuthEvent};
 pub struct AzuriomAuth {
     base_url: String,
     email: String,
-    password: String,
-    two_factor_code: Option<String>,
+    password: SecretString,
+    two_factor_code: Option<SecretString>,
     #[cfg(feature = "keyring")]
     keyring_service: Option<String>,
 }
@@ -27,7 +28,7 @@ impl AzuriomAuth {
         Self {
             base_url: base_url.into().trim_end_matches('/').to_string(),
             email: email.into(),
-            password: password.into(),
+            password: SecretString::from(password.into()),
             two_factor_code: None,
             #[cfg(feature = "keyring")]
             keyring_service: None,
@@ -36,7 +37,7 @@ impl AzuriomAuth {
 
     /// Set the 2FA code (call when authentication returned `TwoFactorRequired`).
     pub fn set_two_factor_code(&mut self, code: impl Into<String>) {
-        self.two_factor_code = Some(code.into());
+        self.two_factor_code = Some(SecretString::from(code.into()));
     }
 
     /// Clear the 2FA code.
@@ -111,11 +112,11 @@ impl Authenticator for AzuriomAuth {
 
         let mut body = serde_json::json!({
             "email": self.email,
-            "password": self.password,
+            "password": self.password.expose_secret(),
         });
 
         if let Some(code) = &self.two_factor_code {
-            body["code"] = serde_json::json!(code);
+            body["code"] = serde_json::json!(code.expose_secret());
         }
 
         let response = CLIENT
