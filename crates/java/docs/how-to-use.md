@@ -47,7 +47,7 @@ correlate the two.
 
 ```rust
 use lighty_java::runtime::JavaRuntime;
-use tokio::sync::oneshot;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use std::path::Path;
 
 #[tokio::main]
@@ -63,24 +63,21 @@ async fn main() -> anyhow::Result<()> {
         Path::new("/tmp"),
     ).await?;
 
-    // Stream output until the process exits or the terminator fires
-    let (_tx, rx) = oneshot::channel::<()>();
-    runtime.handle_io::<()>(
-        &mut child,
-        |_data, chunk| { print!("{}",  String::from_utf8_lossy(chunk)); Ok(()) },
-        |_data, chunk| { eprint!("{}", String::from_utf8_lossy(chunk)); Ok(()) },
-        rx,
-        &(),
-    ).await?;
+    // Stream output until the process exits
+    let stdout = child.stdout.take().expect("stdout is piped");
+    let mut lines = BufReader::new(stdout).lines();
+    while let Some(line) = lines.next_line().await? {
+        println!("{line}");
+    }
 
     Ok(())
 }
 ```
 
-`handle_io` takes function pointers (not closures) so they can be
-`fn`-shaped across the Tokio select loop. The `data` parameter is an
-opaque context — pass anything you need to share (a logger, an
-`EventBus`, …).
+`execute` always pipes stdout and stderr, so both have to be drained:
+an unread pipe fills up and the JVM blocks on `write`. Send the one you
+don't care about to `tokio::io::sink()` rather than leaving it
+untouched.
 
 ## 3. Subscribe to install events
 

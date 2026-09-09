@@ -6,8 +6,8 @@ responsibilities:
 1. **Download a JRE** from one of four supported distributions
    (Temurin, GraalVM, Zulu, Liberica), extract it into the launcher
    cache, locate the `java` binary.
-2. **Spawn a `java` process** with the right arguments and stream its
-   stdout / stderr.
+2. **Spawn a `java` process** with the right arguments and hand back
+   its `Child`, stdout / stderr piped.
 
 The crate doesn't know about Minecraft — it's a generic JRE installer
 + process runner. `lighty-launch` calls it after the version manifest
@@ -18,9 +18,9 @@ is resolved.
 | Module | Surface |
 |---|---|
 | `jre_downloader` | `find_java_binary`, `jre_download` |
-| `runtime` | `JavaRuntime::new`, `execute`, `handle_io` |
+| `runtime` | `JavaRuntime::new`, `execute` |
 | `distribution` (private) | URL routing per provider — exposed via `JavaDistribution::get_download_url` |
-| Root | `JavaDistribution`, `DistributionSelection`, error enums |
+| Root | `JavaDistribution`, error enums |
 
 ## JavaDistribution
 
@@ -58,7 +58,6 @@ flowchart LR
     JRE --> EX[lighty_core::extract]
     APP --> RUN[JavaRuntime::execute]
     RUN --> CHILD[tokio Child]
-    APP --> IO[JavaRuntime::handle_io]
 ```
 
 ## See also
@@ -66,7 +65,7 @@ flowchart LR
 - [`how-to-use.md`](./how-to-use.md) — install + run a JRE
 - [`distributions.md`](./distributions.md) — picking a provider
 - [`installation.md`](./installation.md) — `jre_download` walkthrough
-- [`runtime.md`](./runtime.md) — `JavaRuntime` API + I/O streaming
+- [`runtime.md`](./runtime.md) — `JavaRuntime` API + process spawn
 - [`events.md`](./events.md) — the eight `JavaEvent` variants
 - [`exports.md`](./exports.md) — public API surface
 - [`../../event/docs/events.md`](../../event/docs/events.md) — workspace event catalogue

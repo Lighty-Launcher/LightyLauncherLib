@@ -6,7 +6,7 @@ Public surface of `lighty-java`.
 
 ```rust
 pub use lighty_java::{
-    JavaDistribution, DistributionSelection,
+    JavaDistribution,
     JreError,             JreResult,
     JavaRuntimeError,     JavaRuntimeResult,
     DistributionError,    DistributionResult,
@@ -51,14 +51,6 @@ impl JavaRuntime {
     pub fn new(path: PathBuf) -> Self;
     pub async fn execute(&self, arguments: Vec<String>, game_dir: &Path)
         -> JavaRuntimeResult<tokio::process::Child>;
-    pub async fn handle_io<D: Send + Sync>(
-        &self,
-        process: &mut tokio::process::Child,
-        on_stdout: fn(&D, &[u8]) -> JavaRuntimeResult<()>,
-        on_stderr: fn(&D, &[u8]) -> JavaRuntimeResult<()>,
-        terminator: tokio::sync::oneshot::Receiver<()>,
-        data: &D,
-    ) -> JavaRuntimeResult<()>;
 }
 ```
 
@@ -73,16 +65,9 @@ impl JavaDistribution {
     pub fn get_fallback(&self, version: u8) -> Option<JavaDistribution>;
     pub async fn get_download_url(&self, jre_version: &u8) -> DistributionResult<String>;
 }
-
-pub enum DistributionSelection {
-    Automatic(String),                  // serde tag = "automatic"
-    Custom(String),                     // serde tag = "custom"
-    Manual(JavaDistribution),           // serde tag = "manual"
-}
 ```
 
-`Default for JavaDistribution` returns `Temurin`. `Default for
-DistributionSelection` returns `Automatic(String::new())`.
+`Default for JavaDistribution` returns `Temurin`.
 
 ### Errors
 

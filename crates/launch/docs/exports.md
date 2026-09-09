@@ -8,8 +8,7 @@ Public surface of the `lighty-launch` crate.
 lighty_launch
 ├── launch
 │   ├── Launch              (trait — adds .launch(profile, java))
-│   ├── LaunchBuilder
-│   └── LaunchConfig
+│   └── LaunchBuilder
 ├── installer
 │   └── Installer           (trait — async fn install(&self, &Version, …))
 ├── instance
@@ -32,7 +31,6 @@ lighty_launch
 ```rust
 use lighty_launch::{
     LaunchBuilder,
-    LaunchConfig,
     Installer,
     InstanceControl,
     InstanceError,
@@ -49,7 +47,7 @@ to use its methods (`get_pid`, `close_instance`, `delete_instance`,
 
 ```rust
 // The fluent .launch().run() entry point.
-use lighty_launch::launch::{Launch, LaunchBuilder, LaunchConfig};
+use lighty_launch::launch::{Launch, LaunchBuilder};
 
 // The install pipeline trait.
 use lighty_launch::installer::Installer;
@@ -83,20 +81,6 @@ where T: VersionInfo<LoaderType = Loader> + LoaderExtensions + Arguments + Insta
 ```
 
 Full API and overrides reference: [arguments.md](./arguments.md).
-
-### `LaunchConfig`
-
-Shared launch configuration (currently username / uuid / java
-distribution). Has a `Default` impl. Used by higher-level helpers
-that want a one-shot config object rather than the builder.
-
-```rust
-pub struct LaunchConfig {
-    pub username: String,
-    pub uuid: String,
-    pub java_distribution: JavaDistribution,
-}
-```
 
 ### `Launch` trait
 
