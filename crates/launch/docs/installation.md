@@ -128,16 +128,17 @@ progress bar.
 
 ## Total-byte calculation
 
-`calculate_download_size` only walks metadata for libraries, client
-JAR, assets and natives. The mod-like total is a single pre-summed
-`mod_like_bytes: u64` returned by the four bucket collectors —
-avoiding an O(N·M) re-scan of the `Mods` slice:
+Every collector returns `Vec<DownloadTask>`, and each task carries the
+size the manifest declared. The total is one pass over the eight
+lists — no lookup, no re-scan of the source collections:
 
 ```rust
-let mod_like = mod_bytes
-             + resourcepack_bytes
-             + shaderpack_bytes
-             + datapack_bytes;
+let total_bytes: u64 = library_tasks
+    .iter()
+    .chain(&asset_tasks)
+    .chain(&mod_tasks)
+    .map(|task| task.size)
+    .sum();
 ```
 
 ## Loader-specific post-install
@@ -199,12 +200,14 @@ if let VersionMetaData::Version(v) = metadata.as_ref() {
 
 ```rust
 pub enum InstallerError {
-    DownloadFailed(String),
-    VerificationFailed(String),
-    ExtractionFailed(String),
+    HttpStatus       { status: u16, url: String },
+    Sha1Mismatch     { url: String, expected: String, actual: String },
+    StalePartialFile { url: String },
+    RetriesExhausted { attempts: u32, url: String },
+    ConcurrencyClosed,
     InvalidMetadata,
     NoPid,
-    IOError(std::io::Error),
+    Io(std::io::Error),
     // …
 }
 ```

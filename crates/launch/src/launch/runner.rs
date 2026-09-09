@@ -9,8 +9,6 @@ use lighty_event::EventBus;
 use lighty_java::jre_downloader::{find_java_binary, jre_download};
 use lighty_java::runtime::JavaRuntime;
 use lighty_java::JavaDistribution;
-#[cfg(not(feature = "events"))]
-use lighty_java::JreError;
 use lighty_loaders::types::version_metadata::{Version, VersionMetaData};
 use lighty_loaders::types::{Loader, LoaderExtensions, VersionInfo};
 use lighty_modsloader::WithMods;
@@ -350,8 +348,7 @@ where
                 },
                 event_bus,
             )
-            .await
-            .map_err(|e| InstallerError::DownloadFailed(format!("JRE download failed: {}", e)))?;
+            .await?;
 
             #[cfg(not(feature = "events"))]
             let path = jre_download(
@@ -362,10 +359,7 @@ where
                     lighty_core::trace_debug!("[Java] Download progress: {}/{}", current, total);
                 },
             )
-            .await
-            .map_err(|e: JreError| {
-                InstallerError::DownloadFailed(format!("JRE download failed: {}", e))
-            })?;
+            .await?;
 
             lighty_core::trace_info!("[Java] Java {} installed successfully", java_version);
             Ok(path)
@@ -483,10 +477,7 @@ where
         }
         Err(e) => {
             lighty_core::trace_error!("[Launch] Failed to launch game: {}", e);
-            Err(InstallerError::DownloadFailed(format!(
-                "Launch failed: {}",
-                e
-            )))
+            Err(e.into())
         }
     }
 }

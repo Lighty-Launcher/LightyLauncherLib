@@ -16,24 +16,6 @@ pub use errors::{
     DistributionError, DistributionResult,
 };
 
-/// Selection method for Java distribution
-#[derive(Deserialize, Serialize, Clone)]
-#[serde(tag = "type", content = "value")]
-pub enum DistributionSelection {
-    #[serde(rename = "automatic")]
-    Automatic(String),
-    #[serde(rename = "custom")]
-    Custom(String),
-    #[serde(rename = "manual")]
-    Manual(JavaDistribution),
-}
-
-impl Default for DistributionSelection {
-    fn default() -> Self {
-        DistributionSelection::Automatic(String::new())
-    }
-}
-
 /// Available Java distributions
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub enum JavaDistribution {

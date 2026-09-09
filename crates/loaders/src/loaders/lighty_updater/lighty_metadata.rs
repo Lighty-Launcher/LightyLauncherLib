@@ -140,6 +140,9 @@ pub struct Client {
     pub size: u64,
 }
 
+// TODO: Asset, Library and Client are field-for-field copies of the pivot
+// types, so extract_* rebuilds them one field at a time; deserializing
+// straight into the pivot would drop the conversion and the drift risk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Asset {
     pub hash: String,

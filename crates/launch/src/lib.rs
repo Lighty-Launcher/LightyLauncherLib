@@ -18,6 +18,6 @@ pub mod errors;
 pub mod installer;
 pub mod instance;
 
-pub use launch::{LaunchBuilder, LaunchConfig};
+pub use launch::LaunchBuilder;
 pub use installer::Installer;
 pub use instance::{InstanceControl, InstanceError, InstanceResult};

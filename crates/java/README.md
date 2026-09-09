@@ -13,9 +13,8 @@ Automatic Java Runtime Environment (JRE) management for Minecraft launchers with
 
 ## Quick Start
 
-```toml
-[dependencies]
-lighty-java = "26.5.12"
+```bash
+cargo add lighty-java
 ```
 
 ### Basic Usage

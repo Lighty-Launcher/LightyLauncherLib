@@ -4,7 +4,6 @@ Version management and builders for [LightyLauncher](https://crates.io/crates/li
 
 ## Overview
 
-**Version**: 26.5.12
 **Part of**: [LightyLauncher](https://crates.io/crates/lighty-launcher)
 
 `lighty-version` provides version builders that implement the `VersionInfo` trait from `lighty-loaders`, enabling version management for Minecraft instances.
@@ -19,9 +18,8 @@ Version management and builders for [LightyLauncher](https://crates.io/crates/li
 
 ## Quick Start
 
-```toml
-[dependencies]
-lighty-version = "26.5.12"
+```bash
+cargo add lighty-version
 ```
 
 ### VersionBuilder (Standard Loaders)
@@ -114,7 +112,7 @@ Both implement `VersionInfo` from `lighty-loaders`.
 
 ## Related Crates
 
-- **[lighty-launcher](../../../README.md)** - Main package
+- **[lighty-launcher](../../README.md)** - Main package
 - **[lighty-loaders](../loaders/README.md)** - VersionInfo trait and loaders
 - **[lighty-core](../core/README.md)** - AppState for launcher paths
 - **[lighty-launch](../launch/README.md)** - Uses VersionBuilder for launching

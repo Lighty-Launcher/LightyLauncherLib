@@ -10,6 +10,9 @@ documentation.workspace = true
 rust-version.workspace = true
 description = "Minecraft mod loaders support for Lighty Launcher"
 
+[lints]
+workspace = true
+
 [dependencies]
 # Workspace crates
 lighty-core = { workspace = true }

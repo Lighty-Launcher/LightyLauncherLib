@@ -4,7 +4,7 @@
 [![Crates.io](https://img.shields.io/crates/v/lighty-launcher.svg)](https://crates.io/crates/lighty-launcher)
 [![Documentation](https://img.shields.io/badge/docs-gitbook-blue.svg)](https://hamadi.gitbook.io/lightylauncher)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Rust Version](https://img.shields.io/badge/rust-1.95%2B-red.svg)](https://www.rust-lang.org)
+[![Rust Version](https://img.shields.io/badge/rust-1.98%2B-red.svg)](https://www.rust-lang.org)
 [![Maintainer](https://img.shields.io/badge/Maintainer-Hamadi-blue.svg)](https://github.com/Kalandi)
 
 <p align="center">
@@ -19,7 +19,7 @@
 
 ```toml
 [dependencies]
-lighty-launcher = { version = "26.5.12", features = ["vanilla"] }
+lighty-launcher = { version = "<project_version>", features = ["vanilla"] }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"
 ```
@@ -92,8 +92,8 @@ lighty-launcher/             # Root crate (prelude + feature gates)
 
 Mix and match:
 
-```toml
-lighty-launcher = { version = "26.5.12", features = ["fabric", "modrinth", "events"] }
+```bash
+cargo add lighty-launcher --features fabric,modrinth,events
 ```
 
 ## Documentation

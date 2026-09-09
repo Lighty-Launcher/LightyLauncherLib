@@ -12,9 +12,8 @@ Real-time event system for monitoring launcher operations and progress tracking.
 
 ## Quick Start
 
-```toml
-[dependencies]
-lighty-event = "26.5.12"
+```bash
+cargo add lighty-event
 ```
 
 ```rust

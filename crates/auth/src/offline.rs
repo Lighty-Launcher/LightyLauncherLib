@@ -51,27 +51,19 @@ impl Authenticator for OfflineAuth {
         }
 
         if self.username.len() < 3 || self.username.len() > 16 {
-            let error_msg = "Username must be between 3 and 16 characters".to_string();
-            #[cfg(feature = "events")]
-            if let Some(bus) = event_bus {
-                bus.emit(Event::Auth(AuthEvent::AuthenticationFailed {
-                    provider: "Offline".to_string(),
-                    error: error_msg.clone(),
-                }));
-            }
-            return Err(AuthError::Custom(error_msg));
+            return Err(rejected(
+                AuthError::UsernameLength { min: 3, max: 16 },
+                #[cfg(feature = "events")]
+                event_bus,
+            ));
         }
 
         if !self.username.chars().all(|c| c.is_alphanumeric() || c == '_') {
-            let error_msg = "Username can only contain letters, numbers, and underscores".to_string();
-            #[cfg(feature = "events")]
-            if let Some(bus) = event_bus {
-                bus.emit(Event::Auth(AuthEvent::AuthenticationFailed {
-                    provider: "Offline".to_string(),
-                    error: error_msg.clone(),
-                }));
-            }
-            return Err(AuthError::Custom(error_msg));
+            return Err(rejected(
+                AuthError::UsernameCharset,
+                #[cfg(feature = "events")]
+                event_bus,
+            ));
         }
 
         let uuid = generate_offline_uuid(&self.username);
@@ -101,4 +93,21 @@ impl Authenticator for OfflineAuth {
             provider: AuthProvider::Offline,
         })
     }
+}
+
+/// Announces a rejected username and hands the error back, so the event text
+/// and the error can never drift apart.
+fn rejected(
+    error: AuthError,
+    #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+) -> AuthError {
+    #[cfg(feature = "events")]
+    if let Some(bus) = event_bus {
+        bus.emit(Event::Auth(AuthEvent::AuthenticationFailed {
+            provider: "Offline".to_string(),
+            error: error.to_string(),
+        }));
+    }
+
+    error
 }

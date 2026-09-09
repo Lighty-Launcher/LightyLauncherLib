@@ -207,7 +207,7 @@ use lighty_launch::errors::{InstallerError, InstanceError};
 
 match instance.launch(&profile, JavaDistribution::Temurin).run().await {
     Ok(_)                                       => println!("launched"),
-    Err(InstallerError::DownloadFailed(msg))    => eprintln!("download: {msg}"),
+    Err(InstallerError::HttpStatus { status, url }) => eprintln!("HTTP {status}: {url}"),
     Err(InstallerError::NoPid)                  => eprintln!("spawn succeeded but no PID"),
     Err(e)                                      => eprintln!("{e}"),
 }

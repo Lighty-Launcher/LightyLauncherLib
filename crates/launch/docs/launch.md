@@ -197,12 +197,14 @@ async fn main() -> anyhow::Result<()> {
 
 ```rust
 pub enum InstallerError {
-    DownloadFailed(String),
-    VerificationFailed(String),
-    ExtractionFailed(String),
+    HttpStatus       { status: u16, url: String },
+    Sha1Mismatch     { url: String, expected: String, actual: String },
+    StalePartialFile { url: String },
+    RetriesExhausted { attempts: u32, url: String },
+    ConcurrencyClosed,
     InvalidMetadata,
     NoPid,
-    IOError(std::io::Error),
+    Io(std::io::Error),
     // …
 }
 ```

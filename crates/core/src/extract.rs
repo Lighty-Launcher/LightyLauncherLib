@@ -3,7 +3,7 @@ use async_compression::tokio::bufread::GzipDecoder;
 use async_zip::tokio::read::seek::ZipFileReader;
 use futures_util::io::{self, BufReader as FuturesBufReader};
 use futures_util::StreamExt;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use tokio::fs::{create_dir_all, OpenOptions};
 use tokio::io::AsyncBufRead;
 use tokio::io::{AsyncRead, AsyncSeek, BufReader};
@@ -60,7 +60,7 @@ where
 
             let path = out_dir.join(&sanitized);
 
-            if !is_path_within_base(&path, &out_dir)? {
+            if !is_path_within_base(&path, &out_dir) {
                 return Err(ExtractError::PathTraversal {
                     path: file_name.to_string()
                 });
@@ -155,7 +155,7 @@ where
 
         let dest = out_dir.join(&path);
 
-        if !is_path_within_base(&dest, &out_dir)? {
+        if !is_path_within_base(&dest, &out_dir) {
             continue;
         }
 
@@ -211,30 +211,24 @@ fn sanitize_file_path(path: &str) -> PathBuf {
 
 /// Validates that `path` resolves inside `base` using component folding.
 ///
-/// Used during extraction (before the file exists on disk), so we cannot
-/// rely on [`std::fs::canonicalize`].
-fn is_path_within_base(path: &Path, base: &Path) -> ExtractResult<bool> {
-    let normalized_path: PathBuf = path.components()
-        .fold(PathBuf::new(), |mut acc, component| {
-            match component {
-                std::path::Component::Normal(c) => acc.push(c),
-                std::path::Component::ParentDir => { acc.pop(); },
-                std::path::Component::CurDir => {},
-                _ => acc.push(component),
-            }
-            acc
-        });
+/// The path does not exist yet at call time, so [`std::fs::canonicalize`]
+/// is not an option.
+pub fn is_path_within_base(path: &Path, base: &Path) -> bool {
+    normalize(path).starts_with(normalize(base))
+}
 
-    let normalized_base: PathBuf = base.components()
-        .fold(PathBuf::new(), |mut acc, component| {
+/// Folds `..` and `.` away without touching the filesystem.
+fn normalize(path: &Path) -> PathBuf {
+    path.components()
+        .fold(PathBuf::new(), |mut normalized, component| {
             match component {
-                std::path::Component::Normal(c) => acc.push(c),
-                std::path::Component::ParentDir => { acc.pop(); },
-                std::path::Component::CurDir => {},
-                _ => acc.push(component),
+                Component::Normal(segment) => normalized.push(segment),
+                Component::ParentDir => {
+                    normalized.pop();
+                }
+                Component::CurDir => {}
+                _ => normalized.push(component),
             }
-            acc
-        });
-
-    Ok(normalized_path.starts_with(&normalized_base))
+            normalized
+        })
 }

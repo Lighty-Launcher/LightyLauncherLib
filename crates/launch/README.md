@@ -4,7 +4,6 @@ Minecraft launch system for [LightyLauncher](https://crates.io/crates/lighty-lau
 
 ## Overview
 
-**Version**: 26.5.12
 **Part of**: [LightyLauncher](https://crates.io/crates/lighty-launcher)
 
 `lighty-launch` handles the complete Minecraft launch process, from downloading assets to managing running instances.
@@ -21,9 +20,8 @@ Minecraft launch system for [LightyLauncher](https://crates.io/crates/lighty-lau
 
 ## Quick Start
 
-```toml
-[dependencies]
-lighty-launch = "26.5.12"
+```bash
+cargo add lighty-launch
 ```
 
 ### Basic Launch
@@ -128,7 +126,7 @@ instance.delete_instance().await?;
 
 ## Related Crates
 
-- **[lighty-launcher](../../../README.md)** - Main package
+- **[lighty-launcher](../../README.md)** - Main package
 - **[lighty-event](../event/README.md)** - Event system (for LaunchEvent)
 - **[lighty-core](../core/README.md)** - AppState and utilities
 - **[lighty-java](../java/README.md)** - Java runtime management

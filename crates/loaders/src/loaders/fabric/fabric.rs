@@ -3,7 +3,10 @@ use crate::types::VersionInfo;
 use lighty_core::QueryError;
 use crate::utils::{query::Query, manifest::ManifestRepository};
 use crate::utils::maven::{fetch_file_size, fetch_maven_sha1};
-use crate::loaders::vanilla::{vanilla::VanillaQuery};
+use crate::loaders::vanilla::vanilla::{
+    extract_arguments as vanilla_arguments, extract_main_class as vanilla_main_class,
+    VANILLA, VanillaQuery,
+};
 use once_cell::sync::Lazy;
 use super::fabric_metadata::FabricMetaData;
 use async_trait::async_trait;
@@ -56,8 +59,8 @@ impl Query for FabricQuery {
     async fn extract<V: VersionInfo>(version: &V, query: &Self::Query, full_data: &FabricMetaData) -> Result<Self::Data> {
         let result = match query {
             FabricQuery::Libraries => VersionMetaData::Libraries(extract_libraries(full_data).await?),
-            FabricQuery::Arguments => VersionMetaData::Arguments(extract_arguments(full_data)),
-            FabricQuery::MainClass => VersionMetaData::MainClass(extract_main_class(full_data)),
+            FabricQuery::Arguments => VersionMetaData::Arguments(arguments(version, full_data).await?),
+            FabricQuery::MainClass => VersionMetaData::MainClass(main_class(version, full_data).await?),
             FabricQuery::FabricBuilder => VersionMetaData::Version(Self::version_builder(version, full_data).await?),
         };
         Ok(result)
@@ -66,16 +69,16 @@ impl Query for FabricQuery {
     async fn version_builder<V: VersionInfo>(version: &V, full_data: &FabricMetaData) -> Result<Version> {
         let (vanilla_builder, fabric_libraries) = tokio::try_join!(
         async {
-            let vanilla_data = VanillaQuery::fetch_full_data(version).await?;
+            let vanilla_data = VANILLA.get_raw(version).await?;
             VanillaQuery::version_builder(version, &vanilla_data).await
         },
         extract_libraries(full_data)
     )?;
 
         Ok(Version {
-            main_class: merge_main_class(vanilla_builder.main_class, extract_main_class(full_data)),
+            main_class: main_class(version, full_data).await?,
             java_version: vanilla_builder.java_version,
-            arguments: merge_arguments(vanilla_builder.arguments, extract_arguments(full_data)),
+            arguments: arguments(version, full_data).await?,
             libraries: merge_libraries(vanilla_builder.libraries, fabric_libraries),
             mods: None,
             natives: vanilla_builder.natives,
@@ -84,6 +87,25 @@ impl Query for FabricQuery {
             assets: vanilla_builder.assets,
         })
     }
+}
+
+/// The loader's main class merged with vanilla's, so the standalone query and
+/// the builder can never disagree.
+async fn main_class<V: VersionInfo>(version: &V, full_data: &FabricMetaData) -> Result<MainClass> {
+    let vanilla_data = VANILLA.get_raw(version).await?;
+    Ok(merge_main_class(
+        vanilla_main_class(&vanilla_data),
+        extract_main_class(full_data),
+    ))
+}
+
+/// Same contract as [`main_class`], for the argument lists.
+async fn arguments<V: VersionInfo>(version: &V, full_data: &FabricMetaData) -> Result<Arguments> {
+    let vanilla_data = VANILLA.get_raw(version).await?;
+    Ok(merge_arguments(
+        vanilla_arguments(&vanilla_data),
+        extract_arguments(full_data),
+    ))
 }
 
 fn merge_main_class(vanilla: MainClass, fabric: MainClass) -> MainClass {

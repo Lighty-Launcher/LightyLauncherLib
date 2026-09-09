@@ -4,7 +4,6 @@ Core utilities and foundational components for the LightyLauncher ecosystem.
 
 ## Overview
 
-**Version**: 26.5.12
 **Part of**: [LightyLauncher](https://crates.io/crates/lighty-launcher)
 
 `lighty-core` provides essential building blocks used across all LightyLauncher crates:
@@ -18,9 +17,8 @@ Core utilities and foundational components for the LightyLauncher ecosystem.
 
 ## Quick Start
 
-```toml
-[dependencies]
-lighty-core = "26.5.12"
+```bash
+cargo add lighty-core
 ```
 
 ```rust
@@ -66,7 +64,7 @@ async fn main() -> anyhow::Result<()> {
 
 ## Related Crates
 
-- **[lighty-launcher](../../../README.md)** - Main package
+- **[lighty-launcher](../../README.md)** - Main package
 - **[lighty-event](../event/README.md)** - Event system (for CoreEvent)
 - **[lighty-loaders](../loaders/README.md)** - Uses AppState and system detection
 - **[lighty-java](../java/README.md)** - Uses download and extract

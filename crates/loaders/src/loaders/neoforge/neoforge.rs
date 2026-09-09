@@ -6,7 +6,10 @@ use zip::ZipArchive;
 use lighty_core::download::download_file_untracked;
 use lighty_core::mkdir;
 
-use crate::loaders::vanilla::vanilla::VanillaQuery;
+use crate::loaders::vanilla::vanilla::{
+    extract_arguments as vanilla_arguments, extract_main_class as vanilla_main_class,
+    VANILLA, VanillaQuery,
+};
 use crate::types::version_metadata::{Arguments, Library, MainClass, Version, VersionMetaData};
 use crate::types::VersionInfo;
 use crate::utils::forge_installer::{ForgeInstallProfile, ForgeVersionManifest};
@@ -100,7 +103,14 @@ impl Query for NeoForgeQuery {
     async fn extract<V: VersionInfo>(version: &V, query: &Self::Query, full_data: &ForgeInstallProfile) -> Result<Self::Data> {
         let result = match query {
             NeoForgeQuery::Libraries => VersionMetaData::Libraries(extract_install_profile_libraries(full_data)),
-            &NeoForgeQuery::Arguments | &NeoForgeQuery::MainClass => todo!(),
+            NeoForgeQuery::MainClass => {
+                let version_meta = read_version_meta(version).await?;
+                VersionMetaData::MainClass(main_class(version, &version_meta).await?)
+            }
+            NeoForgeQuery::Arguments => {
+                let version_meta = read_version_meta(version).await?;
+                VersionMetaData::Arguments(arguments(version, &version_meta).await?)
+            }
             NeoForgeQuery::NeoForgeBuilder => {
                 VersionMetaData::Version(Self::version_builder(version, full_data).await?)
             }
@@ -111,15 +121,10 @@ impl Query for NeoForgeQuery {
     async fn version_builder<V: VersionInfo>(version: &V, _full_data: &ForgeInstallProfile) -> Result<Version> {
         let (vanilla_builder, version_meta) = tokio::try_join!(
             async {
-                let vanilla_data = VanillaQuery::fetch_full_data(version).await?;
+                let vanilla_data = VANILLA.get_raw(version).await?;
                 VanillaQuery::version_builder(version, &vanilla_data).await
             },
-            async {
-                let profiles_dir = version.game_dirs().join(".neoforge");
-                let installer_path = profiles_dir.join(format!("neoforge-{}-installer.jar", version.loader_version()));
-                let (_, version_meta) = read_jsons_from_jar(&installer_path).await?;
-                Ok::<_, QueryError>(version_meta)
-            }
+            read_version_meta(version)
         )?;
 
         // Use ONLY runtime libraries from version.json. install_profile
@@ -129,9 +134,9 @@ impl Query for NeoForgeQuery {
         let merged_libs = merge_libraries(vanilla_builder.libraries, version_json_libs);
 
         Ok(Version {
-            main_class: merge_main_class(vanilla_builder.main_class, extract_main_class(&version_meta)),
+            main_class: main_class(version, &version_meta).await?,
             java_version: vanilla_builder.java_version,
-            arguments: merge_arguments(vanilla_builder.arguments, extract_arguments(&version_meta)),
+            arguments: arguments(version, &version_meta).await?,
             libraries: merged_libs,
             mods: None,
             natives: vanilla_builder.natives,
@@ -140,6 +145,42 @@ impl Query for NeoForgeQuery {
             assets: vanilla_builder.assets,
         })
     }
+}
+
+/// Reads the `version.json` shipped inside the NeoForge installer JAR — the
+/// main class and arguments live there, not in the install profile.
+async fn read_version_meta<V: VersionInfo>(version: &V) -> Result<ForgeVersionManifest> {
+    let installer_path = version
+        .game_dirs()
+        .join(".neoforge")
+        .join(format!("neoforge-{}-installer.jar", version.loader_version()));
+    let (_, version_meta) = read_jsons_from_jar(&installer_path).await?;
+    Ok(version_meta)
+}
+
+/// NeoForge's main class merged with vanilla's, so the standalone query and the
+/// builder can never disagree.
+async fn main_class<V: VersionInfo>(
+    version: &V,
+    version_meta: &ForgeVersionManifest,
+) -> Result<MainClass> {
+    let vanilla_data = VANILLA.get_raw(version).await?;
+    Ok(merge_main_class(
+        vanilla_main_class(&vanilla_data),
+        extract_main_class(version_meta),
+    ))
+}
+
+/// Same contract as [`main_class`], for the argument lists.
+async fn arguments<V: VersionInfo>(
+    version: &V,
+    version_meta: &ForgeVersionManifest,
+) -> Result<Arguments> {
+    let vanilla_data = VANILLA.get_raw(version).await?;
+    Ok(merge_arguments(
+        vanilla_arguments(&vanilla_data),
+        extract_arguments(version_meta),
+    ))
 }
 
 fn merge_main_class(vanilla: MainClass, neoforge: MainClass) -> MainClass {
