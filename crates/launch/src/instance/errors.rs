@@ -23,4 +23,7 @@ pub enum InstanceError {
         pid: u32,
         existing_instance: String,
     },
+
+    #[error("Failed to kill PID {pid}: {reason}")]
+    KillFailed { pid: u32, reason: String },
 }
