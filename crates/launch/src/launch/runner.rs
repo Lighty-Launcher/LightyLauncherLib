@@ -182,46 +182,50 @@ where
     // execution stays inside each loader crate (it's a per-loader
     // Java exec with different maven URLs / extract subdirs).
     //
-    // TODO: generalize this into a per-loader post-install hook for any
-    // loader that needs one (currently only Forge / NeoForge do).
+    // A LightyUpdater builder carries a server URL where the loader version
+    // belongs and no Minecraft version, so the installer paths and cache keys
+    // below have to be built from the resolved coordinates, not from it.
+    #[cfg(any(feature = "forge", feature = "neoforge"))]
+    let resolved = version.resolved_instance().await?;
+
     #[cfg(feature = "neoforge")]
-    if matches!(version.loader(), Loader::NeoForge) {
-        let install_profile = NEOFORGE.get_raw(version).await?;
+    if matches!(resolved.loader(), Loader::NeoForge) {
+        let install_profile = NEOFORGE.get_raw(&resolved).await?;
         let profile_libs = neoforge_install_profile_libraries(install_profile.as_ref());
-        let profile_tasks = collect_library_tasks(version, &profile_libs).await;
+        let profile_tasks = collect_library_tasks(&resolved, &profile_libs).await;
         download_libraries(
             profile_tasks,
             #[cfg(feature = "events")]
             event_bus,
         )
         .await?;
-        run_neoforge_install_processors(version, install_profile.as_ref(), java_path.clone())
+        run_neoforge_install_processors(&resolved, install_profile.as_ref(), java_path.clone())
             .await?;
     }
 
     #[cfg(feature = "forge")]
-    if matches!(version.loader(), Loader::Forge) {
-        let raw = FORGE.get_raw(version).await?;
+    if matches!(resolved.loader(), Loader::Forge) {
+        let raw = FORGE.get_raw(&resolved).await?;
         match raw.as_ref() {
             ForgeRawData::Modern {
                 install_profile, ..
             } => {
                 // Download processor-only libraries, then run processors.
                 let profile_libs = forge_install_profile_libraries_modern(install_profile);
-                let profile_tasks = collect_library_tasks(version, &profile_libs).await;
+                let profile_tasks = collect_library_tasks(&resolved, &profile_libs).await;
                 download_libraries(
                     profile_tasks,
                     #[cfg(feature = "events")]
                     event_bus,
                 )
                 .await?;
-                run_forge_install_processors(version, install_profile, java_path.clone()).await?;
+                run_forge_install_processors(&resolved, install_profile, java_path.clone()).await?;
             }
             ForgeRawData::Legacy(profile) => {
                 // No processors in the legacy era; the universal JAR
                 // ships inside the installer and must be extracted to
                 // its Maven path so the classpath entry resolves.
-                forge_legacy_extract_universal_jar(version, profile).await?;
+                forge_legacy_extract_universal_jar(&resolved, profile).await?;
             }
         }
     }
