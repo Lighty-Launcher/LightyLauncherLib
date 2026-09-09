@@ -2,8 +2,7 @@ use crate::types::version_metadata::{Library, MainClass, Arguments, Version, Ver
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use std::path::{Path, PathBuf};
-use crate::types::{VersionInfo, Loader};
+use crate::types::{Loader, ResolvedInstance, VersionInfo};
 use lighty_core::QueryError;
 use crate::utils::cache::Cache;
 use crate::utils::{query::InstanceKey, query::Query, manifest::ManifestRepository};
@@ -13,46 +12,6 @@ use async_trait::async_trait;
 use lighty_core::hosts::HTTP_CLIENT as CLIENT;
 
 pub type Result<T> = std::result::Result<T, QueryError>;
-
-/// Internal `VersionInfo` view that swaps in the real loader and Minecraft
-/// version sourced from `ServerInfo`.
-#[derive(Debug, Clone)]
-struct VersionOverride {
-    name: String,
-    loader_version: String,
-    minecraft_version: String,
-    loader: Loader,
-    game_dirs: PathBuf,
-    java_dirs: PathBuf,
-}
-
-impl VersionInfo for VersionOverride {
-    type LoaderType = Loader;
-
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn loader_version(&self) -> &str {
-        &self.loader_version
-    }
-
-    fn minecraft_version(&self) -> &str {
-        &self.minecraft_version
-    }
-
-    fn game_dirs(&self) -> &Path {
-        &self.game_dirs
-    }
-
-    fn java_dirs(&self) -> &Path {
-        &self.java_dirs
-    }
-
-    fn loader(&self) -> &Self::LoaderType {
-        &self.loader
-    }
-}
 
 /// Shared cached repository for LightyUpdater server metadata.
 pub static LIGHTY_UPDATER: Lazy<ManifestRepository<LightyQuery>> = Lazy::new(|| ManifestRepository::new());
@@ -148,25 +107,16 @@ impl Query for LightyQuery {
         let server_info = full_data.server_info.as_ref()
             .ok_or_else(|| QueryError::InvalidMetadata)?;
 
-        let loader = match server_info.loader() {
-            "vanilla" => Loader::Vanilla,
-            "fabric" => Loader::Fabric,
-            "quilt" => Loader::Quilt,
-            "neoforge" => Loader::NeoForge,
-            "forge" => Loader::Forge,
-            _ => Loader::LightyUpdater,
-        };
+        let resolved = ResolvedInstance::new(
+            version.name().to_string(),
+            Loader::from_server_name(server_info.loader())?,
+            server_info.loader_version().to_string(),
+            server_info.minecraft_version().to_string(),
+            version.game_dirs().to_path_buf(),
+            version.java_dirs().to_path_buf(),
+        );
 
-        let version_override = VersionOverride {
-            name: version.name().to_string(),
-            loader_version: server_info.loader_version().to_string(),
-            minecraft_version: server_info.minecraft_version().to_string(),
-            loader,
-            game_dirs: version.game_dirs().to_path_buf(),
-            java_dirs: version.java_dirs().to_path_buf(),
-        };
-
-        let mut builder = merge_metadata(&version_override, server_info.loader()).await?;
+        let mut builder = merge_metadata(&resolved).await?;
 
         // Apply LightyMetadata overrides on top (Lighty wins).
 

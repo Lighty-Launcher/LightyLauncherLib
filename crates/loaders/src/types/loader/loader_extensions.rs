@@ -1,5 +1,5 @@
 use crate::types::version_metadata::VersionMetaData;
-use crate::types::{Loader, VersionInfo};
+use crate::types::{Loader, ResolvedInstance, VersionInfo};
 use lighty_core::QueryError;
 #[cfg(feature = "lighty_updater")]
 use crate::loaders::lighty_updater::lighty_updater::{revalidate, LIGHTY_UPDATER, LightyQuery};
@@ -45,6 +45,9 @@ pub trait LoaderExtensions {
     /// Get assets information.
     async fn get_assets(&self) -> Result<Arc<VersionMetaData>>;
     async fn invalidate_cache(&self);
+
+    /// The coordinates the instance really installs under.
+    async fn resolved_instance(&self) -> Result<ResolvedInstance>;
 }
 
 #[async_trait]
@@ -52,6 +55,33 @@ impl<T> LoaderExtensions for T
 where
     T: VersionInfo<LoaderType = Loader> + Send + Sync,
 {
+    /// A Lighty builder holds a server URL where the loader version
+    /// belongs and no Minecraft version, so the manifest supplies both.
+    /// Every other loader already tells the truth.
+    async fn resolved_instance(&self) -> Result<ResolvedInstance> {
+        match self.loader() {
+            #[cfg(feature = "lighty_updater")]
+            Loader::LightyUpdater => {
+                let manifest = LIGHTY_UPDATER.get_raw(self).await?;
+                let info = manifest
+                    .server_info
+                    .as_ref()
+                    .ok_or(QueryError::InvalidMetadata)?;
+
+                Ok(ResolvedInstance::new(
+                    self.name().to_string(),
+                    Loader::from_server_name(info.loader())?,
+                    info.loader_version().to_string(),
+                    info.minecraft_version().to_string(),
+                    self.game_dirs().to_path_buf(),
+                    self.java_dirs().to_path_buf(),
+                ))
+            }
+
+            _ => Ok(ResolvedInstance::of(self)),
+        }
+    }
+
     async fn get_metadata(&self) -> Result<Arc<VersionMetaData>> {
         match self.loader() {
             #[cfg(feature = "vanilla")]

@@ -4,6 +4,7 @@ pub mod version;
 pub mod loader;
 pub mod instance_size;
 
+pub use version::resolved_instance::*;
 pub use version::version_info::*;
 pub use version::version_metadata::*;
 pub use loader::loader::*;
