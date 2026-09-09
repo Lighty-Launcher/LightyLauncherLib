@@ -216,11 +216,11 @@ impl MicrosoftAuth {
 
             if error_text.contains("2148916233") {
                 lighty_core::trace_error!("Account doesn't own Minecraft");
-                return Err(AuthError::Custom("This Microsoft account doesn't own Minecraft".into()));
+                return Err(AuthError::MinecraftNotOwned);
             }
             if error_text.contains("2148916238") {
                 lighty_core::trace_error!("Account is from a country where Xbox Live is unavailable");
-                return Err(AuthError::Custom("Xbox Live is not available in your country".into()));
+                return Err(AuthError::XboxLiveUnavailable);
             }
 
             lighty_core::trace_error!(status = %status, error = %error_text, "Failed to get XSTS token");

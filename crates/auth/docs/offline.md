@@ -30,8 +30,9 @@ client side:
 | Allowed | `a–z`, `A–Z`, `0–9`, `_` |
 | Rejected | spaces, hyphens, accented chars, emojis, `@`, … |
 
-Violations return `AuthError::Custom(msg)` (length / charset) or
-`AuthError::InvalidCredentials` (empty input).
+Violations return `AuthError::UsernameLength { min, max }` or
+`AuthError::UsernameCharset`, and `AuthError::InvalidCredentials` on
+empty input.
 
 ## Deterministic UUIDs
 

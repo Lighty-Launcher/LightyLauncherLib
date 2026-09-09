@@ -184,8 +184,8 @@ match auth.authenticate(
     Ok(_profile) => { /* … */ }
     Err(AuthError::DeviceCodeExpired) => { /* retry with a fresh code */ }
     Err(AuthError::Cancelled)         => { /* user declined */ }
-    Err(AuthError::Custom(msg)) if msg.contains("doesn't own Minecraft") => { /* … */ }
-    Err(AuthError::Custom(msg)) if msg.contains("Xbox Live")            => { /* … */ }
+    Err(AuthError::MinecraftNotOwned)    => { /* … */ }
+    Err(AuthError::XboxLiveUnavailable) => { /* … */ }
     Err(AuthError::InvalidToken) => { /* stored refresh token expired */ }
     Err(AuthError::Network(_))   => { /* offline / DNS */ }
     Err(e) => eprintln!("{e}"),
