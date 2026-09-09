@@ -16,10 +16,9 @@ pub async fn merge_metadata<V: VersionInfo>(version: &V, loader: &str) -> Result
         "neoforge" => Loader::NeoForge,
         "forge" => Loader::Forge,
         _ => {
-            return Err(QueryError::UnsupportedLoader(format!(
-                "Unknown loader '{}' - please check your LightyUpdater config",
-                loader
-            )))
+            return Err(QueryError::UnknownLoader {
+                name: loader.to_string(),
+            })
         }
     };
 
@@ -37,9 +36,7 @@ pub async fn merge_metadata<V: VersionInfo>(version: &V, loader: &str) -> Result
     let merged_metadata = match &*metadata {
         VersionMetaData::Version(version) => version.clone(),
         _ => {
-            return Err(QueryError::UnsupportedLoader(
-                "Failed to extract Version from metadata".to_string(),
-            ))
+            return Err(QueryError::InvalidMetadata)
         }
     };
 

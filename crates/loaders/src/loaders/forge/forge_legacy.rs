@@ -107,10 +107,10 @@ pub fn legacy_installer_path<V: VersionInfo>(version: &V) -> PathBuf {
 pub async fn ensure_installer_cached<V: VersionInfo>(version: &V) -> Result<PathBuf> {
     let mc = version.minecraft_version();
     if is_pre_installer_forge(mc) {
-        return Err(QueryError::UnsupportedLoader(format!(
-            "Forge for Minecraft {} predates the installer format (1.5.2+ only)",
-            mc
-        )));
+        return Err(QueryError::LoaderTooOld {
+            loader: "Forge",
+            minecraft_version: mc.to_string(),
+        });
     }
 
     let profiles_dir = version.game_dirs().join(".forge");

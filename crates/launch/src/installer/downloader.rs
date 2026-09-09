@@ -5,8 +5,12 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use reqwest::header::RANGE;
+use reqwest::StatusCode;
+use sha1::{Digest, Sha1};
 use tokio::fs;
-use tokio::io::{AsyncWriteExt, BufWriter};
+use tokio::fs::OpenOptions;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::sync::Semaphore;
 use futures::future::try_join_all;
 use futures::StreamExt;
@@ -70,11 +74,9 @@ pub async fn download_small_file(
         }
     }
 
-    Err(last_error.unwrap_or_else(|| {
-        InstallerError::DownloadFailed(format!(
-            "Download failed after {} retries without specific error details: {}",
-            config.max_retries, url
-        ))
+    Err(last_error.unwrap_or_else(|| InstallerError::RetriesExhausted {
+        attempts: config.max_retries,
+        url: url.to_string(),
     }))
 }
 
@@ -87,11 +89,10 @@ async fn download_small_file_once(
     let response = CLIENT.get(url).send().await?;
 
     if !response.status().is_success() {
-        return Err(InstallerError::DownloadFailed(format!(
-            "HTTP {} for {}",
-            response.status(),
-            url
-        )));
+        return Err(InstallerError::HttpStatus {
+            status: response.status().as_u16(),
+            url: url.to_string(),
+        });
     }
 
     let bytes = response.bytes().await?;
@@ -100,10 +101,11 @@ async fn download_small_file_once(
         let digest = calculate_sha1_bytes(&bytes);
 
         if !digest.eq_ignore_ascii_case(expected) {
-            return Err(InstallerError::DownloadFailed(format!(
-                "SHA1 mismatch for {}: expected {}, got {}",
-                url, expected, digest
-            )));
+            return Err(InstallerError::Sha1Mismatch {
+                url: url.to_string(),
+                expected: expected.to_string(),
+                actual: digest,
+            });
         }
     }
 
@@ -126,6 +128,7 @@ async fn download_small_file_once(
 pub async fn download_large_file(
     url: &str,
     dest: &Path,
+    sha1: Option<&str>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
     let config = get_config();
@@ -135,6 +138,7 @@ pub async fn download_large_file(
         match download_large_file_once(
             url,
             dest,
+            sha1,
             #[cfg(feature = "events")]
             event_bus,
         )
@@ -148,7 +152,6 @@ pub async fn download_large_file(
                         "[Retry {}/{}] Failed to download {}: {}. Retrying in {}ms...",
                         attempt, config.max_retries, url, e, delay
                     );
-                    let _ = fs::remove_file(dest).await;
                     tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
                 }
                 last_error = Some(e);
@@ -156,40 +159,66 @@ pub async fn download_large_file(
         }
     }
 
-    Err(last_error.unwrap_or_else(|| {
-        InstallerError::DownloadFailed(format!(
-            "Download failed after {} retries without specific error details: {}",
-            config.max_retries, url
-        ))
+    Err(last_error.unwrap_or_else(|| InstallerError::RetriesExhausted {
+        attempts: config.max_retries,
+        url: url.to_string(),
     }))
 }
 
 async fn download_large_file_once(
     url: &str,
     dest: &Path,
+    sha1: Option<&str>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()> {
-    let response = CLIENT.get(url).send().await?;
+    // Resume what a previous attempt left behind: a dropped connection then
+    // costs neither the bytes already received nor a second progress count.
+    let downloaded = fs::metadata(dest).await.map(|meta| meta.len()).unwrap_or(0);
 
-    if !response.status().is_success() {
-        return Err(InstallerError::DownloadFailed(format!(
-            "HTTP {} for {}",
-            response.status(),
-            url
-        )));
+    let mut request = CLIENT.get(url);
+    if downloaded > 0 {
+        request = request.header(RANGE, format!("bytes={}-", downloaded));
+    }
+
+    let response = request.send().await?;
+    let status = response.status();
+
+    // The partial outgrew the file itself; drop it so the next attempt starts clean.
+    if status == StatusCode::RANGE_NOT_SATISFIABLE {
+        let _ = fs::remove_file(dest).await;
+        return Err(InstallerError::StalePartialFile {
+            url: url.to_string(),
+        });
+    }
+
+    if !status.is_success() {
+        return Err(InstallerError::HttpStatus {
+            status: status.as_u16(),
+            url: url.to_string(),
+        });
     }
 
     if let Some(parent) = dest.parent() {
         mkdir!(parent);
     }
 
-    let file = fs::File::create(dest).await?;
+    let mut hasher = Sha1::new();
+
+    // Only 206 keeps what is on disk; a 200 means the server ignored the
+    // header and is sending the whole body again.
+    let file = if status == StatusCode::PARTIAL_CONTENT {
+        seed_hasher(dest, &mut hasher).await?;
+        OpenOptions::new().append(true).open(dest).await?
+    } else {
+        fs::File::create(dest).await?
+    };
     let mut writer = BufWriter::with_capacity(256 * 1024, file);
     let mut stream = response.bytes_stream();
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
         writer.write_all(&chunk).await?;
+        hasher.update(&chunk);
 
         #[cfg(feature = "events")]
         if let Some(bus) = event_bus {
@@ -200,6 +229,39 @@ async fn download_large_file_once(
     }
 
     writer.flush().await?;
+
+    if let Some(expected) = sha1 {
+        let digest = hex::encode(hasher.finalize());
+
+        // Drop the file, or the retry would resume from the corrupt prefix
+        // and fail every remaining attempt.
+        if !digest.eq_ignore_ascii_case(expected) {
+            let _ = fs::remove_file(dest).await;
+            return Err(InstallerError::Sha1Mismatch {
+                url: url.to_string(),
+                expected: expected.to_string(),
+                actual: digest,
+            });
+        }
+    }
+
+    Ok(())
+}
+
+/// Feeds the bytes already on disk into `hasher` so a resumed download still
+/// ends up with the digest of the whole file.
+async fn seed_hasher(dest: &Path, hasher: &mut Sha1) -> InstallerResult<()> {
+    let mut partial = fs::File::open(dest).await?;
+    let mut buffer = vec![0u8; 256 * 1024];
+
+    loop {
+        let read = partial.read(&mut buffer).await?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+
     Ok(())
 }
 
@@ -216,12 +278,11 @@ pub async fn download_with_concurrency_limit(
             let sem = semaphore.clone();
             async move {
                 let _permit = sem.acquire().await
-                    .map_err(|_| InstallerError::DownloadFailed(
-                        "Download concurrency semaphore closed".into()
-                    ))?;
+                    .map_err(|_| InstallerError::ConcurrencyClosed)?;
                 download_large_file(
                     task.url,
                     &task.dest,
+                    task.sha1,
                     #[cfg(feature = "events")]
                     event_bus,
                 )
@@ -247,9 +308,7 @@ pub async fn download_small_with_concurrency_limit(
             let sem = semaphore.clone();
             async move {
                 let _permit = sem.acquire().await
-                    .map_err(|_| InstallerError::DownloadFailed(
-                        "Download concurrency semaphore closed".into()
-                    ))?;
+                    .map_err(|_| InstallerError::ConcurrencyClosed)?;
                 download_small_file(
                     task.url,
                     &task.dest,

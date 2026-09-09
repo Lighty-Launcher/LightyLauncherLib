@@ -86,9 +86,10 @@ where
             }
 
             _ => {
-                Err(QueryError::UnsupportedLoader(
-                    format!("Loader {:?} is not supported or feature is not enabled", self.loader())
-                ))
+                Err(QueryError::OperationUnsupported {
+                    operation: "get_metadata()",
+                    loader: format!("{:?}", self.loader()),
+                })
             }
         }
     }
@@ -123,9 +124,10 @@ where
             }
 
             _ => {
-                Err(QueryError::UnsupportedLoader(
-                    format!("get_libraries() not supported for {:?}", self.loader())
-                ))
+                Err(QueryError::OperationUnsupported {
+                    operation: "get_libraries()",
+                    loader: format!("{:?}", self.loader()),
+                })
             }
         }
     }
@@ -158,9 +160,10 @@ where
             }
 
             _ => {
-                Err(QueryError::UnsupportedLoader(
-                    format!("get_main_class() not supported for {:?}", self.loader())
-                ))
+                Err(QueryError::OperationUnsupported {
+                    operation: "get_main_class()",
+                    loader: format!("{:?}", self.loader()),
+                })
             }
         }
     }
@@ -173,9 +176,10 @@ where
 
         #[cfg(not(feature = "vanilla"))]
         {
-            Err(QueryError::UnsupportedLoader(
-                "get_natives() requires vanilla feature".to_string()
-            ))
+            Err(QueryError::FeatureRequired {
+                operation: "get_natives()",
+                feature: "vanilla",
+            })
         }
     }
 
@@ -187,9 +191,10 @@ where
 
         #[cfg(not(feature = "vanilla"))]
         {
-            Err(QueryError::UnsupportedLoader(
-                "get_java_version() requires vanilla feature".to_string()
-            ))
+            Err(QueryError::FeatureRequired {
+                operation: "get_java_version()",
+                feature: "vanilla",
+            })
         }
     }
 
@@ -201,9 +206,10 @@ where
 
         #[cfg(not(feature = "vanilla"))]
         {
-            Err(QueryError::UnsupportedLoader(
-                "get_assets() requires vanilla feature".to_string()
-            ))
+            Err(QueryError::FeatureRequired {
+                operation: "get_assets()",
+                feature: "vanilla",
+            })
         }
     }
 

@@ -76,9 +76,9 @@ impl CfModLoader {
             "neoforge" => Loader::NeoForge,
             "quilt" => Loader::Quilt,
             other => {
-                return Err(QueryError::UnsupportedLoader(format!(
-                    "CurseForge modpack uses loader '{other}', not supported"
-                )))
+                return Err(QueryError::UnknownLoader {
+                    name: other.to_string(),
+                })
             }
         };
         Ok((loader, version.to_string()))

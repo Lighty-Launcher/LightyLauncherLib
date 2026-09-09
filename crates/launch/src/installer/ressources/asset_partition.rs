@@ -5,8 +5,6 @@
 //! resourcepacks, shaderpacks, datapacks). Each public asset module
 //! is a thin wrapper around these helpers with a fixed subdir prefix.
 
-use std::path::PathBuf;
-
 use lighty_core::extract::is_path_within_base;
 use lighty_core::time_it;
 use lighty_loaders::types::{version_metadata::Mods, VersionInfo};
@@ -71,7 +69,7 @@ pub(super) async fn collect<'a, V: VersionInfo>(
             tasks.push(DownloadTask {
                 url,
                 dest: target,
-                sha1: None,
+                sha1: entry.sha1.as_deref(),
                 size: entry.size.unwrap_or(0),
             });
         }

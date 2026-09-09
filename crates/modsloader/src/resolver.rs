@@ -130,11 +130,11 @@ async fn fetch_one(
         #[cfg(not(feature = "modrinth"))]
         ModRequest::Modrinth { id_or_slug, .. } => {
             let _ = ttl;
-            Err(QueryError::UnsupportedLoader(format!(
-                "Modrinth support is disabled (cargo feature 'modrinth' not enabled) — \
-                 cannot fetch '{}'",
-                id_or_slug
-            )))
+            let _ = id_or_slug;
+            Err(QueryError::ProviderDisabled {
+                provider: "Modrinth",
+                feature: "modrinth",
+            })
         }
 
         #[cfg(feature = "curseforge")]
@@ -143,11 +143,11 @@ async fn fetch_one(
         #[cfg(not(feature = "curseforge"))]
         ModRequest::CurseForge { mod_id, .. } => {
             let _ = ttl;
-            Err(QueryError::UnsupportedLoader(format!(
-                "CurseForge support is disabled (cargo feature 'curseforge' not enabled) — \
-                 cannot fetch mod #{}",
-                mod_id
-            )))
+            let _ = mod_id;
+            Err(QueryError::ProviderDisabled {
+                provider: "CurseForge",
+                feature: "curseforge",
+            })
         }
     }
 }

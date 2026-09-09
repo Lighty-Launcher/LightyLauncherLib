@@ -129,7 +129,7 @@ impl Authenticator for AzuriomAuth {
 
         if status.is_success() {
             let azuriom_response: AzuriomAuthResponse = serde_json::from_str(&response_text)
-                .map_err(|e| AuthError::InvalidResponse(format!("Failed to parse response: {}", e)))?;
+?;
 
             if azuriom_response.banned.unwrap_or(false) {
                 lighty_core::trace_error!(username = %azuriom_response.username, "Account is banned");
@@ -181,13 +181,16 @@ impl Authenticator for AzuriomAuth {
             })
         } else {
             let error_response: AzuriomErrorResponse = serde_json::from_str(&response_text)
-                .map_err(|_| AuthError::InvalidResponse(format!("HTTP {}: {}", status, response_text)))?;
+                .map_err(|_| AuthError::HttpStatus {
+                    status: status.as_u16(),
+                    body: response_text.clone(),
+                })?;
 
             if error_response.status != "error" {
-                return Err(AuthError::InvalidResponse(format!(
-                    "HTTP {}: expected status='error', got status='{}'",
-                    status, error_response.status
-                )));
+                return Err(AuthError::HttpStatus {
+                    status: status.as_u16(),
+                    body: response_text.clone(),
+                });
             }
 
             lighty_core::trace_error!(reason = %error_response.reason, message = %error_response.message, "Authentication failed");
@@ -230,7 +233,7 @@ impl Authenticator for AzuriomAuth {
 
         if status.is_success() {
             let azuriom_response: AzuriomAuthResponse = serde_json::from_str(&response_text)
-                .map_err(|e| AuthError::InvalidResponse(format!("Failed to parse response: {}", e)))?;
+?;
 
             lighty_core::trace_info!(username = %azuriom_response.username, "Token verified successfully");
 

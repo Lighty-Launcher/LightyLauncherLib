@@ -24,6 +24,12 @@ pub enum AuthError {
     #[error("Invalid response from server: {0}")]
     InvalidResponse(String),
 
+    #[error("HTTP {status} from the auth server: {body}")]
+    HttpStatus { status: u16, body: String },
+
+    #[error("Missing '{field}' in the auth server response")]
+    MissingField { field: &'static str },
+
     #[error("Token expired or invalid")]
     InvalidToken,
 

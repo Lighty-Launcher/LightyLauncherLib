@@ -36,7 +36,7 @@ pub async fn collect_library_tasks<'a>(
             tasks.push(DownloadTask {
                 url,
                 dest: path,
-                sha1: None,
+                sha1: lib.sha1.as_deref(),
                 size: lib.size.unwrap_or(0),
             });
         }

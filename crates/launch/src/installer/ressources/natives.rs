@@ -42,7 +42,7 @@ pub async fn collect_native_tasks<'a>(
             download_tasks.push(DownloadTask {
                 url,
                 dest: jar_path.clone(),
-                sha1: None,
+                sha1: native.sha1.as_deref(),
                 size: native.size.unwrap_or(0),
             });
         }

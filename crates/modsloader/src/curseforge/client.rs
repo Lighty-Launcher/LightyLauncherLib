@@ -92,10 +92,10 @@ fn mod_loader_code(loader: &Loader) -> Result<u8, QueryError> {
         Loader::NeoForge => Ok(MOD_LOADER_NEOFORGE),
         Loader::Quilt => Ok(MOD_LOADER_QUILT),
         Loader::Vanilla | Loader::Optifine | Loader::LightyUpdater => {
-            Err(QueryError::UnsupportedLoader(format!(
-                "CurseForge doesn't host mods for {:?} instances",
-                loader
-            )))
+            Err(QueryError::LoaderNotOnProvider {
+                provider: "CurseForge",
+                loader: format!("{:?}", loader),
+            })
         }
     }
 }

@@ -26,7 +26,7 @@ pub async fn collect_client_task<'a>(
         .then(|| DownloadTask {
             url,
             dest: client_path,
-            sha1: None,
+            sha1: client.sha1.as_deref(),
             size: client.size.unwrap_or(0),
         })
 }
@@ -47,6 +47,7 @@ pub async fn download_client(
         download_large_file(
             task.url,
             &task.dest,
+            task.sha1,
             #[cfg(feature = "events")]
             event_bus,
         )

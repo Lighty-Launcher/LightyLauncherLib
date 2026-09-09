@@ -12,17 +12,20 @@ pub enum JreError {
     #[error("Invalid JRE structure in directory")]
     InvalidStructure,
 
-    #[error("Download failed: {0}")]
-    Download(String),
-
     #[error("Unsupported operating system for JRE installation")]
     UnsupportedOS,
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
-    #[error("Extraction failed: {0}")]
-    Extraction(String),
+    #[error("Distribution error: {0}")]
+    Distribution(#[from] DistributionError),
+
+    #[error("Transfer failed: {0}")]
+    Transfer(#[from] lighty_core::errors::DownloadError),
+
+    #[error("Archive error: {0}")]
+    Archive(#[from] lighty_core::errors::ExtractError),
 }
 
 /// Errors related to Java runtime execution
