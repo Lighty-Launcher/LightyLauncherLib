@@ -76,10 +76,10 @@ windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_WindowsA
 nix = { version = "0.31.3", features = ["signal", "process"] }
 
 # X11 API (conditional)
-# Matches a game window to its PID via `_NET_CLIENT_LIST` / `_NET_WM_PID`,
-# the X11 counterpart of `EnumWindows`. Pure Rust, no unsafe.
+# `res` is required because `_NET_WM_PID` is optional and LWJGL 2 never
+# sets it, leaving the X server as the only one able to name the owner.
 [target.'cfg(target_os = "linux")'.dependencies]
-x11rb = { version = "0.14", optional = true }
+x11rb = { version = "0.14", features = ["res"], optional = true }
 
 [features]
 default = []

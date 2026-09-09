@@ -168,8 +168,11 @@ mod platform {
 
 #[cfg(target_os = "linux")]
 mod platform {
-    use x11rb::connection::Connection;
-    use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, Window};
+    use x11rb::connection::{Connection, RequestConnection};
+    use x11rb::protocol::res::{
+        query_client_ids, query_version, ClientIdMask, ClientIdSpec, X11_EXTENSION_NAME,
+    };
+    use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, MapState, Window};
     use x11rb::rust_connection::RustConnection;
 
     /// `None` when no X server answers, which sends the caller back to
@@ -181,13 +184,30 @@ mod platform {
 
         let client_list = intern_atom(&connection, b"_NET_CLIENT_LIST")?;
         let wm_pid = intern_atom(&connection, b"_NET_WM_PID")?;
+        let server_side_pid = has_client_ids(&connection);
 
         Some(Watcher {
             connection,
             root,
             client_list,
             wm_pid,
+            server_side_pid,
         })
+    }
+
+    /// `QueryClientIds` only exists from X-Resource 1.2 on, and x11rb does
+    /// not cache `query_version`, so the answer is settled once here rather
+    /// than on every poll.
+    fn has_client_ids(connection: &RustConnection) -> bool {
+        connection
+            .extension_information(X11_EXTENSION_NAME)
+            .ok()
+            .flatten()
+            .is_some()
+            && query_version(connection, 1, 2)
+                .ok()
+                .and_then(|cookie| cookie.reply().ok())
+                .is_some_and(|version| (version.server_major, version.server_minor) >= (1, 2))
     }
 
     fn intern_atom(connection: &RustConnection, name: &[u8]) -> Option<u32> {
@@ -199,20 +219,21 @@ mod platform {
         root: Window,
         client_list: u32,
         wm_pid: u32,
+        server_side_pid: bool,
     }
 
     impl Watcher {
-        /// Returns `true` if a window the window manager currently manages
-        /// advertises `pid` in `_NET_WM_PID`.
+        /// Returns `true` once a viewable window belongs to `pid`, whether
+        /// the application advertised it or the X server had to be asked.
         pub(super) fn owns_visible_window(&self, pid: u32) -> bool {
             self.managed_windows()
                 .into_iter()
-                .any(|window| self.window_pid(window) == Some(pid))
+                .find(|&window| self.window_pid(window) == Some(pid))
+                .is_some_and(|window| self.is_viewable(window))
         }
 
-        /// Reads `_NET_CLIENT_LIST` off the root window: it only lists
-        /// mapped, WM-managed windows, which is the moment the player
-        /// actually sees the game.
+        /// An entry can show up before its window is mapped, so membership
+        /// in `_NET_CLIENT_LIST` does not mean the player sees anything yet.
         fn managed_windows(&self) -> Vec<Window> {
             let Ok(cookie) = self.connection.get_property(
                 false,
@@ -236,7 +257,15 @@ mod platform {
                 .unwrap_or_default()
         }
 
+        /// The property comes first because the application writes it in the
+        /// same PID namespace as `Command::spawn`, while the server answers
+        /// in its own — they disagree under a sandbox.
         fn window_pid(&self, window: Window) -> Option<u32> {
+            self.declared_pid(window)
+                .or_else(|| self.server_pid(window))
+        }
+
+        fn declared_pid(&self, window: Window) -> Option<u32> {
             let reply = self
                 .connection
                 .get_property(false, window, self.wm_pid, AtomEnum::CARDINAL, 0, 1)
@@ -245,6 +274,37 @@ mod platform {
                 .ok()?;
 
             reply.value32()?.next()
+        }
+
+        /// The only way to reach applications that never advertise a PID,
+        /// so LWJGL 2 up to 1.12.2. The null XID is a wildcard matching
+        /// every client, so it is refused.
+        fn server_pid(&self, window: Window) -> Option<u32> {
+            if !self.server_side_pid || window == 0 {
+                return None;
+            }
+
+            let spec = ClientIdSpec {
+                client: window,
+                mask: ClientIdMask::LOCAL_CLIENT_PID,
+            };
+            let reply = query_client_ids(&self.connection, &[spec])
+                .ok()?
+                .reply()
+                .ok()?;
+
+            reply.ids.iter().find_map(|id| id.value.first().copied())
+        }
+
+        /// `QueryClientIds` resolves a client slot, not a resource, so a
+        /// stale entry answers with whoever inherited the slot. A window
+        /// that no longer exists fails here instead.
+        fn is_viewable(&self, window: Window) -> bool {
+            self.connection
+                .get_window_attributes(window)
+                .ok()
+                .and_then(|cookie| cookie.reply().ok())
+                .is_some_and(|attributes| attributes.map_state == MapState::VIEWABLE)
         }
     }
 }
