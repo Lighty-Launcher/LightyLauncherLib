@@ -436,12 +436,23 @@ async fn execute_processor(context: &ProcessorContext, processor: &Processor) ->
         "Processor configuration prepared"
     );
 
-    let output = tokio::process::Command::new(&context.java_path)
+    let mut command = tokio::process::Command::new(&context.java_path);
+    command
         .arg("-cp")
         .arg(&classpath)
         .arg(&main_class)
         .args(&processed_args)
-        .current_dir(&context.game_dir)
+        .current_dir(&context.game_dir);
+
+    // A GUI-subsystem launcher has no console, so every processor run would
+    // open its own console window on Windows
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let output = command
         .output()
         .await
         .map_err(|e| QueryError::Conversion {
