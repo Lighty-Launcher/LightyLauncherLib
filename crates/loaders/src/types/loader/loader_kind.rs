@@ -47,21 +47,20 @@ pub trait LoaderKind: Clone + Send + Sync + std::fmt::Debug + 'static {
     /// [`Loader::Fabric`].
     fn base_loader(&self) -> Loader;
 
-    /// Resolves the coordinates the instance really installs under. Defaults to the
-    /// builder's own fields tagged with [`Self::base_loader`]; override only when the
-    /// builder does not already tell the truth (as `LightyUpdater` does).
-    async fn resolved_instance<V>(&self, version: &V) -> Result<ResolvedInstance>
+    /// Resolves the coordinates the instance really installs under. The launch pipeline only
+    /// calls this when the base loader may need a Forge/NeoForge post-install (LightyUpdater
+    /// included, as it may resolve to one). The built-in [`Loader`] overrides it; a custom loader
+    /// needs it ONLY if its [`Self::base_loader`] is Forge/NeoForge — otherwise it is never
+    /// called, so the default fails loudly rather than fabricating coordinates from a builder
+    /// whose `loader_version` may hold something else entirely (a server URL, say).
+    async fn resolved_instance<V>(&self, _version: &V) -> Result<ResolvedInstance>
     where
         V: VersionInfo<LoaderType = Self>,
     {
-        Ok(ResolvedInstance::new(
-            version.name().to_string(),
-            self.base_loader(),
-            version.loader_version().to_string(),
-            version.minecraft_version().to_string(),
-            version.game_dirs().to_path_buf(),
-            version.java_dirs().to_path_buf(),
-        ))
+        Err(QueryError::OperationUnsupported {
+            operation: "resolved_instance",
+            loader: format!("{:?}", self.base_loader()),
+        })
     }
 
     /// Drops any cached manifest held for the named instance. Defaults to a no-op for
