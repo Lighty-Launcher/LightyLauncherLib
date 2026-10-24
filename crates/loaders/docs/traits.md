@@ -81,33 +81,34 @@ own type (used as `VersionInfo::LoaderType`) **without extending the
 ```rust
 #[async_trait]
 pub trait LoaderKind: Clone + Send + Sync + Debug + 'static {
-    /// Full metadata for an instance of this loader.
+    /// Full metadata for an instance of this loader — the one async method you must write.
     async fn resolve_metadata<V>(&self, version: &V) -> QueryResult<Arc<VersionMetaData>>
     where V: VersionInfo<LoaderType = Self>;
 
-    /// The coordinates the instance really installs under.
-    async fn resolved_instance<V>(&self, version: &V) -> QueryResult<ResolvedInstance>
-    where V: VersionInfo<LoaderType = Self>;
-
-    /// Drops any cached manifest for the named instance.
-    async fn invalidate(&self, version_name: &str);
-
-    /// The built-in loader this kind installs *as* — drives mod
-    /// resolution and the Forge/NeoForge post-install steps. A custom
-    /// Fabric-based loader returns `Loader::Fabric`.
+    /// The built-in loader this kind installs *as* — drives mod resolution and the
+    /// Forge/NeoForge post-install steps. A custom Fabric-based loader returns `Loader::Fabric`.
     fn base_loader(&self) -> Loader;
+
+    /// The coordinates the instance really installs under. DEFAULTS to the builder's own
+    /// fields tagged with `base_loader()`; override only when the builder lies (LightyUpdater).
+    async fn resolved_instance<V>(&self, version: &V) -> QueryResult<ResolvedInstance>
+    where V: VersionInfo<LoaderType = Self> { /* default: ResolvedInstance from `version` + base_loader() */ }
+
+    /// Drops any cached manifest for the named instance. DEFAULTS to a no-op.
+    async fn invalidate(&self, _version_name: &str) {}
 }
 ```
 
-`resolve_metadata` is the one path a custom loader fully owns (fetch
-its own manifest, build its own `Version`). `base_loader` ties the
-instance back to a built-in loader so the shared install/launch
-pipeline (mods, natives, Forge processors) keeps working: a loader
-that is just a custom *source* over Fabric returns `Loader::Fabric`
-and reuses everything else.
+A consumer's loader implements just **`resolve_metadata` + `base_loader`**; `resolved_instance`
+and `invalidate` have sensible defaults (override only if needed). `resolve_metadata` is the one
+path a custom loader fully owns (fetch its own manifest, build its own `Version`); `base_loader`
+ties the instance back to a built-in loader so the shared install/launch pipeline (mods, natives,
+Forge processors) keeps working — a loader that is just a custom *source* over Fabric returns
+`Loader::Fabric` and reuses everything else.
 
-`LoaderKind` is an async trait, so an implementor annotates its `impl`
-with `#[async_trait]` (add the `async-trait` crate as a dependency).
+`LoaderKind` is an async trait, so an implementor annotates its `impl` with `#[async_trait]` (add
+the `async-trait` crate as a dependency). `ResolvedInstance` is re-exported at
+`lighty_launcher::loaders` for implementors that override `resolved_instance`.
 
 ## `LoaderExtensions`
 
