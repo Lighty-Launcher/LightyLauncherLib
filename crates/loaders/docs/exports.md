@@ -7,7 +7,7 @@ Public surface of `lighty-loaders`.
 ```rust
 pub use lighty_loaders::{
     // Types
-    Loader, LoaderExtensions, VersionInfo, version_metadata,
+    Loader, LoaderKind, LoaderExtensions, VersionInfo, version_metadata,
 
     // Loader modules (feature-gated)
     fabric,         // feature = "fabric"
@@ -27,7 +27,7 @@ pub use lighty_loaders::{
 
 ```rust
 // Re-exported flat
-pub use lighty_loaders::types::{Loader, LoaderExtensions, VersionInfo, version_metadata};
+pub use lighty_loaders::types::{Loader, LoaderKind, LoaderExtensions, VersionInfo, version_metadata};
 
 // Also under types::
 pub use lighty_loaders::types::{InstanceSize, version_metadata};
@@ -54,11 +54,16 @@ Re-exported types (see `crates/loaders/src/types/version/version_metadata/`):
 ```rust
 pub use lighty_loaders::version_metadata::{
     Version, VersionMetaData,
-    Library, Arguments, JavaVersion, AssetIndex, Downloads,
+    Library, Arguments, JavaVersion, AssetIndex, AssetsFile, Client, Downloads,
     Mods, Native, MainClass,
     // …and the wire types for the underlying Mojang manifest
 };
 ```
+
+`Client`, `JavaVersion` and `AssetsFile` are the `Version` fields a
+custom `LoaderKind` fills in when it builds its own `Version` — they
+are re-exported at the umbrella crate (`lighty_launcher::loaders`) so a
+consumer can construct one without reaching into the internal path.
 
 The exact list mirrors what the launch crate needs; check
 `src/types/version/version_metadata/` for the live API.
@@ -131,7 +136,8 @@ impl<K, V> Cache<K, V> where K: Eq + Hash + Clone + Send + Sync + 'static,
 
 All loader operations return `Result<_, lighty_core::QueryError>`.
 `QueryError` is not re-exported by this crate — use the full path or
-the `lighty_core` re-export. Variants:
+the `lighty_core` re-export. (The umbrella crate re-exports both
+`QueryError` and `QueryResult` under `lighty_launcher::core`.) Variants:
 [`../../core/docs/exports.md`](../../core/docs/exports.md#errors).
 
 ## Cargo features

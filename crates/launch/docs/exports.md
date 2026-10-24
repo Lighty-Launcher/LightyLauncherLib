@@ -68,7 +68,7 @@ use lighty_launch::errors::{InstallerError, InstallerResult};
 
 ```rust
 impl<'a, T> LaunchBuilder<'a, T>
-where T: VersionInfo<LoaderType = Loader> + LoaderExtensions + Arguments + Installer + WithMods
+where T: VersionInfo<LoaderType: LoaderKind> + LoaderExtensions + Arguments + Installer + WithMods
 {
     pub fn with_jvm_options(self) -> JvmOptionsBuilder<'a, T>;
     pub fn with_arguments  (self) -> ArgumentsBuilder<'a, T>;
@@ -99,7 +99,7 @@ pub trait Installer {
 }
 ```
 
-Auto-implemented for `T: VersionInfo<LoaderType = Loader> + WithMods`.
+Auto-implemented for `T: VersionInfo<LoaderType: LoaderKind> + WithMods`.
 Detail: [installation.md](./installation.md).
 
 ### `Arguments` trait

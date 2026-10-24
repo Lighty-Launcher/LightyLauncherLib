@@ -42,6 +42,7 @@ flowchart TD
 | Building block | Lives in | Docs |
 |---|---|---|
 | `VersionInfo` trait | `types::VersionInfo` | [`traits.md`](./traits.md) |
+| `LoaderKind` trait | `types::LoaderKind` | [`traits.md`](./traits.md) |
 | `LoaderExtensions` trait | `types::LoaderExtensions` | [`traits.md`](./traits.md) |
 | `Loader` enum | `types::Loader` | this page |
 | `Query` trait | `utils::query::Query` | [`query.md`](./query.md) |
@@ -54,8 +55,9 @@ flowchart TD
 
 1. The host crate creates a `VersionBuilder` (or
    `LightyVersionBuilder`) — both implement `VersionInfo`.
-2. The blanket `LoaderExtensions` impl matches on the
-   `Loader` variant and dispatches to the right `ManifestRepository`.
+2. The blanket `LoaderExtensions` impl delegates to the instance's
+   `LoaderType` via `LoaderKind`; the built-in `Loader` impl matches on
+   the variant and dispatches to the right `ManifestRepository`.
 3. The repository checks its `query_cache`; on miss it falls back to
    the `raw_cache`; on miss again it calls `Query::fetch_full_data`
    and `Query::extract`.

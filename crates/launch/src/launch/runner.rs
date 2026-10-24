@@ -10,7 +10,9 @@ use lighty_java::jre_downloader::{find_java_binary, jre_download};
 use lighty_java::runtime::JavaRuntime;
 use lighty_java::JavaDistribution;
 use lighty_loaders::types::version_metadata::{Version, VersionMetaData};
-use lighty_loaders::types::{Loader, LoaderExtensions, VersionInfo};
+use lighty_loaders::types::{LoaderExtensions, LoaderKind, VersionInfo};
+#[cfg(any(feature = "forge", feature = "neoforge"))]
+use lighty_loaders::types::Loader;
 use lighty_modsloader::WithMods;
 
 use crate::arguments::Arguments;
@@ -84,7 +86,7 @@ pub trait Launch {
 // builder methods exist and which API clients compile in.
 impl<T> Launch for T
 where
-    T: VersionInfo<LoaderType = Loader>
+    T: VersionInfo<LoaderType: LoaderKind>
         + LoaderExtensions
         + Arguments
         + Installer
@@ -112,7 +114,7 @@ pub(crate) async fn execute_launch<T>(
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()>
 where
-    T: VersionInfo<LoaderType = Loader>
+    T: VersionInfo<LoaderType: LoaderKind>
         + LoaderExtensions
         + Arguments
         + Installer
@@ -253,7 +255,7 @@ async fn prepare_metadata<T>(
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<Arc<VersionMetaData>>
 where
-    T: VersionInfo<LoaderType = Loader> + LoaderExtensions,
+    T: VersionInfo<LoaderType: LoaderKind> + LoaderExtensions,
 {
     lighty_core::trace_debug!(
         "[Launch] Fetching metadata for loader: {:?}",

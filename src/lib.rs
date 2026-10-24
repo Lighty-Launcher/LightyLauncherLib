@@ -126,6 +126,7 @@ pub mod loaders {
     pub use lighty_loaders::{
         types::{
             Loader,
+            LoaderKind,
             VersionInfo,
             LoaderExtensions,
             InstanceSize,
@@ -139,6 +140,9 @@ pub mod loaders {
                 MainClass,
                 Mods,
                 Native,
+                Client,
+                JavaVersion,
+                AssetsFile,
             },
         },
         utils::{cache, manifest, query},
@@ -189,6 +193,8 @@ pub mod core {
         hash,
         app_state::AppState,
         errors::{AppStateError, AppStateResult},
+        QueryError,
+        QueryResult,
         SystemError,
         SystemResult,
         ExtractError,

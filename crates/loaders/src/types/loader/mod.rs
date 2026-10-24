@@ -6,3 +6,4 @@
 
 pub mod loader;
 pub mod loader_extensions;
+pub mod loader_kind;

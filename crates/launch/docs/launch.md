@@ -33,7 +33,7 @@ pub trait Launch {
 ```
 
 Blanket-implemented for every type that satisfies the pipeline's
-bounds (`VersionInfo<LoaderType = Loader> + LoaderExtensions +
+bounds (`VersionInfo<LoaderType: LoaderKind> + LoaderExtensions +
 Arguments + Installer + WithMods`) — that's `VersionBuilder` and
 `LightyVersionBuilder` out of the box. `WithMods` returns an empty
 slice on vanilla instances, so it's free.
@@ -44,7 +44,7 @@ slice on vanilla instances, so it's free.
 pub struct LaunchBuilder<'a, T> { /* … */ }
 
 impl<'a, T> LaunchBuilder<'a, T>
-where T: VersionInfo<LoaderType = Loader> + LoaderExtensions + Arguments + Installer + WithMods
+where T: VersionInfo<LoaderType: LoaderKind> + LoaderExtensions + Arguments + Installer + WithMods
 {
     pub fn with_jvm_options(self) -> JvmOptionsBuilder<'a, T>;
     pub fn with_arguments  (self) -> ArgumentsBuilder<'a, T>;

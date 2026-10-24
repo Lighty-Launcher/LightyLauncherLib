@@ -4,7 +4,7 @@
 //! Game installation orchestration: libraries, natives, client JAR, assets, and mods.
 
 use super::ressources::{libraries, natives, client, assets, mods, resourcepacks, shaderpacks, datapacks};
-use lighty_loaders::types::{Loader, VersionInfo, version_metadata::{Mods, Version}};
+use lighty_loaders::types::{LoaderKind, VersionInfo, version_metadata::{Mods, Version}};
 use lighty_core::{mkdir, time_it};
 use lighty_modsloader::WithMods;
 use crate::errors::InstallerResult;
@@ -30,7 +30,7 @@ mod installer_trait {
 
 impl<T> Installer for T
 where
-    T: VersionInfo<LoaderType = Loader> + WithMods,
+    T: VersionInfo<LoaderType: LoaderKind> + WithMods,
 {
     /// Installs all dependencies in parallel.
     ///
@@ -205,7 +205,7 @@ async fn resolve_extra_mods<T>(
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<Option<Version>>
 where
-    T: VersionInfo<LoaderType = Loader> + WithMods,
+    T: VersionInfo<LoaderType: LoaderKind> + WithMods,
 {
     // Modpack files come first so user mods win on filename-based SHA1 dedup
     // performed downstream in `mods::collect_mod_tasks`.
@@ -244,7 +244,7 @@ async fn resolve_modpack_mods<T>(
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<Vec<Mods>>
 where
-    T: VersionInfo<LoaderType = Loader> + WithMods,
+    T: VersionInfo<LoaderType: LoaderKind> + WithMods,
 {
     #[cfg(any(feature = "modrinth", feature = "curseforge"))]
     {
@@ -275,7 +275,7 @@ async fn resolve_user_mod_requests<T>(
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<Vec<Mods>>
 where
-    T: VersionInfo<LoaderType = Loader> + WithMods,
+    T: VersionInfo<LoaderType: LoaderKind> + WithMods,
 {
     #[cfg(any(feature = "modrinth", feature = "curseforge"))]
     {
@@ -285,10 +285,11 @@ where
         }
         // The instance dictates the TTL applied to every cached fetch.
         let ttl = version.ttl();
+        let base_loader = version.loader().base_loader();
         Ok(lighty_modsloader::resolver::resolve(
             mod_requests,
             version.minecraft_version(),
-            version.loader(),
+            &base_loader,
             ttl,
             #[cfg(feature = "events")]
             event_bus,

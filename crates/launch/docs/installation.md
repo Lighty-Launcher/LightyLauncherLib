@@ -28,7 +28,7 @@ Installer::install(&self, &Version, event_bus)
 
 The orchestrator lives in
 `crates/launch/src/installer/installer.rs`. `Installer::install` is
-blanket-implemented for any `T: VersionInfo<LoaderType = Loader> + WithMods`.
+blanket-implemented for any `T: VersionInfo<LoaderType: LoaderKind> + WithMods`.
 
 ## The eight buckets
 
