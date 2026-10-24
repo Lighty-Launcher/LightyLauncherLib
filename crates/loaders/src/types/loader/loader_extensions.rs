@@ -1,8 +1,6 @@
 use crate::types::version_metadata::VersionMetaData;
-use crate::types::{Loader, ResolvedInstance, VersionInfo};
+use crate::types::{Loader, LoaderKind, ResolvedInstance, VersionInfo};
 use lighty_core::QueryError;
-#[cfg(feature = "lighty_updater")]
-use crate::loaders::lighty_updater::lighty_updater::{revalidate, LIGHTY_UPDATER, LightyQuery};
 #[cfg(feature = "neoforge")]
 use crate::loaders::neoforge::neoforge::{NeoForgeQuery, NEOFORGE};
 #[cfg(feature = "forge")]
@@ -20,9 +18,9 @@ pub type Result<T> = std::result::Result<T, QueryError>;
 
 /// Generic interface for fetching metadata from different mod loaders.
 ///
-/// [`Self::get_metadata`] dispatches to the correct loader implementation
-/// based on `self.loader()`. Specialized accessors are available for
-/// retrieving specific parts of the metadata.
+/// [`Self::get_metadata`] dispatches to the loader via [`LoaderKind`], so a
+/// consumer's own loader type plugs in without touching the `Loader` enum.
+/// Specialized accessors fetch specific parts of the metadata.
 #[async_trait]
 pub trait LoaderExtensions {
     /// Get complete metadata for the current loader.
@@ -53,148 +51,68 @@ pub trait LoaderExtensions {
 #[async_trait]
 impl<T> LoaderExtensions for T
 where
-    T: VersionInfo<LoaderType = Loader> + Send + Sync,
+    T: VersionInfo + Send + Sync,
+    T::LoaderType: LoaderKind,
 {
-    /// A Lighty builder holds a server URL where the loader version
-    /// belongs and no Minecraft version, so the manifest supplies both.
-    /// Every other loader already tells the truth.
-    async fn resolved_instance(&self) -> Result<ResolvedInstance> {
-        match self.loader() {
-            #[cfg(feature = "lighty_updater")]
-            Loader::LightyUpdater => {
-                let manifest = LIGHTY_UPDATER.get_raw(self).await?;
-                let info = manifest
-                    .server_info
-                    .as_ref()
-                    .ok_or(QueryError::InvalidMetadata)?;
-
-                Ok(ResolvedInstance::new(
-                    self.name().to_string(),
-                    Loader::from_server_name(info.loader())?,
-                    info.loader_version().to_string(),
-                    info.minecraft_version().to_string(),
-                    self.game_dirs().to_path_buf(),
-                    self.java_dirs().to_path_buf(),
-                ))
-            }
-
-            _ => Ok(ResolvedInstance::of(self)),
-        }
-    }
-
     async fn get_metadata(&self) -> Result<Arc<VersionMetaData>> {
-        match self.loader() {
-            #[cfg(feature = "vanilla")]
-            Loader::Vanilla => {
-                VANILLA.get(self, VanillaQuery::VanillaBuilder).await
-            }
-
-            #[cfg(feature = "fabric")]
-            Loader::Fabric => {
-                FABRIC.get(self, FabricQuery::FabricBuilder).await
-            }
-
-            #[cfg(feature = "quilt")]
-            Loader::Quilt => {
-                QUILT.get(self, QuiltQuery::QuiltBuilder).await
-            }
-
-            #[cfg(feature = "neoforge")]
-            Loader::NeoForge => {
-                NEOFORGE.get(self, NeoForgeQuery::NeoForgeBuilder).await
-            }
-
-            #[cfg(feature = "forge")]
-            Loader::Forge => {
-                FORGE.get(self, ForgeQuery::ForgeBuilder).await
-            }
-
-            #[cfg(feature = "lighty_updater")]
-            Loader::LightyUpdater => {
-                revalidate(self).await?;
-                LIGHTY_UPDATER.get(self, LightyQuery::LightyBuilder).await
-            }
-
-            _ => {
-                Err(QueryError::OperationUnsupported {
-                    operation: "get_metadata()",
-                    loader: format!("{:?}", self.loader()),
-                })
-            }
-        }
+        self.loader().resolve_metadata(self).await
     }
 
+    async fn resolved_instance(&self) -> Result<ResolvedInstance> {
+        self.loader().resolved_instance(self).await
+    }
+
+    async fn invalidate_cache(&self) {
+        self.loader().invalidate(self.name()).await;
+    }
+
+    // Specialized accessors run against the base loader (the loader a custom
+    // kind installs as); the full `get_metadata` is the path loaders override.
     async fn get_libraries(&self) -> Result<Arc<VersionMetaData>> {
-        match self.loader() {
+        match self.loader().base_loader() {
             #[cfg(feature = "vanilla")]
-            Loader::Vanilla => {
-                VANILLA.get(self, VanillaQuery::Libraries).await
-            }
+            Loader::Vanilla => VANILLA.get(self, VanillaQuery::Libraries).await,
 
             #[cfg(feature = "fabric")]
-            Loader::Fabric => {
-                FABRIC.get(self, FabricQuery::Libraries).await
-            }
+            Loader::Fabric => FABRIC.get(self, FabricQuery::Libraries).await,
 
             #[cfg(feature = "quilt")]
-            Loader::Quilt => {
-                QUILT.get(self, QuiltQuery::Libraries).await
-            }
+            Loader::Quilt => QUILT.get(self, QuiltQuery::Libraries).await,
 
             #[cfg(feature = "neoforge")]
-            Loader::NeoForge => {
-                // No separate libraries query — fall back to the full builder.
-                NEOFORGE.get(self, NeoForgeQuery::NeoForgeBuilder).await
-            }
+            Loader::NeoForge => NEOFORGE.get(self, NeoForgeQuery::NeoForgeBuilder).await,
 
             #[cfg(feature = "forge")]
-            Loader::Forge => {
-                // No separate libraries query — fall back to the full builder.
-                FORGE.get(self, ForgeQuery::ForgeBuilder).await
-            }
+            Loader::Forge => FORGE.get(self, ForgeQuery::ForgeBuilder).await,
 
-            _ => {
-                Err(QueryError::OperationUnsupported {
-                    operation: "get_libraries()",
-                    loader: format!("{:?}", self.loader()),
-                })
-            }
+            other => Err(QueryError::OperationUnsupported {
+                operation: "get_libraries()",
+                loader: format!("{other:?}"),
+            }),
         }
     }
 
     async fn get_main_class(&self) -> Result<Arc<VersionMetaData>> {
-        match self.loader() {
+        match self.loader().base_loader() {
             #[cfg(feature = "vanilla")]
-            Loader::Vanilla => {
-                VANILLA.get(self, VanillaQuery::MainClass).await
-            }
+            Loader::Vanilla => VANILLA.get(self, VanillaQuery::MainClass).await,
 
             #[cfg(feature = "fabric")]
-            Loader::Fabric => {
-                FABRIC.get(self, FabricQuery::MainClass).await
-            }
+            Loader::Fabric => FABRIC.get(self, FabricQuery::MainClass).await,
 
             #[cfg(feature = "quilt")]
-            Loader::Quilt => {
-                QUILT.get(self, QuiltQuery::MainClass).await
-            }
+            Loader::Quilt => QUILT.get(self, QuiltQuery::MainClass).await,
 
             #[cfg(feature = "neoforge")]
-            Loader::NeoForge => {
-                NEOFORGE.get(self, NeoForgeQuery::MainClass).await
-            }
+            Loader::NeoForge => NEOFORGE.get(self, NeoForgeQuery::MainClass).await,
 
             #[cfg(feature = "forge")]
-            Loader::Forge => {
-                FORGE.get(self, ForgeQuery::MainClass).await
-            }
+            Loader::Forge => FORGE.get(self, ForgeQuery::MainClass).await,
 
-            _ => {
-                Err(QueryError::OperationUnsupported {
-                    operation: "get_main_class()",
-                    loader: format!("{:?}", self.loader()),
-                })
-            }
+            other => Err(QueryError::OperationUnsupported {
+                operation: "get_main_class()",
+                loader: format!("{other:?}"),
+            }),
         }
     }
 
@@ -240,30 +158,6 @@ where
                 operation: "get_assets()",
                 feature: "vanilla",
             })
-        }
-    }
-
-    async fn invalidate_cache(&self) {
-        match self.loader() {
-            #[cfg(feature = "vanilla")]
-            Loader::Vanilla => VANILLA.invalidate(self.name()).await,
-
-            #[cfg(feature = "fabric")]
-            Loader::Fabric => FABRIC.invalidate(self.name()).await,
-
-            #[cfg(feature = "quilt")]
-            Loader::Quilt => QUILT.invalidate(self.name()).await,
-
-            #[cfg(feature = "neoforge")]
-            Loader::NeoForge => NEOFORGE.invalidate(self.name()).await,
-
-            #[cfg(feature = "forge")]
-            Loader::Forge => FORGE.invalidate(self.name()).await,
-
-            #[cfg(feature = "lighty_updater")]
-            Loader::LightyUpdater => LIGHTY_UPDATER.invalidate(self.name()).await,
-
-            _ => {}
         }
     }
 }

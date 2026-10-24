@@ -40,8 +40,8 @@ instance opens its `instance/` sub-dir).
 | Type | Crate | Loader type |
 |---|---|---|
 | `VersionBuilder` | `lighty-version` | `Loader` |
-| `LightyVersionBuilder` | `lighty-version` | `LightyLoader` (server-tagged) |
-| your custom type | — | anything `Clone + Send + Sync` |
+| `LightyVersionBuilder` | `lighty-version` | `Loader` (server-resolved) |
+| your custom type | — | your own type implementing [`LoaderKind`](#loaderkind) |
 
 ### Custom impl
 
@@ -66,21 +66,64 @@ impl VersionInfo for MyInstance {
 ```
 
 `LoaderExtensions` lights up automatically because of the blanket
-impl below.
+impl below — it only requires the `LoaderType` to implement
+[`LoaderKind`](#loaderkind), which `Loader` does out of the box.
+
+## `LoaderKind`
+
+The dispatch seam. `LoaderExtensions` knows nothing about concrete
+loaders — it delegates every call to the instance's `LoaderType`
+through `LoaderKind`. The built-in `Loader` enum implements it; a
+consumer brings its own loader by implementing `LoaderKind` for its
+own type (used as `VersionInfo::LoaderType`) **without extending the
+`Loader` enum**.
+
+```rust
+#[async_trait]
+pub trait LoaderKind: Clone + Send + Sync + Debug + 'static {
+    /// Full metadata for an instance of this loader.
+    async fn resolve_metadata<V>(&self, version: &V) -> QueryResult<Arc<VersionMetaData>>
+    where V: VersionInfo<LoaderType = Self>;
+
+    /// The coordinates the instance really installs under.
+    async fn resolved_instance<V>(&self, version: &V) -> QueryResult<ResolvedInstance>
+    where V: VersionInfo<LoaderType = Self>;
+
+    /// Drops any cached manifest for the named instance.
+    async fn invalidate(&self, version_name: &str);
+
+    /// The built-in loader this kind installs *as* — drives mod
+    /// resolution and the Forge/NeoForge post-install steps. A custom
+    /// Fabric-based loader returns `Loader::Fabric`.
+    fn base_loader(&self) -> Loader;
+}
+```
+
+`resolve_metadata` is the one path a custom loader fully owns (fetch
+its own manifest, build its own `Version`). `base_loader` ties the
+instance back to a built-in loader so the shared install/launch
+pipeline (mods, natives, Forge processors) keeps working: a loader
+that is just a custom *source* over Fabric returns `Loader::Fabric`
+and reuses everything else.
+
+`LoaderKind` is an async trait, so an implementor annotates its `impl`
+with `#[async_trait]` (add the `async-trait` crate as a dependency).
 
 ## `LoaderExtensions`
 
-Auto-implemented for any `V: VersionInfo<LoaderType = Loader>`.
+Auto-implemented for any `V: VersionInfo` whose `LoaderType: LoaderKind`.
 
 ```rust
 #[async_trait]
 pub trait LoaderExtensions {
-    async fn get_metadata(&self)     -> QueryResult<Arc<VersionMetaData>>;   // full
-    async fn get_libraries(&self)    -> QueryResult<Arc<VersionMetaData>>;   // libraries only
-    async fn get_main_class(&self)   -> QueryResult<Arc<VersionMetaData>>;   // Vanilla-based
-    async fn get_natives(&self)      -> QueryResult<Arc<VersionMetaData>>;   // Vanilla-based
-    async fn get_java_version(&self) -> QueryResult<Arc<VersionMetaData>>;   // Vanilla-based
-    async fn get_assets(&self)       -> QueryResult<Arc<VersionMetaData>>;   // Vanilla-based
+    async fn get_metadata(&self)      -> QueryResult<Arc<VersionMetaData>>;   // full
+    async fn get_libraries(&self)     -> QueryResult<Arc<VersionMetaData>>;   // base-loader
+    async fn get_main_class(&self)    -> QueryResult<Arc<VersionMetaData>>;   // base-loader
+    async fn get_natives(&self)       -> QueryResult<Arc<VersionMetaData>>;   // Vanilla-based
+    async fn get_java_version(&self)  -> QueryResult<Arc<VersionMetaData>>;   // Vanilla-based
+    async fn get_assets(&self)        -> QueryResult<Arc<VersionMetaData>>;   // Vanilla-based
+    async fn invalidate_cache(&self);                                        // drop cached manifest
+    async fn resolved_instance(&self) -> QueryResult<ResolvedInstance>;      // real coordinates
 }
 ```
 
@@ -91,7 +134,8 @@ assets).
 
 ### Dispatch
 
-`get_metadata` matches on `self.loader()`:
+`get_metadata` delegates to `self.loader().resolve_metadata(self)`.
+For the built-in `Loader`, that resolves as:
 
 | Loader | What it returns |
 |---|---|
@@ -103,7 +147,10 @@ assets).
 | `LightyUpdater` | Server-defined metadata merged onto the base loader the server picks. |
 | `Optifine` | Standalone (not a real loader — see [`loaders/optifine.md`](./loaders/optifine.md)). |
 
-Loaders not compiled in raise `QueryError::UnsupportedLoader`.
+A `Loader` variant whose feature isn't compiled in raises
+`QueryError::OperationUnsupported`. `get_libraries` / `get_main_class`
+dispatch on `base_loader()` the same way; `get_natives` /
+`get_java_version` / `get_assets` always hit the Vanilla manifest.
 
 ## Usage
 
@@ -131,8 +178,8 @@ async fn main() -> anyhow::Result<()> {
 
 All methods return `QueryResult<_>` = `Result<_, lighty_core::QueryError>`.
 The relevant variants for loaders are `Network`, `JsonParsing`,
-`VersionNotFound`, `MissingField`, `UnsupportedLoader`,
-`InvalidMetadata`. Full enum:
+`VersionNotFound`, `MissingField`, `UnknownLoader`, `LoaderTooOld`,
+`OperationUnsupported`, `FeatureRequired`, `InvalidMetadata`. Full enum:
 [`../../core/docs/exports.md`](../../core/docs/exports.md#errors).
 
 ## See also

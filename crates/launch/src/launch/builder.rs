@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use lighty_auth::UserProfile;
 use lighty_java::JavaDistribution;
 use crate::errors::InstallerResult;
-use lighty_loaders::types::{VersionInfo, Loader, LoaderExtensions};
+use lighty_loaders::types::{VersionInfo, LoaderExtensions, LoaderKind};
 use crate::arguments::Arguments;
 use crate::installer::Installer;
 
@@ -30,7 +30,7 @@ pub struct LaunchBuilder<'a, T> {
 
 impl<'a, T> LaunchBuilder<'a, T>
 where
-    T: VersionInfo<LoaderType = Loader>
+    T: VersionInfo<LoaderType: LoaderKind>
         + LoaderExtensions
         + Arguments
         + Installer
@@ -197,7 +197,7 @@ pub struct JvmOptionsBuilder<'a, T> {
 
 impl<'a, T> JvmOptionsBuilder<'a, T>
 where
-    T: VersionInfo<LoaderType = Loader> + LoaderExtensions + Arguments + Installer,
+    T: VersionInfo<LoaderType: LoaderKind> + LoaderExtensions + Arguments + Installer,
 {
     /// Set a JVM option
     ///
@@ -290,7 +290,7 @@ pub struct ArgumentsBuilder<'a, T> {
 
 impl<'a, T> ArgumentsBuilder<'a, T>
 where
-    T: VersionInfo<LoaderType = Loader> + LoaderExtensions + Arguments + Installer,
+    T: VersionInfo<LoaderType: LoaderKind> + LoaderExtensions + Arguments + Installer,
 {
     /// Set a game argument or placeholder value
     ///

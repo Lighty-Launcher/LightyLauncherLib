@@ -9,6 +9,7 @@ pub use version::version_info::*;
 pub use version::version_metadata::*;
 pub use loader::loader::*;
 pub use loader::loader_extensions::*;
+pub use loader::loader_kind::*;
 pub use instance_size::*;
 
 pub use version::version_metadata;
