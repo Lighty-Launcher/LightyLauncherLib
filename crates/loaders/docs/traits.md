@@ -89,22 +89,26 @@ pub trait LoaderKind: Clone + Send + Sync + Debug + 'static {
     /// Forge/NeoForge post-install steps. A custom Fabric-based loader returns `Loader::Fabric`.
     fn base_loader(&self) -> Loader;
 
-    /// The coordinates the instance really installs under. DEFAULTS to the builder's own
-    /// fields tagged with `base_loader()`; override only when the builder lies (LightyUpdater).
+    /// The coordinates the instance really installs under. Called by the pipeline ONLY for a
+    /// Forge/NeoForge base (LightyUpdater included, as it may resolve to one). The built-in
+    /// `Loader` overrides it; the default FAILS LOUDLY rather than fabricate coordinates.
     async fn resolved_instance<V>(&self, version: &V) -> QueryResult<ResolvedInstance>
-    where V: VersionInfo<LoaderType = Self> { /* default: ResolvedInstance from `version` + base_loader() */ }
+    where V: VersionInfo<LoaderType = Self> { /* default: Err(OperationUnsupported) */ }
 
     /// Drops any cached manifest for the named instance. DEFAULTS to a no-op.
     async fn invalidate(&self, _version_name: &str) {}
 }
 ```
 
-A consumer's loader implements just **`resolve_metadata` + `base_loader`**; `resolved_instance`
-and `invalidate` have sensible defaults (override only if needed). `resolve_metadata` is the one
-path a custom loader fully owns (fetch its own manifest, build its own `Version`); `base_loader`
-ties the instance back to a built-in loader so the shared install/launch pipeline (mods, natives,
-Forge processors) keeps working — a loader that is just a custom *source* over Fabric returns
-`Loader::Fabric` and reuses everything else.
+A consumer's loader implements just **`resolve_metadata` + `base_loader`**. `invalidate` defaults
+to a no-op; `resolved_instance` is only ever called for a Forge/NeoForge base (the pipeline skips
+it otherwise), so a Vanilla/Fabric/Quilt-based custom loader never touches it — its default fails
+loudly instead of inventing coordinates, and a custom loader whose base IS Forge/NeoForge overrides
+it (that is the only case that needs `ResolvedInstance`, re-exported for it). `resolve_metadata` is
+the one path a custom loader fully owns (fetch its own manifest, build its own `Version`);
+`base_loader` ties the instance back to a built-in loader so the shared install/launch pipeline
+(mods, natives, Forge processors) keeps working — a loader that is just a custom *source* over
+Fabric returns `Loader::Fabric` and reuses everything else.
 
 `LoaderKind` is an async trait, so an implementor annotates its `impl` with `#[async_trait]` (add
 the `async-trait` crate as a dependency). `ResolvedInstance` is re-exported at
