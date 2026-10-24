@@ -36,23 +36,37 @@ type Result<T> = std::result::Result<T, QueryError>;
 /// consumer-defined loader type used as [`VersionInfo::LoaderType`].
 #[async_trait]
 pub trait LoaderKind: Clone + Send + Sync + std::fmt::Debug + 'static {
-    /// Resolves the full metadata for an instance of this loader.
+    /// Resolves the full metadata for an instance of this loader. The one async method a
+    /// consumer's loader must provide: fetch its own manifest and build the `Version`.
     async fn resolve_metadata<V>(&self, version: &V) -> Result<Arc<VersionMetaData>>
     where
         V: VersionInfo<LoaderType = Self>;
-
-    /// Resolves the coordinates the instance really installs under.
-    async fn resolved_instance<V>(&self, version: &V) -> Result<ResolvedInstance>
-    where
-        V: VersionInfo<LoaderType = Self>;
-
-    /// Drops any cached manifest held for the named instance.
-    async fn invalidate(&self, version_name: &str);
 
     /// The built-in loader this kind installs as. Drives mod resolution and the
     /// forge/neoforge post-install steps; a custom fabric-based loader returns
     /// [`Loader::Fabric`].
     fn base_loader(&self) -> Loader;
+
+    /// Resolves the coordinates the instance really installs under. Defaults to the
+    /// builder's own fields tagged with [`Self::base_loader`]; override only when the
+    /// builder does not already tell the truth (as `LightyUpdater` does).
+    async fn resolved_instance<V>(&self, version: &V) -> Result<ResolvedInstance>
+    where
+        V: VersionInfo<LoaderType = Self>,
+    {
+        Ok(ResolvedInstance::new(
+            version.name().to_string(),
+            self.base_loader(),
+            version.loader_version().to_string(),
+            version.minecraft_version().to_string(),
+            version.game_dirs().to_path_buf(),
+            version.java_dirs().to_path_buf(),
+        ))
+    }
+
+    /// Drops any cached manifest held for the named instance. Defaults to a no-op for
+    /// loaders that keep no cache of their own.
+    async fn invalidate(&self, _version_name: &str) {}
 }
 
 #[async_trait]

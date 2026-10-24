@@ -127,6 +127,7 @@ pub mod loaders {
         types::{
             Loader,
             LoaderKind,
+            ResolvedInstance,
             VersionInfo,
             LoaderExtensions,
             InstanceSize,
