@@ -40,7 +40,7 @@ instance opens its `instance/` sub-dir).
 | Type | Crate | Loader type |
 |---|---|---|
 | `VersionBuilder` | `lighty-version` | `Loader` |
-| `LightyVersionBuilder` | `lighty-version` | `LightyLoader` (server-tagged) |
+| `LightyVersionBuilder` | `lighty-version` | `Loader` (server-resolved) |
 | your custom type | — | your own type implementing [`LoaderKind`](#loaderkind) |
 
 ### Custom impl
@@ -105,6 +105,9 @@ instance back to a built-in loader so the shared install/launch
 pipeline (mods, natives, Forge processors) keeps working: a loader
 that is just a custom *source* over Fabric returns `Loader::Fabric`
 and reuses everything else.
+
+`LoaderKind` is an async trait, so an implementor annotates its `impl`
+with `#[async_trait]` (add the `async-trait` crate as a dependency).
 
 ## `LoaderExtensions`
 
@@ -175,8 +178,8 @@ async fn main() -> anyhow::Result<()> {
 
 All methods return `QueryResult<_>` = `Result<_, lighty_core::QueryError>`.
 The relevant variants for loaders are `Network`, `JsonParsing`,
-`VersionNotFound`, `MissingField`, `UnsupportedLoader`,
-`InvalidMetadata`. Full enum:
+`VersionNotFound`, `MissingField`, `UnknownLoader`, `LoaderTooOld`,
+`OperationUnsupported`, `FeatureRequired`, `InvalidMetadata`. Full enum:
 [`../../core/docs/exports.md`](../../core/docs/exports.md#errors).
 
 ## See also
