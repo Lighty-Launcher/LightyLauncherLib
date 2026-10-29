@@ -19,6 +19,17 @@ impl JavaRuntime {
 
     /// Spawns a Java process with the given arguments in `game_dir`.
     pub async fn execute(&self, arguments: Vec<String>, game_dir: &Path) -> JavaRuntimeResult<Child> {
+        self.execute_wrapped(&[], arguments, game_dir).await
+    }
+
+    /// Spawns Java through `wrapper` (`mangohud`, `gamemoderun`, …) as
+    /// `<wrapper…> <java> <arguments…>`; an empty wrapper runs Java directly.
+    pub async fn execute_wrapped(
+        &self,
+        wrapper: &[String],
+        arguments: Vec<String>,
+        game_dir: &Path,
+    ) -> JavaRuntimeResult<Child> {
         if !self.0.exists() {
             return Err(JavaRuntimeError::NotFound {
                 path: self.0.clone(),
@@ -27,7 +38,14 @@ impl JavaRuntime {
 
         lighty_core::trace_debug!("Spawning Java process: {:?}", &self.0);
 
-        let mut command = Command::new(&self.0);
+        let mut command = match wrapper.split_first() {
+            Some((program, rest)) => {
+                let mut command = Command::new(program);
+                command.args(rest).arg(&self.0);
+                command
+            }
+            None => Command::new(&self.0),
+        };
         command
             .current_dir(game_dir)
             .args(arguments)

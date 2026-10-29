@@ -48,6 +48,8 @@ where T: VersionInfo<LoaderType: LoaderKind> + LoaderExtensions + Arguments + In
 {
     pub fn with_jvm_options(self) -> JvmOptionsBuilder<'a, T>;
     pub fn with_arguments  (self) -> ArgumentsBuilder<'a, T>;
+    pub fn with_wrapper<I, S>(self, command: I) -> Self
+        where I: IntoIterator<Item = S>, S: Into<String>;
 
     #[cfg(feature = "events")]
     pub fn with_event_bus(self, bus: &'a EventBus) -> Self;
@@ -59,6 +61,10 @@ where T: VersionInfo<LoaderType: LoaderKind> + LoaderExtensions + Arguments + In
 `with_jvm_options()` / `with_arguments()` open sub-builders that take
 `.set(key, value)` / `.remove(key)` / `.done()` to return to the
 parent. See [arguments.md](./arguments.md) for the placeholder catalogue.
+
+`with_wrapper(["gamemoderun", "mangohud"])` starts the game through those
+commands: the process becomes `gamemoderun mangohud <java> <args…>`. Only
+the game is wrapped, not the Forge/NeoForge install processors.
 
 ## Step-by-step
 
@@ -110,6 +116,7 @@ keeps the secret out of process memory) is documented there too.
 ### 6. Spawn JVM
 
 ```rust
+// or Command::new(wrapper[0]).args(&wrapper[1..]).arg(java_path) with a wrapper
 Command::new(java_path)
     .args(arguments)
     .current_dir(builder.game_dirs())

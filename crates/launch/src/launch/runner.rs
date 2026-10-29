@@ -111,6 +111,7 @@ pub(crate) async fn execute_launch<T>(
     arg_overrides: &std::collections::HashMap<String, String>,
     arg_removals: &std::collections::HashSet<String>,
     raw_args: &[String],
+    wrapper: &[String],
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()>
 where
@@ -253,6 +254,7 @@ where
         jvm_overrides,
         jvm_removals,
         raw_args,
+        wrapper,
         #[cfg(feature = "events")]
         event_bus,
     )
@@ -394,6 +396,7 @@ async fn execute_game<T>(
     jvm_overrides: &HashMap<String, String>,
     jvm_removals: &HashSet<String>,
     raw_args: &[String],
+    wrapper: &[String],
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()>
 where
@@ -419,7 +422,10 @@ where
     let java_runtime = JavaRuntime::new(java_path);
     lighty_core::trace_info!("[Launch] Executing game...");
 
-    match java_runtime.execute(arguments, builder.game_dirs()).await {
+    match java_runtime
+        .execute_wrapped(wrapper, arguments, builder.game_dirs())
+        .await
+    {
         Ok(child) => {
             let pid = child.id().ok_or(InstallerError::NoPid)?;
 

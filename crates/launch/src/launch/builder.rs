@@ -24,6 +24,7 @@ pub struct LaunchBuilder<'a, T> {
     pub(crate) arg_overrides: HashMap<String, String>,
     pub(crate) arg_removals: HashSet<String>,
     pub(crate) raw_args: Vec<String>,
+    pub(crate) wrapper: Vec<String>,
     #[cfg(feature = "events")]
     pub(crate) event_bus: Option<&'a EventBus>,
 }
@@ -51,6 +52,7 @@ where
             arg_overrides: HashMap::new(),
             arg_removals: HashSet::new(),
             raw_args: Vec::new(),
+            wrapper: Vec::new(),
             #[cfg(feature = "events")]
             event_bus: None,
         }
@@ -82,6 +84,38 @@ where
     #[cfg(feature = "events")]
     pub fn with_event_bus(mut self, event_bus: &'a EventBus) -> Self {
         self.event_bus = Some(event_bus);
+        self
+    }
+
+    /// Start the game through a wrapper command, such as `mangohud` or
+    /// `gamemoderun`: the process becomes `<wrapper…> <java> <args…>`.
+    /// An empty command starts Java directly.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use lighty_auth::UserProfile;
+    /// # use lighty_core::AppState;
+    /// # use lighty_launch::errors::InstallerResult;
+    /// # use lighty_java::JavaDistribution;
+    /// # use lighty_launch::launch::Launch;
+    /// # use lighty_loaders::types::Loader;
+    /// # use lighty_version::VersionBuilder;
+    /// # async fn run() -> InstallerResult<()> {
+    /// # AppState::init("MyLauncher").ok();
+    /// # let profile = UserProfile::offline("Player", "");
+    /// # let mut version = VersionBuilder::new("inst", Loader::Vanilla, "", "1.21.1");
+    /// version.launch(&profile, JavaDistribution::Zulu)
+    ///     .with_wrapper(["gamemoderun", "mangohud"])
+    ///     .run()
+    ///     .await?;
+    /// # Ok(()) }
+    /// ```
+    pub fn with_wrapper<I, S>(mut self, command: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.wrapper = command.into_iter().map(Into::into).collect();
         self
     }
 
@@ -179,6 +213,7 @@ where
             &self.arg_overrides,
             &self.arg_removals,
             &self.raw_args,
+            &self.wrapper,
             #[cfg(feature = "events")]
             self.event_bus,
         )
