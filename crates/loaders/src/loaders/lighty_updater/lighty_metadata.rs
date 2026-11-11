@@ -67,6 +67,7 @@ pub struct LightyMetadata {
     pub client: Option<Client>,
     pub assets: Option<Vec<Asset>>,
     pub mods: Option<Vec<Mod>>,
+    pub config: Option<Vec<ConfigFile>>,
 }
 
 impl Default for LightyMetadata {
@@ -81,6 +82,7 @@ impl Default for LightyMetadata {
             client: None,
             assets: None,
             mods: None,
+            config: None,
         }
     }
 }
@@ -114,6 +116,16 @@ pub struct Library {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Mod {
+    pub name: String,
+    pub url: String,
+    pub path: String,
+    pub sha1: String,
+    pub size: u64,
+}
+
+/// A file of the server `config/` folder; `path` is relative to `config/`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigFile {
     pub name: String,
     pub url: String,
     pub path: String,
