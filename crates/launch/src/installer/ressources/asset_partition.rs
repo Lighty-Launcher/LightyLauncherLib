@@ -2,7 +2,7 @@
 // Licensed under the MIT License
 
 //! Shared partition + download helpers for mod-like assets (mods,
-//! resourcepacks, shaderpacks, datapacks). Each public asset module
+//! resourcepacks, shaderpacks, datapacks, config). Each public asset module
 //! is a thin wrapper around these helpers with a fixed subdir prefix.
 
 use lighty_core::extract::is_path_within_base;

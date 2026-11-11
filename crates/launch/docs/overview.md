@@ -12,7 +12,7 @@ process across its lifetime.
 |---|---|
 | [`Launch`](./launch.md) trait | Adds `.launch(&profile, java)` to any installable instance |
 | [`LaunchBuilder`](./launch.md#launchbuilder-api) | Fluent builder: JVM options, game args, event bus, then `.run().await` |
-| [`Installer`](./installation.md) trait | 8-way parallel install: libraries, natives, client, assets, mods, resource/shader/datapacks (+ optional modpack pre-step) |
+| [`Installer`](./installation.md) trait | 9-way parallel install: libraries, natives, client, assets, mods, resource/shader/datapacks, config (+ optional modpack pre-step) |
 | [`Arguments`](./arguments.md) trait | Builds the JVM + game argv from a `Version` plus per-launch overrides |
 | [`InstanceControl`](./instance-control.md) trait | PID tracking, close, delete, size breakdown |
 

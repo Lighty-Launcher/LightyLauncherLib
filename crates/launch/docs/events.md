@@ -70,6 +70,7 @@ pub enum ModloaderEvent {
     ResourcePacksInstalled { count: usize, bytes: u64 },
     ShaderPacksInstalled   { count: usize, bytes: u64 },
     DatapacksInstalled     { count: usize, bytes: u64 },
+    ConfigInstalled        { count: usize, bytes: u64 },
 }
 ```
 

@@ -1,7 +1,7 @@
 # Installation
 
 The install pipeline downloads and verifies every game file before the
-JVM is spawned. It's 8-way parallel, idempotent (SHA1 verification),
+JVM is spawned. It's 9-way parallel, idempotent (SHA1 verification),
 and emits per-bucket events when the `events` feature is on.
 
 ## Pipeline overview
@@ -15,22 +15,22 @@ Installer::install(&self, &Version, event_bus)
 │       └─► lighty_modsloader::resolver::resolve  — BFS, dedup by ModKey
 │
 ├── Phase 1: Verification
-│   └── 8-way tokio::join! — every bucket walks its slice concurrently
+│   └── 9-way tokio::join! — every bucket walks its slice concurrently
 │       Each bucket returns (Vec<(url, path)>, bytes) for missing/outdated files
 │
 ├── Phase 2: Decision
 │   └── If total_downloads == 0 → emit IsInstalled, re-extract natives, return
 │
 └── Phase 3: Parallel download
-    └── 8-way tokio::try_join! — libraries, natives, client, assets,
-        mods, resourcepacks, shaderpacks, datapacks
+    └── 9-way tokio::try_join! — libraries, natives, client, assets,
+        mods, resourcepacks, shaderpacks, datapacks, config
 ```
 
 The orchestrator lives in
 `crates/launch/src/installer/installer.rs`. `Installer::install` is
 blanket-implemented for any `T: VersionInfo<LoaderType: LoaderKind> + WithMods`.
 
-## The eight buckets
+## The nine buckets
 
 | Bucket | Layout | Source | Notes |
 |---|---|---|---|
@@ -42,8 +42,9 @@ blanket-implemented for any `T: VersionInfo<LoaderType: LoaderKind> + WithMods`.
 | **Resource packs** | `{runtime_dir}/resourcepacks/` | mods slice (qualified path) | Strict prefix match |
 | **Shader packs** | `{runtime_dir}/shaderpacks/` | mods slice (qualified path) | Strict prefix match |
 | **Datapacks** | `{runtime_dir}/datapacks/` | mods slice (qualified path) | Strict prefix match |
+| **Config** | `{runtime_dir}/config/` (recursive) | LightyUpdater `config` field, carried in the mods slice | Strict prefix match; files the server does not list are left alone |
 
-All four mod-like buckets share a single helper at
+All five mod-like buckets share a single helper at
 `crates/launch/src/installer/ressources/asset_partition.rs`:
 
 ```rust
@@ -129,7 +130,7 @@ progress bar.
 ## Total-byte calculation
 
 Every collector returns `Vec<DownloadTask>`, and each task carries the
-size the manifest declared. The total is one pass over the eight
+size the manifest declared. The total is one pass over the nine
 lists — no lookup, no re-scan of the source collections:
 
 ```rust
@@ -168,7 +169,8 @@ and [`neoforge.md`](../../loaders/docs/loaders/neoforge.md).
 ├── mods/                    (runtime_dir)
 ├── resourcepacks/           (runtime_dir)
 ├── shaderpacks/             (runtime_dir)
-└── datapacks/               (runtime_dir)
+├── datapacks/               (runtime_dir)
+└── config/                  (runtime_dir)
 ```
 
 `runtime_dir()` defaults to `game_dirs()` but the runner may rewrite it

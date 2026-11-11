@@ -3,7 +3,7 @@
 
 //! Game installation orchestration: libraries, natives, client JAR, assets, and mods.
 
-use super::ressources::{libraries, natives, client, assets, mods, resourcepacks, shaderpacks, datapacks};
+use super::ressources::{libraries, natives, client, assets, mods, resourcepacks, shaderpacks, datapacks, config};
 use lighty_loaders::types::{LoaderKind, VersionInfo, version_metadata::{Mods, Version}};
 use lighty_core::{mkdir, time_it};
 use lighty_modsloader::WithMods;
@@ -65,6 +65,7 @@ where
             resourcepack_tasks,
             shaderpack_tasks,
             datapack_tasks,
+            config_tasks,
             (native_download_tasks, native_extract_paths),
         ) = tokio::join!(
             libraries::collect_library_tasks(self, &builder.libraries),
@@ -74,6 +75,7 @@ where
             resourcepacks::collect_resourcepack_tasks(self, mods_slice),
             shaderpacks::collect_shaderpack_tasks(self, mods_slice),
             datapacks::collect_datapack_tasks(self, mods_slice),
+            config::collect_config_tasks(self, mods_slice),
             natives::collect_native_tasks(self, builder.natives.as_deref().unwrap_or(&[])),
         );
 
@@ -84,6 +86,7 @@ where
             + resourcepack_tasks.len()
             + shaderpack_tasks.len()
             + datapack_tasks.len()
+            + config_tasks.len()
             + native_download_tasks.len();
 
         if total_downloads == 0 {
@@ -120,6 +123,7 @@ where
             .chain(&resourcepack_tasks)
             .chain(&shaderpack_tasks)
             .chain(&datapack_tasks)
+            .chain(&config_tasks)
             .chain(&native_download_tasks)
             .chain(&client_task)
             .map(|task| task.size)
@@ -167,6 +171,11 @@ where
                 ),
                 datapacks::download_datapacks(
                     datapack_tasks,
+                    #[cfg(feature = "events")]
+                    event_bus
+                ),
+                config::download_config(
+                    config_tasks,
                     #[cfg(feature = "events")]
                     event_bus
                 ),

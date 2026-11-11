@@ -2,7 +2,8 @@
 // Licensed under the MIT License
 
 //! Mod-source events: dependency resolution, modpack pipeline,
-//! per-bucket install summaries (resourcepacks, shaderpacks, datapacks).
+//! per-bucket install summaries (resourcepacks, shaderpacks, datapacks,
+//! config).
 
 use serde::{Deserialize, Serialize};
 
@@ -46,6 +47,10 @@ pub enum ModloaderEvent {
         bytes: u64,
     },
     DatapacksInstalled {
+        count: usize,
+        bytes: u64,
+    },
+    ConfigInstalled {
         count: usize,
         bytes: u64,
     },

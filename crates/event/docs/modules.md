@@ -23,7 +23,7 @@ flat (`pub use module::AuthEvent;` …) and wraps them in the root
 used to live in `launch.rs` and are now their own `ModloaderEvent`
 enum, reached through `Event::Modloader(_)`. The per-bucket
 post-install summaries (`ResourcePacksInstalled`, `ShaderPacksInstalled`,
-`DatapacksInstalled`) only live here.
+`DatapacksInstalled`, `ConfigInstalled`) only live here.
 
 ## See also
 
