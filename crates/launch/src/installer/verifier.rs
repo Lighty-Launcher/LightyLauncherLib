@@ -7,6 +7,9 @@ use lighty_core::verify_file_sha1_streaming;
 use std::path::PathBuf;
 use tokio::fs;
 
+/// SHA1 of zero bytes: what a server declares for an intentionally empty file.
+const EMPTY_FILE_SHA1: &str = "da39a3ee5e6b4b0d3255bfef95601890afd80709";
+
 /// Returns whether the file at `path` is missing or empty.
 ///
 /// The object store is content-addressed — the file name is the expected
@@ -34,9 +37,14 @@ pub async fn needs_download(path: &PathBuf, sha1: Option<&String>, name: &str) -
         return true;
     }
 
-    // Zero-byte files are stale artifacts of failed downloads.
+    // Zero-byte files are stale artifacts of failed downloads, unless the
+    // server declares the file empty on purpose (some mods ship empty configs).
     if let Ok(meta) = fs::metadata(path).await {
         if meta.len() == 0 {
+            if sha1.is_some_and(|hash| hash.eq_ignore_ascii_case(EMPTY_FILE_SHA1)) {
+                return false;
+            }
+
             lighty_core::trace_warn!(
                 "[Installer] Zero-byte cached file for {}, re-downloading...",
                 name
