@@ -65,6 +65,14 @@ Response — `VersionMetaData`-compatible JSON, e.g.:
 }
 ```
 
+## Config files
+
+A server with `enable_config = true` adds a `config` list (`name`, `url`,
+`path` relative to `config/`, `sha1`, `size`). Each entry joins the mods
+slice with the path `config/<path>`, and the installer writes it under
+`{runtime_dir}/config/`. Like mods: a file whose SHA1 differs is
+downloaded again, and a file the server does not list is never touched.
+
 ## Picking a base loader
 
 The server's payload includes a `loader` string in its `ServerInfo`

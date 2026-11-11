@@ -157,6 +157,12 @@ impl Query for LightyQuery {
             builder.mods = Some(extract_mods(full_data)?);
         }
 
+        // Config files ride along with the mods, routed to config/ by their path prefix.
+        if full_data.config.is_some() {
+            let config_files = extract_config(full_data)?;
+            builder.mods.get_or_insert_with(Vec::new).extend(config_files);
+        }
+
         if let Some(main_class) = &full_data.main_class {
             if !main_class.main_class.is_empty() {
                 builder.main_class = extract_main_class(full_data)?;
@@ -243,6 +249,19 @@ fn extract_mods(full_data: &LightyMetadata) -> Result<Vec<Mods>> {
         path: Some(mod_.path.clone()),
         sha1: Some(mod_.sha1.clone()),
         size: Some(mod_.size),
+    }).collect())
+}
+
+fn extract_config(full_data: &LightyMetadata) -> Result<Vec<Mods>> {
+    let config_files = full_data.config.as_ref().ok_or_else(|| QueryError::MissingField {
+        field: "lighty_updater.config".to_string(),
+    })?;
+    Ok(config_files.iter().map(|config_file| Mods {
+        name: config_file.name.clone(),
+        url: Some(config_file.url.clone()),
+        path: Some(format!("config/{}", config_file.path)),
+        sha1: Some(config_file.sha1.clone()),
+        size: Some(config_file.size),
     }).collect())
 }
 
