@@ -80,8 +80,8 @@ Graal, Liberica) and extracts to `java_dirs()/jre/java-<v>/`. Emits
 
 ### 3. Install dependencies
 
-8-way parallel `tokio::try_join!` across libraries, natives, client
-JAR, assets, mods, resource packs, shader packs, datapacks. Optional
+9-way parallel `tokio::try_join!` across libraries, natives, client
+JAR, assets, mods, resource packs, shader packs, datapacks, config. Optional
 modpack pre-step runs before user-mod resolution. Full pipeline +
 SHA1 verification + per-bucket layout in
 [installation.md](./installation.md).
